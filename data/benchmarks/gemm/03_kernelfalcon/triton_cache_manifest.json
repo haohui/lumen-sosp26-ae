@@ -1,0 +1,47 @@
+[
+  {
+    "cache_dir": "2ODYVHF4U3B4L4MT3WNHZGG3ILU6AY53PUWFA3S3YFSTE7JCLRNA",
+    "hash": "d3878a9cbca6c3c5f193dd9a7c98db42e9e063bb7d2c506e5bc165327d225c5a",
+    "config": {
+      "BLOCK_M": 64,
+      "BLOCK_N": 128,
+      "BLOCK_K": 32,
+      "GROUP_M": 4,
+      "matrix_instr_nonkdim": 16,
+      "waves_per_eu": 1,
+      "num_warps": 8,
+      "num_stages": 2
+    },
+    "triton_version": "3.5.0"
+  },
+  {
+    "cache_dir": "7YXHBWDNTPZTPMHZFWRDWI7JMNJQ5Y66ESGIMKCD5T7NOGB5D2EQ",
+    "hash": "fe2e70d86d9bf337b0f92da23b23e963530ee3de248c862843ecfed7183d1e89",
+    "config": {
+      "BLOCK_M": 128,
+      "BLOCK_N": 64,
+      "BLOCK_K": 32,
+      "GROUP_M": 4,
+      "matrix_instr_nonkdim": 16,
+      "waves_per_eu": 1,
+      "num_warps": 8,
+      "num_stages": 2
+    },
+    "triton_version": "3.5.0"
+  },
+  {
+    "cache_dir": "VWF52LN6IFKA4AINTZ67MZ5LVLRVTR74BMCQUOO5SV5WZBEHZSTQ",
+    "hash": "ad8bdd2dbe41540e010d9e7df667abaae359c7fc0b050a39dd957b6c8487cca7",
+    "config": {
+      "BLOCK_M": 32,
+      "BLOCK_N": 64,
+      "BLOCK_K": 32,
+      "GROUP_M": 8,
+      "matrix_instr_nonkdim": 16,
+      "waves_per_eu": 2,
+      "num_warps": 4,
+      "num_stages": 2
+    },
+    "triton_version": "3.5.0"
+  }
+]

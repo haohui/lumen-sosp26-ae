@@ -1,0 +1,350 @@
+import torch
+import torch.nn as nn
+from torch.utils.cpp_extension import load_inline
+
+source = r"""
+#include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAException.h>
+#include <stdint.h>
+#include <math.h>
+
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#include <hip/hip_runtime.h>
+#endif
+
+namespace {
+
+constexpr int BLOCK_N = 128;
+constexpr int BLOCK_K = 128;
+constexpr int THREADS = 256;
+
+__device__ __forceinline__ float fp8_e4m3fnuz_to_float(uint8_t v) {
+    uint32_t sign = (uint32_t)(v >> 7);
+    uint32_t exp  = (uint32_t)((v >> 3) & 0x0F);
+    uint32_t man  = (uint32_t)(v & 0x07);
+
+    float out;
+    if (exp == 0) {
+        if (man == 0) {
+            out = 0.0f;
+        } else {
+            out = ldexpf((float)man, -10); // subnormal: man * 2^-10
+        }
+    } else {
+        int e = (int)exp - 8;              // bias=8
+        out = ldexpf(1.0f + ((float)man) * 0.125f, e);
+    }
+    return sign ? -out : out;
+}
+
+__device__ __forceinline__ float silu_f32(float x) {
+    return x / (1.0f + expf(-x));
+}
+
+__device__ __forceinline__ uint16_t float_to_bf16_bits(float x) {
+    union { float f; uint32_t u; } v;
+    v.f = x;
+    uint32_t lsb = (v.u >> 16) & 1u;
+    v.u += 0x7FFFu + lsb;
+    return (uint16_t)(v.u >> 16);
+}
+
+template <typename index_t>
+__global__ void fused_moe_kernel_impl(
+    const uint8_t* __restrict__ input_q,      // [T, D], raw fp8 bytes
+    const uint8_t* __restrict__ w1_q,         // [E, 2I, D], raw fp8 bytes
+    const uint8_t* __restrict__ w2_q,         // [E, D, I], raw fp8 bytes
+    const float* __restrict__ topk_weights,   // [T, K]
+    const index_t* __restrict__ topk_ids,     // [T, K]
+    const float* __restrict__ input_scale,    // [T, D/128]
+    const float* __restrict__ fc1_scale,      // [E, (2I/128)*(D/128)]
+    const float* __restrict__ fc2_scale,      // [E, (D/128)*(I/128)]
+    uint16_t* __restrict__ out,               // [T, D] bf16 bits
+    int tokens,
+    int dim,
+    int inter_dim,
+    int experts,
+    int topk
+) {
+    int t = (int)blockIdx.x;
+    if (t >= tokens) return;
+    int tid = (int)threadIdx.x;
+
+    extern __shared__ float smem[];
+    float* out_accum = smem;          // [dim]
+    float* activated = smem + dim;    // [inter_dim]
+
+    for (int o = tid; o < dim; o += blockDim.x) {
+        out_accum[o] = 0.0f;
+    }
+    __syncthreads();
+
+    const int dim_blocks = dim / 128;
+    const int fc1_row_blocks = (2 * inter_dim) / 128;
+    const int fc1_scale_stride = fc1_row_blocks * dim_blocks;
+
+    const int fc2_row_blocks = dim / 128;
+    const int fc2_col_blocks = inter_dim / 128;
+    const int fc2_scale_stride = fc2_row_blocks * fc2_col_blocks;
+
+    const long long input_base = (long long)t * (long long)dim;
+    const long long topk_base = (long long)t * (long long)topk;
+    const long long in_scale_base = (long long)t * (long long)dim_blocks;
+
+    for (int k = 0; k < topk; ++k) {
+        int e = (int)topk_ids[topk_base + k];
+        float rw = topk_weights[topk_base + k];
+        bool active = (e >= 0 && e < experts && rw != 0.0f);
+
+        if (active) {
+            const long long w1_e_base = (long long)e * (long long)(2 * inter_dim) * (long long)dim;
+            const float* fc1_e = fc1_scale + (long long)e * (long long)fc1_scale_stride;
+
+            for (int i = tid; i < inter_dim; i += blockDim.x) {
+                int row_gate = i;
+                int row_up = i + inter_dim;
+                int rb_gate = row_gate >> 7;
+                int rb_up = row_up >> 7;
+
+                float gate = 0.0f;
+                float up = 0.0f;
+
+                for (int d = 0; d < dim; ++d) {
+                    int cb = d >> 7;
+
+                    float xs = fp8_e4m3fnuz_to_float(input_q[input_base + d]) * input_scale[in_scale_base + cb];
+
+                    long long idx_g = w1_e_base + (long long)row_gate * (long long)dim + (long long)d;
+                    long long idx_u = w1_e_base + (long long)row_up   * (long long)dim + (long long)d;
+
+                    float wg = fp8_e4m3fnuz_to_float(w1_q[idx_g]) * fc1_e[rb_gate * dim_blocks + cb];
+                    float wu = fp8_e4m3fnuz_to_float(w1_q[idx_u]) * fc1_e[rb_up   * dim_blocks + cb];
+
+                    gate += xs * wg;
+                    up   += xs * wu;
+                }
+                activated[i] = silu_f32(gate) * up;
+            }
+        }
+        __syncthreads();
+
+        if (active) {
+            const long long w2_e_base = (long long)e * (long long)dim * (long long)inter_dim;
+            const float* fc2_e = fc2_scale + (long long)e * (long long)fc2_scale_stride;
+
+            for (int o = tid; o < dim; o += blockDim.x) {
+                int ob = o >> 7;
+                float sum = 0.0f;
+                long long w2_row_base = w2_e_base + (long long)o * (long long)inter_dim;
+                for (int i = 0; i < inter_dim; ++i) {
+                    int ib = i >> 7;
+                    float w = fp8_e4m3fnuz_to_float(w2_q[w2_row_base + i]) * fc2_e[ob * fc2_col_blocks + ib];
+                    sum += activated[i] * w;
+                }
+                out_accum[o] += rw * sum;
+            }
+        }
+        __syncthreads();
+    }
+
+    long long out_base = (long long)t * (long long)dim;
+    for (int o = tid; o < dim; o += blockDim.x) {
+        out[out_base + o] = float_to_bf16_bits(out_accum[o]);
+    }
+}
+
+} // namespace
+
+torch::Tensor fused_moe_forward(
+    torch::Tensor input_q,
+    torch::Tensor w1_q,
+    torch::Tensor w2_q,
+    torch::Tensor topk_weights,
+    torch::Tensor topk_ids,
+    torch::Tensor input_scale,
+    torch::Tensor fc1_scale,
+    torch::Tensor fc2_scale
+) {
+    TORCH_CHECK(input_q.is_cuda(), "input_q must be a GPU tensor");
+    TORCH_CHECK(w1_q.is_cuda() && w2_q.is_cuda() && topk_weights.is_cuda() && topk_ids.is_cuda() &&
+                input_scale.is_cuda() && fc1_scale.is_cuda() && fc2_scale.is_cuda(),
+                "All runtime tensors must be on GPU");
+
+    auto dev = input_q.device();
+    TORCH_CHECK(w1_q.device() == dev && w2_q.device() == dev && topk_weights.device() == dev &&
+                topk_ids.device() == dev && input_scale.device() == dev &&
+                fc1_scale.device() == dev && fc2_scale.device() == dev,
+                "All runtime tensors must be on the same GPU device");
+
+    TORCH_CHECK(
+        (input_q.scalar_type() == at::kFloat8_e4m3fnuz || input_q.scalar_type() == at::kByte),
+        "input_q must be float8_e4m3fnuz or uint8"
+    );
+    TORCH_CHECK(
+        (w1_q.scalar_type() == at::kFloat8_e4m3fnuz || w1_q.scalar_type() == at::kByte),
+        "w1_q must be float8_e4m3fnuz or uint8"
+    );
+    TORCH_CHECK(
+        (w2_q.scalar_type() == at::kFloat8_e4m3fnuz || w2_q.scalar_type() == at::kByte),
+        "w2_q must be float8_e4m3fnuz or uint8"
+    );
+
+    TORCH_CHECK(topk_weights.scalar_type() == at::kFloat, "topk_weights must be float32");
+    TORCH_CHECK(input_scale.scalar_type() == at::kFloat, "input_scale must be float32");
+    TORCH_CHECK(fc1_scale.scalar_type() == at::kFloat, "fc1_scale must be float32");
+    TORCH_CHECK(fc2_scale.scalar_type() == at::kFloat, "fc2_scale must be float32");
+
+    TORCH_CHECK(topk_ids.scalar_type() == at::kInt || topk_ids.scalar_type() == at::kLong,
+                "topk_ids must be int32 or int64");
+
+    TORCH_CHECK(input_q.is_contiguous() && w1_q.is_contiguous() && w2_q.is_contiguous() &&
+                topk_weights.is_contiguous() && topk_ids.is_contiguous() &&
+                input_scale.is_contiguous() && fc1_scale.is_contiguous() && fc2_scale.is_contiguous(),
+                "All tensors must be contiguous");
+
+    TORCH_CHECK(input_q.dim() == 2, "input_q must be [T, D]");
+    TORCH_CHECK(w1_q.dim() == 3, "w1_q must be [E, 2I, D]");
+    TORCH_CHECK(w2_q.dim() == 3, "w2_q must be [E, D, I]");
+    TORCH_CHECK(topk_weights.dim() == 2 && topk_ids.dim() == 2, "topk tensors must be [T, K]");
+    TORCH_CHECK(input_scale.dim() == 2 && fc1_scale.dim() == 2 && fc2_scale.dim() == 2, "scale tensors must be 2D");
+
+    const int64_t tokens = input_q.size(0);
+    const int64_t dim = input_q.size(1);
+    const int64_t experts = w1_q.size(0);
+    const int64_t inter2 = w1_q.size(1);
+    TORCH_CHECK(inter2 % 2 == 0, "w1_q second dimension must be 2 * inter_dim");
+    const int64_t inter_dim = inter2 / 2;
+
+    TORCH_CHECK(w1_q.size(2) == dim, "w1_q shape mismatch");
+    TORCH_CHECK(w2_q.size(0) == experts && w2_q.size(1) == dim && w2_q.size(2) == inter_dim, "w2_q shape mismatch");
+    TORCH_CHECK(topk_weights.size(0) == tokens && topk_ids.size(0) == tokens, "topk token mismatch");
+
+    const int64_t topk = topk_ids.size(1);
+    TORCH_CHECK(topk_weights.size(1) == topk, "topk_weights/topk_ids mismatch");
+
+    TORCH_CHECK(dim % BLOCK_K == 0 && dim % BLOCK_N == 0, "dim must be divisible by 128");
+    TORCH_CHECK(inter_dim % BLOCK_K == 0 && (2 * inter_dim) % BLOCK_N == 0, "inter_dim block constraints failed");
+
+    TORCH_CHECK(input_scale.size(0) == tokens && input_scale.size(1) == dim / BLOCK_K, "input_scale shape mismatch");
+    const int64_t fc1_expected = ((2 * inter_dim) / BLOCK_N) * (dim / BLOCK_K);
+    const int64_t fc2_expected = (dim / BLOCK_N) * (inter_dim / BLOCK_K);
+    TORCH_CHECK(fc1_scale.size(0) == experts && fc1_scale.size(1) == fc1_expected, "fc1_scale shape mismatch");
+    TORCH_CHECK(fc2_scale.size(0) == experts && fc2_scale.size(1) == fc2_expected, "fc2_scale shape mismatch");
+
+    const int64_t shared_bytes = (dim + inter_dim) * (int64_t)sizeof(float);
+    TORCH_CHECK(shared_bytes <= 64 * 1024, "Shared memory requirement exceeds 64KB");
+
+    c10::cuda::CUDAGuard device_guard(input_q.device());
+    auto out = torch::empty({tokens, dim}, input_q.options().dtype(at::kBFloat16));
+
+    auto stream = at::cuda::getCurrentCUDAStream(input_q.get_device()).stream();
+
+    const uint8_t* input_q_ptr = reinterpret_cast<const uint8_t*>(input_q.data_ptr());
+    const uint8_t* w1_q_ptr = reinterpret_cast<const uint8_t*>(w1_q.data_ptr());
+    const uint8_t* w2_q_ptr = reinterpret_cast<const uint8_t*>(w2_q.data_ptr());
+
+    const float* topk_w_ptr = topk_weights.data_ptr<float>();
+    const float* in_s_ptr = input_scale.data_ptr<float>();
+    const float* fc1_s_ptr = fc1_scale.data_ptr<float>();
+    const float* fc2_s_ptr = fc2_scale.data_ptr<float>();
+    uint16_t* out_ptr = reinterpret_cast<uint16_t*>(out.data_ptr<at::BFloat16>());
+
+    if (topk_ids.scalar_type() == at::kInt) {
+        const int32_t* topk_i_ptr = topk_ids.data_ptr<int32_t>();
+        fused_moe_kernel_impl<int32_t><<<static_cast<int>(tokens), THREADS, static_cast<size_t>(shared_bytes), stream>>>(
+            input_q_ptr, w1_q_ptr, w2_q_ptr, topk_w_ptr, topk_i_ptr,
+            in_s_ptr, fc1_s_ptr, fc2_s_ptr, out_ptr,
+            static_cast<int>(tokens), static_cast<int>(dim), static_cast<int>(inter_dim),
+            static_cast<int>(experts), static_cast<int>(topk)
+        );
+    } else {
+        const int64_t* topk_i_ptr = topk_ids.data_ptr<int64_t>();
+        fused_moe_kernel_impl<int64_t><<<static_cast<int>(tokens), THREADS, static_cast<size_t>(shared_bytes), stream>>>(
+            input_q_ptr, w1_q_ptr, w2_q_ptr, topk_w_ptr, topk_i_ptr,
+            in_s_ptr, fc1_s_ptr, fc2_s_ptr, out_ptr,
+            static_cast<int>(tokens), static_cast<int>(dim), static_cast<int>(inter_dim),
+            static_cast<int>(experts), static_cast<int>(topk)
+        );
+    }
+
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    return out;
+}
+"""
+
+cpp_src = r"""
+#include <torch/extension.h>
+
+torch::Tensor fused_moe_forward(
+    torch::Tensor input_q,
+    torch::Tensor w1_q,
+    torch::Tensor w2_q,
+    torch::Tensor topk_weights,
+    torch::Tensor topk_ids,
+    torch::Tensor input_scale,
+    torch::Tensor fc1_scale,
+    torch::Tensor fc2_scale
+);
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("fused_moe_forward", &fused_moe_forward, "Fused MoE forward (HIP/ROCm)");
+}
+"""
+
+_fused_moe_ext = load_inline(
+    name="fused_moe_hip_ext_fixed_v3",
+    cpp_sources=cpp_src,
+    cuda_sources=source,
+    with_cuda=True,
+    extra_cflags=["-O3"],
+    extra_cuda_cflags=["-O3", "-std=c++17", "-ffast-math"],
+    verbose=False,
+)
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self,
+        input_q: torch.Tensor,
+        w1_q: torch.Tensor,
+        w2_q: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        input_scale: torch.Tensor,
+        fc1_scale: torch.Tensor,
+        fc2_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        if not (input_q.is_cuda and w1_q.is_cuda and w2_q.is_cuda and topk_weights.is_cuda and
+                topk_ids.is_cuda and input_scale.is_cuda and fc1_scale.is_cuda and fc2_scale.is_cuda):
+            raise RuntimeError("All runtime tensors must be on GPU")
+        dev = input_q.device
+        for t in (w1_q, w2_q, topk_weights, topk_ids, input_scale, fc1_scale, fc2_scale):
+            if t.device != dev:
+                raise RuntimeError("All runtime tensors must be on the same GPU device")
+        if topk_ids.dtype not in (torch.int32, torch.int64):
+            raise RuntimeError("topk_ids must be int32 or int64 on GPU")
+
+        if topk_weights.dtype != torch.float32:
+            topk_weights = topk_weights.to(dtype=torch.float32)
+        if input_scale.dtype != torch.float32:
+            input_scale = input_scale.to(dtype=torch.float32)
+        if fc1_scale.dtype != torch.float32:
+            fc1_scale = fc1_scale.to(dtype=torch.float32)
+        if fc2_scale.dtype != torch.float32:
+            fc2_scale = fc2_scale.to(dtype=torch.float32)
+
+        out = _fused_moe_ext.fused_moe_forward(
+            input_q.contiguous(),
+            w1_q.contiguous(),
+            w2_q.contiguous(),
+            topk_weights.contiguous(),
+            topk_ids.contiguous(),
+            input_scale.contiguous(),
+            fc1_scale.contiguous(),
+            fc2_scale.contiguous(),
+        )
+        return out

@@ -1,0 +1,12 @@
+Loading script /workspace/kernel_benchmark/scripts/mitm_trace_export.py
+Web server listening at http://127.0.0.1:18121/
+Proxy server listening at 127.0.0.1:18120
+No web browser found. Please open a browser and point it to http://127.0.0.1:18121/
+127.0.0.1:34402: client connect
+127.0.0.1:34402: server connect raw.githubusercontent.com:443 (185.199.108.133:443)
+127.0.0.1:34402: client disconnect
+127.0.0.1:34402: server disconnect raw.githubusercontent.com:443 (185.199.108.133:443)
+127.0.0.1:34406: client connect
+127.0.0.1:34406: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:34406: client disconnect
+127.0.0.1:34406: server disconnect api.openai.com:443 (172.66.0.243:443)

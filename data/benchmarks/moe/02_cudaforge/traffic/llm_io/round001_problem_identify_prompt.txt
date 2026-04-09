@@ -1,0 +1,927 @@
+You are given:
+
+ERROR_LOG:
+Traceback (most recent call last):
+  File "/workspace/kernel_benchmark/CudaForge/utils/compile_and_run.py", line 599, in compare_and_bench
+    test_out, _ = _run_once(test_model, inp, dev)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/CudaForge/utils/compile_and_run.py", line 131, in _run_once
+    out = model(*inp)
+          ^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/CudaForge/run_moe_openai_moe_fused_noquant_b02_r10_tol002_1stage_notrace_20260401_084827/20260401_084830_moe_ref_fused_hip_openai_gpt-5.3-codex/moe_ref_fused/code/kernel_20260401_085214.py", line 484, in forward
+    return self._op(
+           ^^^^^^^^^
+  File "/workspace/kernel_benchmark/CudaForge/run_moe_openai_moe_fused_noquant_b02_r10_tol002_1stage_notrace_20260401_084827/20260401_084830_moe_ref_fused_hip_openai_gpt-5.3-codex/moe_ref_fused/code/kernel_20260401_085214.py", line 408, in __call__
+    self._compile_for_device(dev_index)
+  File "/workspace/kernel_benchmark/CudaForge/run_moe_openai_moe_fused_noquant_b02_r10_tol002_1stage_notrace_20260401_084827/20260401_084830_moe_ref_fused_hip_openai_gpt-5.3-codex/moe_ref_fused/code/kernel_20260401_085214.py", line 310, in _compile_for_device
+    raise RuntimeError(f"hiprtcCompileProgram failed ({compile_rc}):\n{log_buf.value.decode(errors='ignore')}")
+RuntimeError: hiprtcCompileProgram failed (6):
+/tmp/comgr-96722b/input/fused_moe_kernel.hip:158:5: error: no matching function for call to 'fused_moe_kernel_impl'
+  158 |     fused_moe_kernel_impl<int>(
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/comgr-96722b/input/fused_moe_kernel.hip:32:17: note: candidate function not viable: call to __global__ function from __global__ function
+   32 | __global__ void fused_moe_kernel_impl(
+      |                 ^
+/tmp/comgr-96722b/input/fused_moe_kernel.hip:180:5: error: no matching function for call to 'fused_moe_kernel_impl'
+  180 |     fused_moe_kernel_impl<long long>(
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/comgr-96722b/input/fused_moe_kernel.hip:32:17: note: candidate function not viable: call to __global__ function from __global__ function
+   32 | __global__ void fused_moe_kernel_impl(
+      |                 ^
+2 errors generated when compiling for gfx942.
+
+Target dtype:
+BF16 (`torch.bfloat16`) is the required primary compute dtype.
+Output dtype parity is mandatory: `ModelNew.forward` final returned dtype must match PyTorch reference output dtype (no evaluator-side cast dependency).
+
+PyTorch reference (ground truth):
+
+#!/usr/bin/env python3
+# PROMPT_MODE_INJECT_BEGIN
+# Anti-hack requirement for generated ModelNew runtime path:
+# 1. Do NOT implement expert compute/dispatch/combine by calling torch.nn.functional.linear,
+#    torch.matmul/torch.mm/torch.bmm, torch.einsum, or torch.addmm in forward.
+# 2. Do NOT call third-party wrapped kernels or JIT wrappers as the runtime kernel path
+#    (no cpp_extension/load_inline/aiter/flashinfer/torch.compile).
+# 3. Implement the target MoE kernel path with custom HIP/HIP/ROCm extension code and call it.
+# 4. Keep reference semantics unchanged: same inputs/outputs and numerically correct behavior.
+# 5. Route/gather index tensors must be int32 or int64 (never float/bfloat16 indices).
+# 6. Keep all runtime tensors on the same GPU device; do not create CPU tensors in forward.
+# 7. Do not hide failures with try/except fallback to torch eager compute; fail loudly.
+# 8. On HIP/ROCm path, do not use HIP/ROCm-only helper names (for example __float2bfloat16).
+# 9. For BF16 conversion on HIP, use HIP-compatible conversion (e.g. hip_bfloat16 constructor
+#    or equivalent HIP intrinsic), not HIP/ROCm-only helper names.
+# 10. STRICTLY FORBIDDEN in runtime path: at::matmul / at::mm / at::bmm / at::addmm
+#     (and wrappers that lower to these ops for expert compute/dispatch/combine).
+# Hard generation intent for fused MoE mode:
+# 1. Goal: produce a 1-stage fused MoE runtime kernel.
+# 2. Per forward call, runtime path must launch exactly one custom GPU kernel.
+# 3. That single kernel must execute routing/dispatch + FC1(gate/up) + activation + FC2
+#    + weighted combine + final BF16 writeback.
+# 4. No auxiliary runtime kernel launch for prefix-scan, route packing/fill,
+#    scatter/add combine, dtype cast, or post-processing.
+# 5. Do not create cross-kernel stage tensors (act/stage1/stage2/route_*).
+# 6. Runtime path must not use torch.matmul/mm/bmm/einsum/addmm, F.linear,
+#    index_add_/scatter_add_, or ATen matmul-family equivalents.
+# 7. Do not offload MoE runtime compute to wrapped third-party kernels
+#    (aiter/flashinfer/triton wrappers/cpp_extension/load_inline/torch.compile).
+# PROMPT_MODE_INJECT_END
+
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+BLOCK_N = 128
+BLOCK_K = 128
+ROUTE_GROUP_SIZE = 32
+
+
+@dataclass
+class MoeConfig:
+    dim: int = 7168
+    inter_dim: int = 2048
+    experts: int = 32
+    topk: int = 4
+
+
+class MoeSingleOpTorchRef:
+    def __init__(self, out_dtype: torch.dtype = torch.bfloat16):
+        self.block_n = BLOCK_N
+        self.block_k = BLOCK_K
+        self.out_dtype = out_dtype
+
+    def _dequantize_input(self, input_q: torch.Tensor, input_scale: torch.Tensor) -> torch.Tensor:
+        tokens, model_dim = input_q.shape
+        blocks = input_q.to(torch.float32).view(tokens, model_dim // self.block_k, self.block_k)
+        return (blocks * input_scale.to(torch.float32).unsqueeze(-1)).reshape(tokens, model_dim)
+
+    def _dequantize_weight(self, weight_q: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+        experts, rows, cols = weight_q.shape
+        row_blocks = rows // self.block_n
+        col_blocks = cols // self.block_k
+
+        dense_q = weight_q.to(torch.float32)
+        blocks = (
+            dense_q.view(experts, row_blocks, self.block_n, col_blocks, self.block_k)
+            .permute(0, 1, 3, 2, 4)
+            .contiguous()
+        )
+        scaled_blocks = blocks * scale.to(torch.float32).view(experts, row_blocks, col_blocks, 1, 1)
+        return scaled_blocks.permute(0, 1, 3, 2, 4).reshape(experts, rows, cols).contiguous()
+
+    def _dequantize_weight_expert(
+        self,
+        weight_q_expert: torch.Tensor,
+        scale_expert: torch.Tensor,
+    ) -> torch.Tensor:
+        rows, cols = weight_q_expert.shape
+        row_blocks = rows // self.block_n
+        col_blocks = cols // self.block_k
+        blocks = (
+            weight_q_expert.to(torch.float32)
+            .view(row_blocks, self.block_n, col_blocks, self.block_k)
+            .permute(0, 2, 1, 3)
+            .contiguous()
+        )
+        scaled_blocks = blocks * scale_expert.to(torch.float32).view(row_blocks, col_blocks, 1, 1)
+        return scaled_blocks.permute(0, 2, 1, 3).reshape(rows, cols).contiguous()
+
+    def _build_sorted_routes(
+        self,
+        topk_ids_i64: torch.Tensor,
+        topk_weights_f: torch.Tensor,
+        num_experts: int,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        tokens, topk = topk_ids_i64.shape
+        max_num_tokens_padded = tokens * topk + num_experts * ROUTE_GROUP_SIZE - topk
+        max_num_m_blocks = (max_num_tokens_padded + ROUTE_GROUP_SIZE - 1) // ROUTE_GROUP_SIZE
+
+        init_val = (topk << 24) | tokens
+        sorted_token_ids = torch.full(
+            (max_num_tokens_padded,),
+            init_val,
+            dtype=torch.int64,
+            device=topk_ids_i64.device,
+        )
+        sorted_weights = torch.zeros((max_num_tokens_padded,), dtype=torch.float32, device=topk_weights_f.device)
+        sorted_expert_ids = torch.full(
+            (max_num_m_blocks,),
+            -1,
+            dtype=torch.int64,
+            device=topk_ids_i64.device,
+        )
+
+        sorted_ids_begin = 0
+        sorted_expert_ids_begin = 0
+        for expert in range(num_experts):
+            mask = topk_ids_i64.eq(expert)
+            if not bool(mask.any()):
+                continue
+
+            token_ids, slot_ids = torch.nonzero(mask, as_tuple=True)
+            tokens_num = int(token_ids.numel())
+
+            route_ids = (slot_ids.to(torch.int64) << 24) | token_ids.to(torch.int64)
+            sorted_token_ids[sorted_ids_begin : sorted_ids_begin + tokens_num] = route_ids
+            sorted_weights[sorted_ids_begin : sorted_ids_begin + tokens_num] = topk_weights_f[token_ids, slot_ids]
+
+            sorted_expert_ids_num = (tokens_num + ROUTE_GROUP_SIZE - 1) // ROUTE_GROUP_SIZE
+            tokens_num_pad = sorted_expert_ids_num * ROUTE_GROUP_SIZE
+            sorted_expert_ids[sorted_expert_ids_begin : sorted_expert_ids_begin + sorted_expert_ids_num] = expert
+
+            sorted_ids_begin += tokens_num_pad
+            sorted_expert_ids_begin += sorted_expert_ids_num
+
+        num_valid_ids = torch.empty((2,), dtype=torch.int64, device=topk_ids_i64.device)
+        num_valid_ids[0] = sorted_ids_begin
+        num_valid_ids[1] = tokens
+        return sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids
+
+    def forward(
+        self,
+        input_q: torch.Tensor,
+        w1_q: torch.Tensor,
+        w2_q: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        input_scale: torch.Tensor,
+        fc1_scale: torch.Tensor,
+        fc2_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        tokens, model_dim = input_q.shape
+        experts, _, inter_dim = w2_q.shape
+
+        input_f = self._dequantize_input(input_q, input_scale)
+
+        topk_ids_i64 = topk_ids.to(torch.int64).contiguous()
+        topk_weights_f = topk_weights.to(torch.float32).contiguous()
+
+        out = torch.zeros((tokens, model_dim), dtype=torch.float32, device=input_q.device)
+        sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids = self._build_sorted_routes(
+            topk_ids_i64=topk_ids_i64,
+            topk_weights_f=topk_weights_f,
+            num_experts=experts,
+        )
+        num_valid_routes = int(num_valid_ids[0].item())
+        if num_valid_routes == 0:
+            return out.to(self.out_dtype)
+
+        valid_route_idx = torch.arange(num_valid_routes, dtype=torch.int64, device=input_q.device)
+        route_group_idx = torch.div(valid_route_idx, ROUTE_GROUP_SIZE, rounding_mode="floor")
+        route_expert_ids = sorted_expert_ids.index_select(0, route_group_idx)
+        route_token_ids = sorted_token_ids[:num_valid_routes] & 0x00FFFFFF
+        route_weights = sorted_weights[:num_valid_routes]
+        route_token_valid = route_token_ids.lt(tokens)
+
+        for expert in range(experts):
+            route_mask = route_expert_ids.eq(expert) & route_token_valid
+            if not bool(route_mask.any()):
+                continue
+
+            token_ids = route_token_ids[route_mask]
+            weights_e = route_weights[route_mask].unsqueeze(-1)
+            x_e = input_f.index_select(0, token_ids)
+
+            w1_e = self._dequantize_weight_expert(w1_q[expert], fc1_scale[expert])
+            stage1 = x_e @ w1_e.transpose(0, 1)
+            gate, up = stage1.split(inter_dim, dim=-1)
+            activated = F.silu(gate) * up
+
+            w2_e = self._dequantize_weight_expert(w2_q[expert], fc2_scale[expert])
+            stage2 = activated @ w2_e.transpose(0, 1)
+            out.index_add_(0, token_ids, stage2 * weights_e)
+
+        return out.to(self.out_dtype)
+
+
+def make_inputs(
+    *,
+    tokens: int,
+    cfg: MoeConfig,
+    device: torch.device,
+    seed: int,
+) -> dict[str, torch.Tensor]:
+    if cfg.dim % BLOCK_K != 0 or cfg.dim % BLOCK_N != 0:
+        raise ValueError(f"dim must be divisible by {BLOCK_N}/{BLOCK_K}, got {cfg.dim}")
+    if cfg.inter_dim % BLOCK_K != 0 or (cfg.inter_dim * 2) % BLOCK_N != 0:
+        raise ValueError(f"inter_dim must match blockshape, got {cfg.inter_dim}")
+    if cfg.topk > cfg.experts:
+        raise ValueError(f"topk ({cfg.topk}) must be <= experts ({cfg.experts})")
+
+    g = torch.Generator(device=str(device))
+    g.manual_seed(seed + tokens)
+
+    input_q = (
+        torch.randn((tokens, cfg.dim), dtype=torch.float32, device=device, generator=g) * 1.0 + 0.1
+    ).to(torch.float8_e4m3fnuz)
+    w1_q = torch.randn(
+        (cfg.experts, cfg.inter_dim * 2, cfg.dim),
+        dtype=torch.float32,
+        device=device,
+        generator=g,
+    ).mul_(8.0).to(torch.float8_e4m3fnuz)
+    w2_q = torch.randn(
+        (cfg.experts, cfg.dim, cfg.inter_dim),
+        dtype=torch.float32,
+        device=device,
+        generator=g,
+    ).mul_(8.0).to(torch.float8_e4m3fnuz)
+
+    def _rand_pos(shape: tuple[int, ...], mean: float, std: float) -> torch.Tensor:
+        x = torch.randn(shape, dtype=torch.float32, device=device, generator=g) * std + mean
+        return x.clamp_min(1e-8)
+
+    input_scale = _rand_pos((tokens, cfg.dim // BLOCK_K), mean=1e-1, std=2e-2)
+    fc1_scale = _rand_pos(
+        (cfg.experts, ((cfg.inter_dim * 2) // BLOCK_N) * (cfg.dim // BLOCK_K)),
+        mean=1e-2,
+        std=2e-3,
+    )
+    fc2_scale = _rand_pos(
+        (cfg.experts, (cfg.dim // BLOCK_N) * (cfg.inter_dim // BLOCK_K)),
+        mean=1e-2,
+        std=2e-3,
+    )
+
+    scores = torch.randn((tokens, cfg.experts), dtype=torch.float32, device=device, generator=g)
+    topk_val, topk_idx = torch.topk(scores, k=cfg.topk, dim=-1, largest=True, sorted=True)
+    topk_ids = topk_idx.to(torch.int32)
+    topk_weights = torch.softmax(topk_val, dim=-1).to(torch.float32)
+
+    return {
+        "input_q": input_q,
+        "w1_q": w1_q,
+        "w2_q": w2_q,
+        "topk_weights": topk_weights,
+        "topk_ids": topk_ids,
+        "input_scale": input_scale,
+        "fc1_scale": fc1_scale,
+        "fc2_scale": fc2_scale,
+    }
+
+class Model(nn.Module):
+    def __init__(self):
+        super().__init__()
+        raw_cfg = globals().get("EVAL_CONFIG", {})
+        cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+
+        def as_int(key: str, default: int, minimum: int = 1) -> int:
+            raw = cfg.get(key, default)
+            try:
+                val = int(raw)
+            except Exception:
+                val = int(default)
+            return max(minimum, val)
+
+        self.cfg = MoeConfig(
+            dim=as_int("dim", 7168, minimum=128),
+            inter_dim=as_int("inter_dim", 2048, minimum=128),
+            experts=as_int("experts", 32, minimum=1),
+            topk=as_int("topk", 4, minimum=1),
+        )
+        if self.cfg.topk > self.cfg.experts:
+            self.cfg.topk = self.cfg.experts
+        self.ref_impl = MoeSingleOpTorchRef(out_dtype=torch.bfloat16)
+
+    def forward(
+        self,
+        input_q: torch.Tensor,
+        w1_q: torch.Tensor,
+        w2_q: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        input_scale: torch.Tensor,
+        fc1_scale: torch.Tensor,
+        fc2_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.ref_impl.forward(
+            input_q=input_q,
+            w1_q=w1_q,
+            w2_q=w2_q,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+            input_scale=input_scale,
+            fc1_scale=fc1_scale,
+            fc2_scale=fc2_scale,
+        )
+
+
+def get_init_inputs():
+    return []
+
+
+def get_inputs():
+    raw_cfg = globals().get("EVAL_CONFIG", {})
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+
+    def as_int(key: str, default: int, minimum: int = 1) -> int:
+        raw = cfg.get(key, default)
+        try:
+            val = int(raw)
+        except Exception:
+            val = int(default)
+        return max(minimum, val)
+
+    task_cfg = MoeConfig(
+        dim=as_int("dim", 7168, minimum=128),
+        inter_dim=as_int("inter_dim", 2048, minimum=128),
+        experts=as_int("experts", 32, minimum=1),
+        topk=as_int("topk", 4, minimum=1),
+    )
+    if task_cfg.topk > task_cfg.experts:
+        task_cfg.topk = task_cfg.experts
+
+    tokens = as_int("tokens", 1024, minimum=1)
+    seed = as_int("seed", 20260317, minimum=0)
+    d = str(cfg.get("device", "HIP/ROCm:0")).strip()
+    if not d:
+        d = "HIP/ROCm:0"
+    if d.startswith("HIP/ROCm") and not torch.HIP/ROCm.is_available():
+        raise RuntimeError(f"EVAL_CONFIG.device={d!r} requires HIP/ROCm/HIP runtime")
+    device = torch.device(d)
+
+    data = make_inputs(tokens=tokens, cfg=task_cfg, device=device, seed=seed)
+    return [
+        data["input_q"],
+        data["w1_q"],
+        data["w2_q"],
+        data["topk_weights"],
+        data["topk_ids"],
+        data["input_scale"],
+        data["fc1_scale"],
+        data["fc2_scale"],
+    ]
+
+
+def run(
+    input_q,
+    w1_q,
+    w2_q,
+    topk_weights,
+    topk_ids,
+    input_scale,
+    fc1_scale,
+    fc2_scale,
+):
+    model = Model()
+    with torch.inference_mode():
+        return model(
+            input_q,
+            w1_q,
+            w2_q,
+            topk_weights,
+            topk_ids,
+            input_scale,
+            fc1_scale,
+            fc2_scale,
+        )
+
+HIP/ROCm candidate (to audit):
+
+# <complete ModelNew code>
+from __future__ import annotations
+
+from dataclasses import dataclass
+import ctypes
+import ctypes.util
+import torch
+import torch.nn as nn
+
+BLOCK_N = 128
+BLOCK_K = 128
+
+
+@dataclass
+class MoeConfig:
+    dim: int = 7168
+    inter_dim: int = 2048
+    experts: int = 32
+    topk: int = 4
+
+
+_HIP_SRC = r"""
+#include <hip/hip_runtime.h>
+#include <hip/hip_bfloat16.h>
+#include <stdint.h>
+#include <math.h>
+
+__device__ __forceinline__ float fp8_e4m3fnuz_to_float(uint8_t v) {
+    uint32_t sign = (uint32_t)(v >> 7);
+    uint32_t exp  = (uint32_t)((v >> 3) & 0x0F);
+    uint32_t man  = (uint32_t)(v & 0x07);
+
+    float out;
+    // e4m3fnuz (AMD): use bias=8 decode
+    if (exp == 0) {
+        if (man == 0) {
+            out = 0.0f;
+        } else {
+            out = ldexpf((float)man, -10);  // man * 2^-10
+        }
+    } else {
+        int e = (int)exp - 8;
+        out = ldexpf(1.0f + ((float)man) * 0.125f, e);
+    }
+    return sign ? -out : out;
+}
+
+__device__ __forceinline__ float silu_f32(float x) {
+    return x / (1.0f + expf(-x));
+}
+
+template <typename index_t>
+__global__ void fused_moe_kernel_impl(
+    const uint8_t* __restrict__ input_q,      // [T, D], fp8 bytes
+    const uint8_t* __restrict__ w1_q,         // [E, 2I, D], fp8 bytes
+    const uint8_t* __restrict__ w2_q,         // [E, D, I], fp8 bytes
+    const float* __restrict__ topk_weights,   // [T, K]
+    const index_t* __restrict__ topk_ids,     // [T, K]
+    const float* __restrict__ input_scale,    // [T, D/128]
+    const float* __restrict__ fc1_scale,      // [E, (2I/128)*(D/128)]
+    const float* __restrict__ fc2_scale,      // [E, (D/128)*(I/128)]
+    hip_bfloat16* __restrict__ out,           // [T, D]
+    int tokens,
+    int dim,
+    int inter_dim,
+    int experts,
+    int topk
+) {
+    int t = (int)blockIdx.x;
+    if (t >= tokens) return;
+
+    int tid = (int)threadIdx.x;
+
+    // shared layout:
+    // [0:dim)            -> out_accum (float)
+    // [dim:dim+inter_dim)-> activated (float)
+    extern __shared__ float smem[];
+    float* out_accum = smem;
+    float* activated = smem + dim;
+
+    // zero init output accum
+    for (int o = tid; o < dim; o += blockDim.x) {
+        out_accum[o] = 0.0f;
+    }
+    __syncthreads();
+
+    const int dim_blocks = dim / 128;
+    const int fc1_row_blocks = (2 * inter_dim) / 128;
+    const int fc1_scale_stride = fc1_row_blocks * dim_blocks;
+
+    const int fc2_row_blocks = dim / 128;
+    const int fc2_col_blocks = inter_dim / 128;
+    const int fc2_scale_stride = fc2_row_blocks * fc2_col_blocks;
+
+    const long long input_base = (long long)t * (long long)dim;
+    const long long topk_base = (long long)t * (long long)topk;
+    const long long in_scale_base = (long long)t * (long long)dim_blocks;
+
+    for (int k = 0; k < topk; ++k) {
+        int e = (int)topk_ids[topk_base + k];
+        float rw = topk_weights[topk_base + k];
+        bool active = (e >= 0 && e < experts && rw != 0.0f);
+
+        if (active) {
+            const long long w1_e_base = (long long)e * (long long)(2 * inter_dim) * (long long)dim;
+            const float* fc1_e = fc1_scale + (long long)e * (long long)fc1_scale_stride;
+
+            for (int i = tid; i < inter_dim; i += blockDim.x) {
+                int row_gate = i;
+                int row_up = i + inter_dim;
+                int rb_gate = row_gate >> 7;
+                int rb_up = row_up >> 7;
+
+                float gate = 0.0f;
+                float up = 0.0f;
+
+                for (int d = 0; d < dim; ++d) {
+                    int cb = d >> 7;
+
+                    float xs = fp8_e4m3fnuz_to_float(input_q[input_base + d]) * input_scale[in_scale_base + cb];
+
+                    long long idx_g = w1_e_base + (long long)row_gate * (long long)dim + (long long)d;
+                    long long idx_u = w1_e_base + (long long)row_up   * (long long)dim + (long long)d;
+
+                    float wg = fp8_e4m3fnuz_to_float(w1_q[idx_g]) * fc1_e[rb_gate * dim_blocks + cb];
+                    float wu = fp8_e4m3fnuz_to_float(w1_q[idx_u]) * fc1_e[rb_up   * dim_blocks + cb];
+
+                    gate += xs * wg;
+                    up   += xs * wu;
+                }
+                activated[i] = silu_f32(gate) * up;
+            }
+        }
+        __syncthreads();
+
+        if (active) {
+            const long long w2_e_base = (long long)e * (long long)dim * (long long)inter_dim;
+            const float* fc2_e = fc2_scale + (long long)e * (long long)fc2_scale_stride;
+
+            for (int o = tid; o < dim; o += blockDim.x) {
+                int ob = o >> 7;
+                float sum = 0.0f;
+
+                long long w2_row_base = w2_e_base + (long long)o * (long long)inter_dim;
+                for (int i = 0; i < inter_dim; ++i) {
+                    int ib = i >> 7;
+                    float w = fp8_e4m3fnuz_to_float(w2_q[w2_row_base + i]) * fc2_e[ob * fc2_col_blocks + ib];
+                    sum += activated[i] * w;
+                }
+                out_accum[o] += rw * sum;
+            }
+        }
+        __syncthreads();
+    }
+
+    // writeback BF16
+    long long out_base = (long long)t * (long long)dim;
+    for (int o = tid; o < dim; o += blockDim.x) {
+        out[out_base + o] = hip_bfloat16(out_accum[o]);
+    }
+}
+
+extern "C" __global__ void fused_moe_kernel_i32(
+    const uint8_t* input_q,
+    const uint8_t* w1_q,
+    const uint8_t* w2_q,
+    const float* topk_weights,
+    const int* topk_ids,
+    const float* input_scale,
+    const float* fc1_scale,
+    const float* fc2_scale,
+    hip_bfloat16* out,
+    int tokens,
+    int dim,
+    int inter_dim,
+    int experts,
+    int topk
+) {
+    fused_moe_kernel_impl<int>(
+        input_q, w1_q, w2_q, topk_weights, topk_ids, input_scale, fc1_scale, fc2_scale, out,
+        tokens, dim, inter_dim, experts, topk
+    );
+}
+
+extern "C" __global__ void fused_moe_kernel_i64(
+    const uint8_t* input_q,
+    const uint8_t* w1_q,
+    const uint8_t* w2_q,
+    const float* topk_weights,
+    const long long* topk_ids,
+    const float* input_scale,
+    const float* fc1_scale,
+    const float* fc2_scale,
+    hip_bfloat16* out,
+    int tokens,
+    int dim,
+    int inter_dim,
+    int experts,
+    int topk
+) {
+    fused_moe_kernel_impl<long long>(
+        input_q, w1_q, w2_q, topk_weights, topk_ids, input_scale, fc1_scale, fc2_scale, out,
+        tokens, dim, inter_dim, experts, topk
+    );
+}
+"""
+
+
+def _load_cdll(candidates):
+    for name in candidates:
+        try:
+            return ctypes.CDLL(name, mode=ctypes.RTLD_GLOBAL)
+        except OSError:
+            pass
+    raise RuntimeError(f"Unable to load shared library from candidates: {candidates}")
+
+
+class _HipFusedMoeRuntime:
+    def __init__(self):
+        if not torch.HIP/ROCm.is_available():
+            raise RuntimeError("HIP/ROCm HIP/ROCm-compatible runtime is required")
+
+        hip_lib_candidates = []
+        found_hip = ctypes.util.find_library("amdhip64")
+        if found_hip:
+            hip_lib_candidates.append(found_hip)
+        hip_lib_candidates += ["libamdhip64.so", "libamdhip64.so.6", "libamdhip64.so.5"]
+        self.hip = _load_cdll(hip_lib_candidates)
+
+        hiprtc_lib_candidates = []
+        found_hiprtc = ctypes.util.find_library("hiprtc")
+        if found_hiprtc:
+            hiprtc_lib_candidates.append(found_hiprtc)
+        hiprtc_lib_candidates += ["libhiprtc.so", "libhiprtc.so.6", "libhiprtc.so.5"]
+        self.hiprtc = _load_cdll(hiprtc_lib_candidates)
+
+        # hiprtc API
+        self.hiprtc.hiprtcCreateProgram.argtypes = [
+            ctypes.POINTER(ctypes.c_void_p), ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p)
+        ]
+        self.hiprtc.hiprtcCreateProgram.restype = ctypes.c_int
+        self.hiprtc.hiprtcCompileProgram.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p)]
+        self.hiprtc.hiprtcCompileProgram.restype = ctypes.c_int
+        self.hiprtc.hiprtcGetProgramLogSize.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_size_t)]
+        self.hiprtc.hiprtcGetProgramLogSize.restype = ctypes.c_int
+        self.hiprtc.hiprtcGetProgramLog.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        self.hiprtc.hiprtcGetProgramLog.restype = ctypes.c_int
+        self.hiprtc.hiprtcGetCodeSize.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_size_t)]
+        self.hiprtc.hiprtcGetCodeSize.restype = ctypes.c_int
+        self.hiprtc.hiprtcGetCode.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        self.hiprtc.hiprtcGetCode.restype = ctypes.c_int
+        self.hiprtc.hiprtcDestroyProgram.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        self.hiprtc.hiprtcDestroyProgram.restype = ctypes.c_int
+
+        # hip module API
+        self.hip.hipModuleLoadData.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
+        self.hip.hipModuleLoadData.restype = ctypes.c_int
+        self.hip.hipModuleGetFunction.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.c_char_p]
+        self.hip.hipModuleGetFunction.restype = ctypes.c_int
+        self.hip.hipModuleLaunchKernel.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+            ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+            ctypes.c_uint, ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p)
+        ]
+        self.hip.hipModuleLaunchKernel.restype = ctypes.c_int
+
+        self._compiled = {}  # key: (device_index, index_dtype_str) -> function ptr
+
+    @staticmethod
+    def _check(code: int, where: str):
+        if code != 0:
+            raise RuntimeError(f"{where} failed with error code {code}")
+
+    def _compile_for_device(self, device_index: int):
+        key_i32 = (device_index, "i32")
+        key_i64 = (device_index, "i64")
+        if key_i32 in self._compiled and key_i64 in self._compiled:
+            return
+
+        prog = ctypes.c_void_p()
+        src_bytes = _HIP_SRC.encode("utf-8")
+        self._check(
+            self.hiprtc.hiprtcCreateProgram(
+                ctypes.byref(prog),
+                ctypes.c_char_p(src_bytes),
+                ctypes.c_char_p(b"fused_moe_kernel.hip"),
+                0, None, None,
+            ),
+            "hiprtcCreateProgram",
+        )
+
+        props = torch.HIP/ROCm.get_device_properties(device_index)
+        arch = getattr(props, "gcnArchName", None)
+        opts = [b"--std=c++17", b"-O3", b"-ffast-math"]
+        if isinstance(arch, str) and len(arch) > 0:
+            arch_name = arch.split(":")[0]
+            opts.append(f"--gpu-architecture={arch_name}".encode("utf-8"))
+        opt_arr = (ctypes.c_char_p * len(opts))(*opts)
+
+        compile_rc = self.hiprtc.hiprtcCompileProgram(prog, len(opts), opt_arr)
+        if compile_rc != 0:
+            log_size = ctypes.c_size_t(0)
+            self.hiprtc.hiprtcGetProgramLogSize(prog, ctypes.byref(log_size))
+            log_buf = ctypes.create_string_buffer(log_size.value if log_size.value > 0 else 1)
+            self.hiprtc.hiprtcGetProgramLog(prog, log_buf)
+            self.hiprtc.hiprtcDestroyProgram(ctypes.byref(prog))
+            raise RuntimeError(f"hiprtcCompileProgram failed ({compile_rc}):\n{log_buf.value.decode(errors='ignore')}")
+
+        code_size = ctypes.c_size_t(0)
+        self._check(self.hiprtc.hiprtcGetCodeSize(prog, ctypes.byref(code_size)), "hiprtcGetCodeSize")
+        code_buf = ctypes.create_string_buffer(code_size.value)
+        self._check(self.hiprtc.hiprtcGetCode(prog, code_buf), "hiprtcGetCode")
+        self._check(self.hiprtc.hiprtcDestroyProgram(ctypes.byref(prog)), "hiprtcDestroyProgram")
+
+        module = ctypes.c_void_p()
+        self._check(
+            self.hip.hipModuleLoadData(ctypes.byref(module), ctypes.cast(code_buf, ctypes.c_void_p)),
+            "hipModuleLoadData",
+        )
+
+        func_i32 = ctypes.c_void_p()
+        func_i64 = ctypes.c_void_p()
+        self._check(
+            self.hip.hipModuleGetFunction(ctypes.byref(func_i32), module, ctypes.c_char_p(b"fused_moe_kernel_i32")),
+            "hipModuleGetFunction(i32)",
+        )
+        self._check(
+            self.hip.hipModuleGetFunction(ctypes.byref(func_i64), module, ctypes.c_char_p(b"fused_moe_kernel_i64")),
+            "hipModuleGetFunction(i64)",
+        )
+
+        self._compiled[key_i32] = (module, func_i32)
+        self._compiled[key_i64] = (module, func_i64)
+
+    def __call__(
+        self,
+        input_q: torch.Tensor,
+        w1_q: torch.Tensor,
+        w2_q: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        input_scale: torch.Tensor,
+        fc1_scale: torch.Tensor,
+        fc2_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        if not (input_q.is_cuda and w1_q.is_cuda and w2_q.is_cuda and topk_weights.is_cuda and topk_ids.is_cuda and input_scale.is_cuda and fc1_scale.is_cuda and fc2_scale.is_cuda):
+            raise RuntimeError("All runtime tensors must be on GPU")
+
+        dev = input_q.device
+        for t in (w1_q, w2_q, topk_weights, topk_ids, input_scale, fc1_scale, fc2_scale):
+            if t.device != dev:
+                raise RuntimeError("All runtime tensors must be on the same GPU device")
+
+        if topk_ids.dtype not in (torch.int32, torch.int64):
+            raise RuntimeError("topk_ids must be int32 or int64 on GPU")
+        if topk_weights.dtype != torch.float32:
+            raise RuntimeError("topk_weights must be float32")
+        if input_scale.dtype != torch.float32 or fc1_scale.dtype != torch.float32 or fc2_scale.dtype != torch.float32:
+            raise RuntimeError("scale tensors must be float32")
+
+        if not (input_q.is_contiguous() and w1_q.is_contiguous() and w2_q.is_contiguous() and topk_weights.is_contiguous() and topk_ids.is_contiguous() and input_scale.is_contiguous() and fc1_scale.is_contiguous() and fc2_scale.is_contiguous()):
+            raise RuntimeError("All input tensors must be contiguous")
+
+        if input_q.dim() != 2 or w1_q.dim() != 3 or w2_q.dim() != 3:
+            raise RuntimeError("Invalid tensor ranks")
+
+        tokens, dim = input_q.shape
+        experts = w1_q.shape[0]
+        inter2 = w1_q.shape[1]
+        if inter2 % 2 != 0:
+            raise RuntimeError("w1_q second dimension must be 2 * inter_dim")
+        inter_dim = inter2 // 2
+
+        if w1_q.shape[2] != dim:
+            raise RuntimeError("w1_q shape mismatch")
+        if w2_q.shape[0] != experts or w2_q.shape[1] != dim or w2_q.shape[2] != inter_dim:
+            raise RuntimeError("w2_q shape mismatch")
+        if topk_weights.shape[0] != tokens or topk_ids.shape[0] != tokens:
+            raise RuntimeError("topk tensors token mismatch")
+
+        topk = int(topk_ids.shape[1])
+        if topk_weights.shape[1] != topk:
+            raise RuntimeError("topk_weights/topk_ids mismatch")
+        if dim % BLOCK_K != 0 or dim % BLOCK_N != 0:
+            raise RuntimeError("dim must be divisible by 128")
+        if inter_dim % BLOCK_K != 0 or (2 * inter_dim) % BLOCK_N != 0:
+            raise RuntimeError("inter_dim must satisfy block constraints")
+
+        if input_scale.shape != (tokens, dim // BLOCK_K):
+            raise RuntimeError("input_scale shape mismatch")
+        fc1_expected = ((2 * inter_dim) // BLOCK_N) * (dim // BLOCK_K)
+        fc2_expected = (dim // BLOCK_N) * (inter_dim // BLOCK_K)
+        if fc1_scale.shape != (experts, fc1_expected):
+            raise RuntimeError("fc1_scale shape mismatch")
+        if fc2_scale.shape != (experts, fc2_expected):
+            raise RuntimeError("fc2_scale shape mismatch")
+
+        shared_bytes = (dim + inter_dim) * 4
+        if shared_bytes > 64 * 1024:
+            raise RuntimeError(f"Shared memory requirement {shared_bytes} exceeds 64KB per CU")
+
+        out = torch.empty((tokens, dim), device=dev, dtype=torch.bfloat16)
+
+        dev_index = dev.index if dev.index is not None else torch.HIP/ROCm.current_device()
+        self._compile_for_device(dev_index)
+
+        kname = "i32" if topk_ids.dtype == torch.int32 else "i64"
+        _, func = self._compiled[(dev_index, kname)]
+
+        args = [
+            ctypes.c_void_p(input_q.data_ptr()),
+            ctypes.c_void_p(w1_q.data_ptr()),
+            ctypes.c_void_p(w2_q.data_ptr()),
+            ctypes.c_void_p(topk_weights.data_ptr()),
+            ctypes.c_void_p(topk_ids.data_ptr()),
+            ctypes.c_void_p(input_scale.data_ptr()),
+            ctypes.c_void_p(fc1_scale.data_ptr()),
+            ctypes.c_void_p(fc2_scale.data_ptr()),
+            ctypes.c_void_p(out.data_ptr()),
+            ctypes.c_int(tokens),
+            ctypes.c_int(dim),
+            ctypes.c_int(inter_dim),
+            ctypes.c_int(experts),
+            ctypes.c_int(topk),
+        ]
+        arg_ptrs = (ctypes.c_void_p * len(args))(
+            *[ctypes.cast(ctypes.pointer(a), ctypes.c_void_p) for a in args]
+        )
+
+        stream = torch.HIP/ROCm.current_stream(device=dev).cuda_stream
+        self._check(
+            self.hip.hipModuleLaunchKernel(
+                func,
+                ctypes.c_uint(tokens), ctypes.c_uint(1), ctypes.c_uint(1),
+                ctypes.c_uint(256), ctypes.c_uint(1), ctypes.c_uint(1),
+                ctypes.c_uint(shared_bytes),
+                ctypes.c_void_p(stream),
+                arg_ptrs,
+                None,
+            ),
+            "hipModuleLaunchKernel",
+        )
+        return out
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        raw_cfg = globals().get("EVAL_CONFIG", {})
+        cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+
+        def as_int(key: str, default: int, minimum: int = 1) -> int:
+            raw = cfg.get(key, default)
+            try:
+                val = int(raw)
+            except Exception:
+                val = int(default)
+            return max(minimum, val)
+
+        self.cfg = MoeConfig(
+            dim=as_int("dim", 7168, minimum=128),
+            inter_dim=as_int("inter_dim", 2048, minimum=128),
+            experts=as_int("experts", 32, minimum=1),
+            topk=as_int("topk", 4, minimum=1),
+        )
+        if self.cfg.topk > self.cfg.experts:
+            self.cfg.topk = self.cfg.experts
+        self._op = _HipFusedMoeRuntime()
+
+    def forward(
+        self,
+        input_q: torch.Tensor,
+        w1_q: torch.Tensor,
+        w2_q: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        input_scale: torch.Tensor,
+        fc1_scale: torch.Tensor,
+        fc2_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        return self._op(
+            input_q=input_q,
+            w1_q=w1_q,
+            w2_q=w2_q,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+            input_scale=input_scale,
+            fc1_scale=fc1_scale,
+            fc2_scale=fc2_scale,
+        )
+
+
+Follow the Rules and produce the JSON exactly in the specified format.

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+export HTTP_PROXY="http://127.0.0.1:18080"
+export HTTPS_PROXY="http://127.0.0.1:18080"
+export ALL_PROXY="http://127.0.0.1:18080"
+export http_proxy="http://127.0.0.1:18080"
+export https_proxy="http://127.0.0.1:18080"
+export all_proxy="http://127.0.0.1:18080"
+export NO_PROXY="127.0.0.1,localhost,::1"
+export no_proxy="127.0.0.1,localhost,::1"
+export SSL_CERT_FILE="/root/.mitmproxy/mitmproxy-ca-cert.pem"
+export REQUESTS_CA_BUNDLE="/root/.mitmproxy/mitmproxy-ca-cert.pem"
+export CURL_CA_BUNDLE="/root/.mitmproxy/mitmproxy-ca-cert.pem"
+export NODE_EXTRA_CA_CERTS="/root/.mitmproxy/mitmproxy-ca-cert.pem"

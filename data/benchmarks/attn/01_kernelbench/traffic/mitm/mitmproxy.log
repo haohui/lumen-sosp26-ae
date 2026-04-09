@@ -1,0 +1,14 @@
+Loading script /workspace/kernel_benchmark/scripts/mitm_trace_export.py
+Proxy server listening at 127.0.0.1:18486
+127.0.0.1:49318: client connect
+127.0.0.1:49318: server connect raw.githubusercontent.com:443 (185.199.109.133:443)
+127.0.0.1:49318: GET https://raw.githubusercontent.com/BerriAI/litellm/main/…
+              << 200 OK 66.3k
+127.0.0.1:49318: client disconnect
+127.0.0.1:49318: server disconnect raw.githubusercontent.com:443 (185.199.109.133:443)
+127.0.0.1:59006: client connect
+127.0.0.1:59006: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:59006: POST https://api.openai.com/v1/responses
+              << 200 OK 591k
+127.0.0.1:59006: client disconnect
+127.0.0.1:59006: server disconnect api.openai.com:443 (162.159.140.245:443)

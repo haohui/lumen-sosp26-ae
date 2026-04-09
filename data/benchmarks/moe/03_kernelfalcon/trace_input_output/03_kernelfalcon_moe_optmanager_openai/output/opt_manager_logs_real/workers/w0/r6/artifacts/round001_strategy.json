@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "For _fused_moe_kernel, compute utilization is 91.95% (sm__throughput) and roofline Compute SOL is 91.9%, while DRAM throughput is only 42.14% of peak; this indicates arithmetic throughput limits performance rather than memory bandwidth.",
+    "root_causes": [
+      {
+        "cause": "Heavy non-tensor vector ALU workload from fused FC1+SiLU+FC2 reductions dominates execution.",
+        "evidence": [
+          {
+            "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 91.94812118392947,
+            "interpretation": "SM pipelines are close to saturated, leaving little compute headroom."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Rewrite inner products to use MFMA/tensor-core-style matrix fragments (or Triton dot paths that lower to matrix instructions) and pack data to supported low-precision formats.",
+            "rationale": "Current tensor activity is zero, so shifting work from VALU reductions to matrix engines can raise effective FLOP throughput and reduce VALU bottleneck pressure."
+          }
+        ]
+      },
+      {
+        "cause": "Kernel is instruction-dense due to repeated scalar/vector ops inside nested TOPK \u00d7 INTER_DIM \u00d7 MODEL_DIM loops with dequant and scaling in-loop.",
+        "evidence": [
+          {
+            "metric": "sm__inst_executed.sum",
+            "value": 165535803599.0,
+            "interpretation": "Very high dynamic instruction count indicates instruction throughput pressure in the fused loop body."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Reduce per-iteration instruction count by hoisting invariant scale/address calculations and increasing K/J tile reuse (autotune BLOCK_J/BLOCK_K and unroll strategy).",
+            "rationale": "Lower instruction overhead per output element improves IPC under an already compute-saturated regime."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Rewrite inner products to use MFMA/tensor-core-style matrix fragments (or Triton dot paths that lower to matrix instructions) and pack data to supported low-precision formats.",
+        "rationale": "Current tensor activity is zero, so shifting work from VALU reductions to matrix engines can raise effective FLOP throughput and reduce VALU bottleneck pressure."
+      },
+      {
+        "fix": "Reduce per-iteration instruction count by hoisting invariant scale/address calculations and increasing K/J tile reuse (autotune BLOCK_J/BLOCK_K and unroll strategy).",
+        "rationale": "Lower instruction overhead per output element improves IPC under an already compute-saturated regime."
+      }
+    ]
+  }
+]

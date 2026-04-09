@@ -1,0 +1,11 @@
+{
+  "out_root": "/workspace/kernel_benchmark/opt_kernel/moe-openai/03_kernelfalcon/output/fused/triton_dumps_20260401_063128",
+  "workloads": [
+    1024,
+    2048,
+    4096,
+    8192,
+    16384
+  ],
+  "generated_at": "2026-04-01 06:31:45"
+}

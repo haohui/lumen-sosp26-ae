@@ -1,0 +1,72 @@
+{
+  "1024": {
+    "cache_dir": "ECODQQKRJ7BCLI4JN5IEOLZCL2TOIIB5AB752F4BLLJ7Z6K5J26A",
+    "hash": "209c3841514fc225a3896f50472f225ea6e4203d007fdd17815ad3fcf95d4ebc",
+    "files": [
+      "mnk_1024x1024x1024_kernel.amdgcn",
+      "mnk_1024x1024x1024_kernel.hsaco",
+      "mnk_1024x1024x1024_kernel.json",
+      "mnk_1024x1024x1024_kernel.llir",
+      "mnk_1024x1024x1024_kernel.source",
+      "mnk_1024x1024x1024_kernel.ttgir",
+      "mnk_1024x1024x1024_kernel.ttir",
+      "mnk_1024x1024x1024_kernel_group.json"
+    ]
+  },
+  "2048": {
+    "cache_dir": "3YKY3VOMWECRLC7WQL5U55SXS37QRO5SOJJK3WCPUPPYI4SRKLDA",
+    "hash": "de158dd5ccb105158bf682fb4ef65796ff08bbb27252add84fa3df84725152c6",
+    "files": [
+      "mnk_2048x2048x2048_kernel.amdgcn",
+      "mnk_2048x2048x2048_kernel.hsaco",
+      "mnk_2048x2048x2048_kernel.json",
+      "mnk_2048x2048x2048_kernel.llir",
+      "mnk_2048x2048x2048_kernel.source",
+      "mnk_2048x2048x2048_kernel.ttgir",
+      "mnk_2048x2048x2048_kernel.ttir",
+      "mnk_2048x2048x2048_kernel_group.json"
+    ]
+  },
+  "4096": {
+    "cache_dir": "FDTL3YIHDWY3VBZQF4ELAP5OPCZNNVZARXPB76S6WAKFIJZBPEWQ",
+    "hash": "28e6bde1071db1ba87302f08b03fae78b2d6d7208dde1ffa5eb014542721792d",
+    "files": [
+      "mnk_4096x4096x4096_kernel.amdgcn",
+      "mnk_4096x4096x4096_kernel.hsaco",
+      "mnk_4096x4096x4096_kernel.json",
+      "mnk_4096x4096x4096_kernel.llir",
+      "mnk_4096x4096x4096_kernel.source",
+      "mnk_4096x4096x4096_kernel.ttgir",
+      "mnk_4096x4096x4096_kernel.ttir",
+      "mnk_4096x4096x4096_kernel_group.json"
+    ]
+  },
+  "8192": {
+    "cache_dir": "4FGA76GNHQUPL2NNHKEOQEVZAQO65ZMCJUT7COGXSXX2UG3FA52A",
+    "hash": "e14c0ff8cd3c28f5e9ad3a88e812b9041deee5824d27f138d795efaa1b650774",
+    "files": [
+      "mnk_8192x8192x8192_kernel.amdgcn",
+      "mnk_8192x8192x8192_kernel.hsaco",
+      "mnk_8192x8192x8192_kernel.json",
+      "mnk_8192x8192x8192_kernel.llir",
+      "mnk_8192x8192x8192_kernel.source",
+      "mnk_8192x8192x8192_kernel.ttgir",
+      "mnk_8192x8192x8192_kernel.ttir",
+      "mnk_8192x8192x8192_kernel_group.json"
+    ]
+  },
+  "16384": {
+    "cache_dir": "ZJMPNOQQ4ZHR7KKPHNXRGZRS3M3OQ4OC3CIDX3NZVEMLZ6RZQJGA",
+    "hash": "ca58f6ba10e64f1fa94f3b6f136632db36e871c2d8903bedb9a918bcfa39824c",
+    "files": [
+      "mnk_16384x16384x16384_kernel.amdgcn",
+      "mnk_16384x16384x16384_kernel.hsaco",
+      "mnk_16384x16384x16384_kernel.json",
+      "mnk_16384x16384x16384_kernel.llir",
+      "mnk_16384x16384x16384_kernel.source",
+      "mnk_16384x16384x16384_kernel.ttgir",
+      "mnk_16384x16384x16384_kernel.ttir",
+      "mnk_16384x16384x16384_kernel_group.json"
+    ]
+  }
+}

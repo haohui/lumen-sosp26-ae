@@ -1,0 +1,664 @@
+[2026-04-01_01:40:35] non-canonical reference allowed: /workspace/kernel_benchmark/opt_kernel/moe/moe_ref.py
+[2026-04-01_01:40:35] repo_root=/workspace/kernel_benchmark
+[2026-04-01_01:40:35] trace_root=/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg
+[2026-04-01_01:40:35] reference=/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/_prepared_refs/moe_ref_fused.py
+[2026-04-01_01:40:35] server_type=openai api_provider=openai model_name=gpt-5.3-codex rounds=10 cf_tol=1e-3 reasoning_effort=high kf_run_mode=optmanager kf_seed_rounds=2 kf_force_exact_opt_rounds=1 kf_force_route_kernelagent=1 kf_max_output_tokens=32000 kf_error_context_max_bytes=65536 kf_high_reasoning=1 kb_custom_prompt_key=moe_hip_fused_hint kb_plaintext_fallback=true kb_try_cleanup_for_moe=true kb_check_kernel=0 ksearch_trace_log_max_chars=80000 ksearch_compile_error_log_max_chars=240000 ksearch_openai_max_output_tokens=32000 rocr_visible_devices=5 start_baseline=3 end_baseline=3 allow_non_canonical_reference=1 moe_prompt_mode=fused
+[prepare_moe_reference_assets] reference=/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/_prepared_refs/moe_ref_fused.py
+[prepare_moe_reference_assets] kernelbench_task=/workspace/kernel_benchmark/opt_kernel/moe/baseline_tasks/kernelbench/level1/1_Moe_FP8_BlockScale.py status=symlinked
+[prepare_moe_reference_assets] ksearch_definition=/workspace/kernel_benchmark/opt_kernel/moe/baseline_tasks/ksearch_moe_flashinfer/definitions/moe/moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048.json
+[prepare_moe_reference_assets] ksearch_workloads=/workspace/kernel_benchmark/opt_kernel/moe/baseline_tasks/ksearch_moe_flashinfer/workloads/moe/moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048.jsonl
+[prepare_moe_reference_assets] ksearch_routing_blobs=3
+[prepare_moe_reference_assets] ksearch_scale_blobs=3
+[prepare_moe_reference_assets] ksearch_traces_removed=/workspace/kernel_benchmark/opt_kernel/moe/baseline_tasks/ksearch_moe_flashinfer/traces/moe/moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048.jsonl
+[prepare_moe_reference_assets] prompt_mode=fused
+[verify] shared_reference_ok kb=/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/_prepared_refs/moe_ref_fused.py ksearch=/workspace/kernel_benchmark/opt_kernel/moe/baseline_tasks/ksearch_moe_flashinfer/definitions/moe/moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048.json
+[verify] prompt_mode_ok mode=fused definition=/workspace/kernel_benchmark/opt_kernel/moe/baseline_tasks/ksearch_moe_flashinfer/definitions/moe/moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048.json
+[2026-04-01_01:40:37] baseline=03_kernelfalcon_moe_optmanager_openai
+[router-cache] forced kernelagent for /workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/_prepared_refs/moe_ref_fused.py
+2026-04-01 01:40:37,624 - TritonKernelAgent - INFO - ============================================================
+2026-04-01 01:40:37,624 - TritonKernelAgent - INFO - Starting kernel generation
+2026-04-01 01:40:37,624 - TritonKernelAgent - INFO - Problem: #!/usr/bin/env python3
+# PROMPT_MODE_INJECT_BEGIN
+# Anti-hack requirement for generated ModelNew run...
+2026-04-01 01:40:37,624 - TritonKernelAgent - INFO - Generating test code using gpt-5.3-codex
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=17
+2026-04-01 01:42:04,220 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-04-01 01:42:04,280 - utils.providers.openai_base - INFO - OpenAI responses API response (single): {'id': 'resp_0071be52619c00300069cc77966a388195a3a1bf13bef84c37', 'created_at': 1775007638.0, 'error': None, 'incomplete_details': None, 'instructions': None, 'metadata': {}, 'model': 'gpt-5.3-codex', 'object': 'response', 'output': [{'id': 'rs_0071be52619c00300069cc77973dbc8195bb920c75a06a98f8', 'summary': [], 'type': 'reasoning', 'content': None, 'encrypted_content': None, 'status': None}, {'id': 'msg_0071be52619c00300069cc77cd1a448195a5342e111fb5c79f', 'content': [{'annotations': [], 'text': '```python\n#!/usr/bin/env python3\nimport sys\nimport traceback\nfrom dataclasses import dataclass\n\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\n# Summary:\n# Test a fused MoE kernel against the provided PyTorch reference semantics:\n# dequantize input/weights -> route build -> per-expert FC1 + SiLU*up + FC2 -> weighted combine -> BF16 output.\n\nBLOCK_N = 128\nBLOCK_K = 128\nROUTE_GROUP_SIZE = 32\n\n\n@dataclass\nclass MoeConfig:\n    dim: int = 256\n    inter_dim: int = 128\n    experts: int = 8\n    topk: int = 4\n\n\nclass MoeSingleOpTorchRef:\n    def __init__(self, out_dtype: torch.dtype = torch.bfloat16):\n        self.block_n = BLOCK_N\n        self.block_k = BLOCK_K\n        self.out_dtype = out_dtype\n\n    def _dequantize_input(self, input_q: torch.Tensor, input_scale: torch.Tensor) -> torch.Tensor:\n        tokens, model_dim = input_q.shape\n        blocks = input_q.to(torch.float32).view(tokens, model_dim // self.block_k, self.block_k)\n        return (blocks * input_scale.to(torch.float32).unsqueeze(-1)).reshape(tokens, model_dim)\n\n    def _dequantize_weight_expert(\n        self,\n        weight_q_expert: torch.Tensor,\n        scale_expert: torch.Tensor,\n    ) -> torch.Tensor:\n        rows, cols = weight_q_expert.shape\n        row_blocks = rows // self.block_n\n        col_blocks = cols // self.block_k\n        blocks = (\n            weight_q_expert.to(torch.float32)\n            .view(row_blocks, self.block_n, col_blocks, self.block_k)\n            .permute(0, 2, 1, 3)\n            .contiguous()\n        )\n        scaled_blocks = blocks * scale_expert.to(torch.float32).view(row_blocks, col_blocks, 1, 1)\n        return scaled_blocks.permute(0, 2, 1, 3).reshape(rows, cols).contiguous()\n\n    def _build_sorted_routes(\n        self,\n        topk_ids_i64: torch.Tensor,\n        topk_weights_f: torch.Tensor,\n        num_experts: int,\n    ):\n        tokens, topk = topk_ids_i64.shape\n        max_num_tokens_padded = tokens * topk + num_experts * ROUTE_GROUP_SIZE - topk\n        max_num_m_blocks = (max_num_tokens_padded + ROUTE_GROUP_SIZE - 1) // ROUTE_GROUP_SIZE\n\n        init_val = (topk << 24) | tokens\n        sorted_token_ids = torch.full(\n            (max_num_tokens_padded,),\n            init_val,\n            dtype=torch.int64,\n            device=topk_ids_i64.device,\n        )\n        sorted_weights = torch.zeros((max_num_tokens_padded,), dtype=torch.float32, device=topk_weights_f.device)\n        sorted_expert_ids = torch.full(\n            (max_num_m_blocks,),\n            -1,\n            dtype=torch.int64,\n            device=topk_ids_i64.device,\n        )\n\n        sorted_ids_begin = 0\n        sorted_expert_ids_begin = 0\n        for expert in range(num_experts):\n            mask = topk_ids_i64.eq(expert)\n            if not bool(mask.any()):\n                continue\n\n            token_ids, slot_ids = torch.nonzero(mask, as_tuple=True)\n            tokens_num = int(token_ids.numel())\n\n            route_ids = (slot_ids.to(torch.int64) << 24) | token_ids.to(torch.int64)\n            sorted_token_ids[sorted_ids_begin: sorted_ids_begin + tokens_num] = route_ids\n            sorted_weights[sorted_ids_begin: sorted_ids_begin + tokens_num] = topk_weights_f[token_ids, slot_ids]\n\n            sorted_expert_ids_num = (tokens_num + ROUTE_GROUP_SIZE - 1) // ROUTE_GROUP_SIZE\n            tokens_num_pad = sorted_expert_ids_num * ROUTE_GROUP_SIZE\n            sorted_expert_ids[sorted_expert_ids_begin: sorted_expert_ids_begin + sorted_expert_ids_num] = expert\n\n            sorted_ids_begin += tokens_num_pad\n            sorted_expert_ids_begin += sorted_expert_ids_num\n\n        num_valid_ids = torch.empty((2,), dtype=torch.int64, device=topk_ids_i64.device)\n        num_valid_ids[0] = sorted_ids_begin\n        num_valid_ids[1] = tokens\n        return sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids\n\n    def forward(\n        self,\n        input_q: torch.Tensor,\n        w1_q: torch.Tensor,\n        w2_q: torch.Tensor,\n        topk_weights: torch.Tensor,\n        topk_ids: torch.Tensor,\n        input_scale: torch.Tensor,\n        fc1_scale: torch.Tensor,\n        fc2_scale: torch.Tensor,\n    ) -> torch.Tensor:\n        tokens, model_dim = input_q.shape\n        experts, _, inter_dim = w2_q.shape\n\n        input_f = self._dequantize_input(input_q, input_scale)\n        topk_ids_i64 = topk_ids.to(torch.int64).contiguous()\n        topk_weights_f = topk_weights.to(torch.float32).contiguous()\n\n        out = torch.zeros((tokens, model_dim), dtype=torch.float32, device=input_q.device)\n        sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids = self._build_sorted_routes(\n            topk_ids_i64=topk_ids_i64,\n            topk_weights_f=topk_weights_f,\n            num_experts=experts,\n        )\n        num_valid_routes = int(num_valid_ids[0].item())\n        if num_valid_routes == 0:\n            return out.to(self.out_dtype)\n\n        valid_route_idx = torch.arange(num_valid_routes, dtype=torch.int64, device=input_q.device)\n        route_group_idx = torch.div(valid_route_idx, ROUTE_GROUP_SIZE, rounding_mode="floor")\n        route_expert_ids = sorted_expert_ids.index_select(0, route_group_idx)\n        route_token_ids = sorted_token_ids[:num_valid_routes] & 0x00FFFFFF\n        route_weights = sorted_weights[:num_valid_routes]\n        route_token_valid = route_token_ids.lt(tokens)\n\n        for expert in range(experts):\n            route_mask = route_expert_ids.eq(expert) & route_token_valid\n            if not bool(route_mask.any()):\n                continue\n\n            token_ids = route_token_ids[route_mask]\n            weights_e = route_weights[route_mask].unsqueeze(-1)\n            x_e = input_f.index_select(0, token_ids)\n\n            w1_e = self._dequantize_weight_expert(w1_q[expert], fc1_scale[expert])\n            stage1 = x_e @ w1_e.transpose(0, 1)\n            gate, up = stage1.split(inter_dim, dim=-1)\n            activated = F.silu(gate) * up\n\n            w2_e = self._dequantize_weight_expert(w2_q[expert], fc2_scale[expert])\n            stage2 = activated @ w2_e.transpose(0, 1)\n            out.index_add_(0, token_ids, stage2 * weights_e)\n\n        return out.to(self.out_dtype)\n\n\nclass Model(nn.Module):\n    def __init__(self, cfg: MoeConfig):\n        super().__init__()\n        self.cfg = cfg\n        self.ref_impl = MoeSingleOpTorchRef(out_dtype=torch.bfloat16)\n\n    def forward(\n        self,\n        input_q: torch.Tensor,\n        w1_q: torch.Tensor,\n        w2_q: torch.Tensor,\n        topk_weights: torch.Tensor,\n        topk_ids: torch.Tensor,\n        input_scale: torch.Tensor,\n        fc1_scale: torch.Tensor,\n        fc2_scale: torch.Tensor,\n    ) -> torch.Tensor:\n        return self.ref_impl.forward(\n            input_q=input_q,\n            w1_q=w1_q,\n            w2_q=w2_q,\n            topk_weights=topk_weights,\n            topk_ids=topk_ids,\n            input_scale=input_scale,\n            fc1_scale=fc1_scale,\n            fc2_scale=fc2_scale,\n        )\n\n\ndef get_init_inputs():\n    return []\n\n\ndef _gpu_available() -> bool:\n    if hasattr(torch, "gpu") and hasattr(torch.gpu, "is_available"):\n        try:\n            if torch.gpu.is_available():\n                return True\n        except Exception:\n            pass\n    return torch.cuda.is_available()\n\n\ndef _get_device() -> torch.device:\n    if not _gpu_available():\n        raise RuntimeError("HIP/ROCm not available")\n    # On ROCm PyTorch typically uses device type \'cuda\'\n    return torch.device("cuda:0")\n\n\ndef make_inputs(tokens: int, cfg: MoeConfig, device: torch.device, seed: int):\n    if not hasattr(torch, "float8_e4m3fnuz"):\n        raise RuntimeError("torch.float8_e4m3fnuz is required by this problem but is not available.")\n\n    if cfg.dim % BLOCK_K != 0 or cfg.dim % BLOCK_N != 0:\n        raise ValueError(f"dim must be divisible by {BLOCK_N}/{BLOCK_K}, got {cfg.dim}")\n    if cfg.inter_dim % BLOCK_K != 0 or (cfg.inter_dim * 2) % BLOCK_N != 0:\n        raise ValueError(f"inter_dim must match blockshape, got {cfg.inter_dim}")\n    if cfg.topk > cfg.experts:\n        raise ValueError(f"topk ({cfg.topk}) must be <= experts ({cfg.experts})")\n\n    g = torch.Generator(device=str(device))\n    g.manual_seed(seed + tokens)\n    f8 = torch.float8_e4m3fnuz\n\n    input_q = (torch.randn((tokens, cfg.dim), dtype=torch.float32, device=device, generator=g) * 1.0 + 0.1).to(f8)\n    w1_q = torch.randn(\n        (cfg.experts, cfg.inter_dim * 2, cfg.dim),\n        dtype=torch.float32,\n        device=device,\n        generator=g,\n    ).mul_(8.0).to(f8)\n    w2_q = torch.randn(\n        (cfg.experts, cfg.dim, cfg.inter_dim),\n        dtype=torch.float32,\n        device=device,\n        generator=g,\n    ).mul_(8.0).to(f8)\n\n    def _rand_pos(shape, mean, std):\n        x = torch.randn(shape, dtype=torch.float32, device=device, generator=g) * std + mean\n        return x.clamp_min(1e-8)\n\n    input_scale = _rand_pos((tokens, cfg.dim // BLOCK_K), mean=1e-1, std=2e-2)\n    fc1_scale = _rand_pos(\n        (cfg.experts, ((cfg.inter_dim * 2) // BLOCK_N) * (cfg.dim // BLOCK_K)),\n        mean=1e-2,\n        std=2e-3,\n    )\n    fc2_scale = _rand_pos(\n        (cfg.experts, (cfg.dim // BLOCK_N) * (cfg.inter_dim // BLOCK_K)),\n        mean=1e-2,\n        std=2e-3,\n    )\n\n    scores = torch.randn((tokens, cfg.experts), dtype=torch.float32, device=device, generator=g)\n    topk_val, topk_idx = torch.topk(scores, k=cfg.topk, dim=-1, largest=True, sorted=True)\n    topk_ids = topk_idx.to(torch.int32)\n    topk_weights = torch.softmax(topk_val, dim=-1).to(torch.float32)\n\n    return [\n        input_q,\n        w1_q,\n        w2_q,\n        topk_weights,\n        topk_ids,\n        input_scale,\n        fc1_scale,\n        fc2_scale,\n    ]\n\n\ndef _print_debug(expected: torch.Tensor, actual: torch.Tensor, inputs):\n    print("---- DEBUG INFO ----")\n    print(f"Expected shape/dtype/device: {expected.shape} / {expected.dtype} / {expected.device}")\n    print(f"Actual   shape/dtype/device: {actual.shape} / {actual.dtype} / {actual.device}")\n\n    e = expected.to(torch.float32)\n    a = actual.to(torch.float32)\n    diff = (a - e).abs()\n    max_abs = diff.max().item()\n    mean_abs = diff.mean().item()\n\n    denom = e.abs().clamp_min(1e-8)\n    rel = (diff / denom).max().item()\n\n    print(f"max_abs_diff={max_abs:.6e}, mean_abs_diff={mean_abs:.6e}, max_rel_diff={rel:.6e}")\n    print(f"Expected sample: {e.flatten()[:10]}")\n    print(f"Actual   sample: {a.flatten()[:10]}")\n    print(f"Abs diff sample: {diff.flatten()[:10]}")\n\n    names = [\n        "input_q",\n        "w1_q",\n        "w2_q",\n        "topk_weights",\n        "topk_ids",\n        "input_scale",\n        "fc1_scale",\n        "fc2_scale",\n    ]\n    for n, t in zip(names, inputs):\n        sample = t.flatten()[:6]\n        print(f"{n}: shape={tuple(t.shape)}, dtype={t.dtype}, device={t.device}, sample={sample}")\n\n\ndef test_kernel():\n    """Test the kernel implementation."""\n    try:\n        from kernel import kernel_function\n\n        if not callable(kernel_function):\n            print("kernel_function is not callable")\n            return False\n\n        device = _get_device()\n\n        # Problem is config-driven; use one valid config that follows exact dtype/layout semantics.\n        cfg = MoeConfig(dim=256, inter_dim=128, experts=8, topk=4)\n        tokens = 96\n        seed = 20260317\n\n        _ = get_init_inputs()\n        inputs = make_inputs(tokens=tokens, cfg=cfg, device=device, seed=seed)\n\n        model = Model(cfg).to(device)\n        model.eval()\n\n        with torch.inference_mode():\n            y_ref = model(*inputs)\n\n        # Call kernel_function as a regular Python function (no Triton launch syntax).\n        y = kernel_function(*inputs)\n\n        if not isinstance(y, torch.Tensor):\n            print(f"kernel_function must return a torch.Tensor, got {type(y)}")\n            return False\n\n        if y.device != inputs[0].device:\n            print(f"Device mismatch: result.device={y.device}, input.device={inputs[0].device}")\n            return False\n\n        if y.shape != y_ref.shape:\n            print(f"Shape mismatch: got {y.shape}, expected {y_ref.shape}")\n            return False\n\n        if y.dtype != y_ref.dtype:\n            print(f"Dtype mismatch: got {y.dtype}, expected {y_ref.dtype}")\n            return False\n\n        if torch.isnan(y).any() or torch.isinf(y).any():\n            print("Result contains NaN or Inf")\n            _print_debug(y_ref, y, inputs)\n            return False\n\n        try:\n            # Default tolerance first.\n            close_default = torch.allclose(y.to(torch.float32), y_ref.to(torch.float32), rtol=1e-3, atol=1e-3)\n            if not close_default:\n                # Relaxed tolerance justified by BF16 output + float8 quantized inputs/weights + large reductions.\n                close_relaxed = torch.allclose(y.to(torch.float32), y_ref.to(torch.float32), rtol=1e-2, atol=2e-2)\n                if not close_relaxed:\n                    print("NUMERICAL MISMATCH: failed default and relaxed tolerances")\n                    _print_debug(y_ref, y, inputs)\n                    return False\n                print("Warning: passed only with relaxed tolerance (rtol=1e-2, atol=2e-2).")\n        except Exception as cmp_err:\n            print(f"Comparison error: {cmp_err}")\n            traceback.print_exc()\n            _print_debug(y_ref, y, inputs)\n            return False\n\n        print("Test passed.")\n        return True\n\n    except Exception as e:\n        if isinstance(e, NameError):\n            print(f"Test failed: NameError (likely undefined helper in kernel.py): {e}")\n        else:\n            print(f"Test failed: {e}")\n        traceback.print_exc()\n        return False\n\n\nif __name__ == "__main__":\n    success = test_kernel()\n    sys.exit(0 if success else 1)\n```', 'type': 'output_text', 'logprobs': []}], 'role': 'assistant', 'status': 'completed', 'type': 'message', 'phase': 'final_answer'}], 'parallel_tool_calls': True, 'temperature': 1.0, 'tool_choice': 'auto', 'tools': [], 'top_p': 0.98, 'background': False, 'completed_at': 1775007723.0, 'conversation': None, 'max_output_tokens': 32000, 'max_tool_calls': None, 'previous_response_id': None, 'prompt': None, 'prompt_cache_key': None, 'prompt_cache_retention': None, 'reasoning': {'effort': 'high', 'generate_summary': None, 'summary': None}, 'safety_identifier': None, 'service_tier': 'default', 'status': 'completed', 'text': {'format': {'type': 'text'}, 'verbosity': 'medium'}, 'top_logprobs': 0, 'truncation': 'disabled', 'usage': {'input_tokens': 5585, 'input_tokens_details': {'cached_tokens': 5376}, 'output_tokens': 7303, 'output_tokens_details': {'reasoning_tokens': 3805}, 'total_tokens': 12888}, 'user': None, 'billing': {'payer': 'developer'}, 'frequency_penalty': 0.0, 'presence_penalty': 0.0, 'store': True}
+2026-04-01 01:42:04,281 - TritonKernelAgent - INFO - Raw test generation response:
+```python
+#!/usr/bin/env python3
+import sys
+import traceback
+from dataclasses import dataclass
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# Summary:
+# Test a fused MoE kernel against the provided PyTorch reference semantics:
+# dequantize input/weights -> route build -> per-expert FC1 + SiLU*up + FC2 -> weighted combine -> BF16 output.
+
+BLOCK_N = 128
+BLOCK_K = 128
+ROUTE_GROUP_SIZE = 32
+
+
+@dataclass
+class MoeConfig:
+    dim: int = 256
+    inter_dim: int = 128
+    experts: int = 8
+    topk: int = 4
+
+
+class MoeSingleOpTorchRef:
+    def __init__(self, out_dtype: torch.dtype = torch.bfloat16):
+        self.block_n = BLOCK_N
+        self.block_k = BLOCK_K
+        self.out_dtype = out_dtype
+
+    def _dequantize_input(self, input_q: torch.Tensor, input_scale: torch.Tensor) -> torch.Tensor:
+        tokens, model_dim = input_q.shape
+        blocks = input_q.to(torch.float32).view(tokens, model_dim // self.block_k, self.block_k)
+        return (blocks * input_scale.to(torch.float32).unsqueeze(-1)).reshape(tokens, model_dim)
+
+    def _dequantize_weight_expert(
+        self,
+        weight_q_expert: torch.Tensor,
+        scale_expert: torch.Tensor,
+    ) -> torch.Tensor:
+        rows, cols = weight_q_expert.shape
+        row_blocks = rows // self.block_n
+        col_blocks = cols // self.block_k
+        blocks = (
+            weight_q_expert.to(torch.float32)
+            .view(row_blocks, self.block_n, col_blocks, self.block_k)
+            .permute(0, 2, 1, 3)
+            .contiguous()
+        )
+        scaled_blocks = blocks * scale_expert.to(torch.float32).view(row_blocks, col_blocks, 1, 1)
+        return scaled_blocks.permute(0, 2, 1, 3).reshape(rows, cols).contiguous()
+
+    def _build_sorted_routes(
+        self,
+        topk_ids_i64: torch.Tensor,
+        topk_weights_f: torch.Tensor,
+        num_experts: int,
+    ):
+        tokens, topk = topk_ids_i64.shape
+        max_num_tokens_padded = tokens * topk + num_experts * ROUTE_GROUP_SIZE - topk
+        max_num_m_blocks = (max_num_tokens_padded + ROUTE_GROUP_SIZE - 1) // ROUTE_GROUP_SIZE
+
+        init_val = (topk << 24) | tokens
+        sorted_token_ids = torch.full(
+            (max_num_tokens_padded,),
+            init_val,
+            dtype=torch.int64,
+            device=topk_ids_i64.device,
+        )
+        sorted_weights = torch.zeros((max_num_tokens_padded,), dtype=torch.float32, device=topk_weights_f.device)
+        sorted_expert_ids = torch.full(
+            (max_num_m_blocks,),
+            -1,
+            dtype=torch.int64,
+            device=topk_ids_i64.device,
+        )
+
+        sorted_ids_begin = 0
+        sorted_expert_ids_begin = 0
+        for expert in range(num_experts):
+            mask = topk_ids_i64.eq(expert)
+            if not bool(mask.any()):
+                continue
+
+            token_ids, slot_ids = torch.nonzero(mask, as_tuple=True)
+            tokens_num = int(token_ids.numel())
+
+            route_ids = (slot_ids.to(torch.int64) << 24) | token_ids.to(torch.int64)
+            sorted_token_ids[sorted_ids_begin: sorted_ids_begin + tokens_num] = route_ids
+            sorted_weights[sorted_ids_begin: sorted_ids_begin + tokens_num] = topk_weights_f[token_ids, slot_ids]
+
+            sorted_expert_ids_num = (tokens_num + ROUTE_GROUP_SIZE - 1) // ROUTE_GROUP_SIZE
+            tokens_num_pad = sorted_expert_ids_num * ROUTE_GROUP_SIZE
+            sorted_expert_ids[sorted_expert_ids_begin: sorted_expert_ids_begin + sorted_expert_ids_num] = expert
+
+            sorted_ids_begin += tokens_num_pad
+            sorted_expert_ids_begin += sorted_expert_ids_num
+
+        num_valid_ids = torch.empty((2,), dtype=torch.int64, device=topk_ids_i64.device)
+        num_valid_ids[0] = sorted_ids_begin
+        num_valid_ids[1] = tokens
+        return sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids
+
+    def forward(
+        self,
+        input_q: torch.Tensor,
+        w1_q: torch.Tensor,
+        w2_q: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        input_scale: torch.Tensor,
+        fc1_scale: torch.Tensor,
+        fc2_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        tokens, model_dim = input_q.shape
+        experts, _, inter_dim = w2_q.shape
+
+        input_f = self._dequantize_input(input_q, input_scale)
+        topk_ids_i64 = topk_ids.to(torch.int64).contiguous()
+        topk_weights_f = topk_weights.to(torch.float32).contiguous()
+
+        out = torch.zeros((tokens, model_dim), dtype=torch.float32, device=input_q.device)
+        sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids = self._build_sorted_routes(
+            topk_ids_i64=topk_ids_i64,
+            topk_weights_f=topk_weights_f,
+            num_experts=experts,
+        )
+        num_valid_routes = int(num_valid_ids[0].item())
+        if num_valid_routes == 0:
+            return out.to(self.out_dtype)
+
+        valid_route_idx = torch.arange(num_valid_routes, dtype=torch.int64, device=input_q.device)
+        route_group_idx = torch.div(valid_route_idx, ROUTE_GROUP_SIZE, rounding_mode="floor")
+        route_expert_ids = sorted_expert_ids.index_select(0, route_group_idx)
+        route_token_ids = sorted_token_ids[:num_valid_routes] & 0x00FFFFFF
+        route_weights = sorted_weights[:num_valid_routes]
+        route_token_valid = route_token_ids.lt(tokens)
+
+        for expert in range(experts):
+            route_mask = route_expert_ids.eq(expert) & route_token_valid
+            if not bool(route_mask.any()):
+                continue
+
+            token_ids = route_token_ids[route_mask]
+            weights_e = route_weights[route_mask].unsqueeze(-1)
+            x_e = input_f.index_select(0, token_ids)
+
+            w1_e = self._dequantize_weight_expert(w1_q[expert], fc1_scale[expert])
+            stage1 = x_e @ w1_e.transpose(0, 1)
+            gate, up = stage1.split(inter_dim, dim=-1)
+            activated = F.silu(gate) * up
+
+            w2_e = self._dequantize_weight_expert(w2_q[expert], fc2_scale[expert])
+            stage2 = activated @ w2_e.transpose(0, 1)
+            out.index_add_(0, token_ids, stage2 * weights_e)
+
+        return out.to(self.out_dtype)
+
+
+class Model(nn.Module):
+    def __init__(self, cfg: MoeConfig):
+        super().__init__()
+        self.cfg = cfg
+        self.ref_impl = MoeSingleOpTorchRef(out_dtype=torch.bfloat16)
+
+    def forward(
+        self,
+        input_q: torch.Tensor,
+        w1_q: torch.Tensor,
+        w2_q: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        input_scale: torch.Tensor,
+        fc1_scale: torch.Tensor,
+        fc2_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.ref_impl.forward(
+            input_q=input_q,
+            w1_q=w1_q,
+            w2_q=w2_q,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+            input_scale=input_scale,
+            fc1_scale=fc1_scale,
+            fc2_scale=fc2_scale,
+        )
+
+
+def get_init_inputs():
+    return []
+
+
+def _gpu_available() -> bool:
+    if hasattr(torch, "gpu") and hasattr(torch.gpu, "is_available"):
+        try:
+            if torch.gpu.is_available():
+                return True
+        except Exception:
+            pass
+    return torch.cuda.is_available()
+
+
+def _get_device() -> torch.device:
+    if not _gpu_available():
+        raise RuntimeError("HIP/ROCm not available")
+    # On ROCm PyTorch typically uses device type 'cuda'
+    return torch.device("cuda:0")
+
+
+def make_inputs(tokens: int, cfg: MoeConfig, device: torch.device, seed: int):
+    if not hasattr(torch, "float8_e4m3fnuz"):
+        raise RuntimeError("torch.float8_e4m3fnuz is required by this problem but is not available.")
+
+    if cfg.dim % BLOCK_K != 0 or cfg.dim % BLOCK_N != 0:
+        raise ValueError(f"dim must be divisible by {BLOCK_N}/{BLOCK_K}, got {cfg.dim}")
+    if cfg.inter_dim % BLOCK_K != 0 or (cfg.inter_dim * 2) % BLOCK_N != 0:
+        raise ValueError(f"inter_dim must match blockshape, got {cfg.inter_dim}")
+    if cfg.topk > cfg.experts:
+        raise ValueError(f"topk ({cfg.topk}) must be <= experts ({cfg.experts})")
+
+    g = torch.Generator(device=str(device))
+    g.manual_seed(seed + tokens)
+    f8 = torch.float8_e4m3fnuz
+
+    input_q = (torch.randn((tokens, cfg.dim), dtype=torch.float32, device=device, generator=g) * 1.0 + 0.1).to(f8)
+    w1_q = torch.randn(
+        (cfg.experts, cfg.inter_dim * 2, cfg.dim),
+        dtype=torch.float32,
+        device=device,
+        generator=g,
+    ).mul_(8.0).to(f8)
+    w2_q = torch.randn(
+        (cfg.experts, cfg.dim, cfg.inter_dim),
+        dtype=torch.float32,
+        device=device,
+        generator=g,
+    ).mul_(8.0).to(f8)
+
+    def _rand_pos(shape, mean, std):
+        x = torch.randn(shape, dtype=torch.float32, device=device, generator=g) * std + mean
+        return x.clamp_min(1e-8)
+
+    input_scale = _rand_pos((tokens, cfg.dim // BLOCK_K), mean=1e-1, std=2e-2)
+    fc1_scale = _rand_pos(
+        (cfg.experts, ((cfg.inter_dim * 2) // BLOCK_N) * (cfg.dim // BLOCK_K)),
+        mean=1e-2,
+        std=2e-3,
+    )
+    fc2_scale = _rand_pos(
+        (cfg.experts, (cfg.dim // BLOCK_N) * (cfg.inter_dim // BLOCK_K)),
+        mean=1e-2,
+        std=2e-3,
+    )
+
+    scores = torch.randn((tokens, cfg.experts), dtype=torch.float32, device=device, generator=g)
+    topk_val, topk_idx = torch.topk(scores, k=cfg.topk, dim=-1, largest=True, sorted=True)
+    topk_ids = topk_idx.to(torch.int32)
+    topk_weights = torch.softmax(topk_val, dim=-1).to(torch.float32)
+
+    return [
+        input_q,
+        w1_q,
+        w2_q,
+        topk_weights,
+        topk_ids,
+        input_scale,
+        fc1_scale,
+        fc2_scale,
+    ]
+
+
+def _print_debug(expected: torch.Tensor, actual: torch.Tensor, inputs):
+    print("---- DEBUG INFO ----")
+    print(f"Expected shape/dtype/device: {expected.shape} / {expected.dtype} / {expected.device}")
+    print(f"Actual   shape/dtype/device: {actual.shape} / {actual.dtype} / {actual.device}")
+
+    e = expected.to(torch.float32)
+    a = actual.to(torch.float32)
+    diff = (a - e).abs()
+    max_abs = diff.max().item()
+    mean_abs = diff.mean().item()
+
+    denom = e.abs().clamp_min(1e-8)
+    rel = (diff / denom).max().item()
+
+    print(f"max_abs_diff={max_abs:.6e}, mean_abs_diff={mean_abs:.6e}, max_rel_diff={rel:.6e}")
+    print(f"Expected sample: {e.flatten()[:10]}")
+    print(f"Actual   sample: {a.flatten()[:10]}")
+    print(f"Abs diff sample: {diff.flatten()[:10]}")
+
+    names = [
+        "input_q",
+        "w1_q",
+        "w2_q",
+        "topk_weights",
+        "topk_ids",
+        "input_scale",
+        "fc1_scale",
+        "fc2_scale",
+    ]
+    for n, t in zip(names, inputs):
+        sample = t.flatten()[:6]
+        print(f"{n}: shape={tuple(t.shape)}, dtype={t.dtype}, device={t.device}, sample={sample}")
+
+
+def test_kernel():
+    """Test the kernel implementation."""
+    try:
+        from kernel import kernel_function
+
+        if not callable(kernel_function):
+            print("kernel_function is not callable")
+            return False
+
+        device = _get_device()
+
+        # Problem is config-driven; use one valid config that follows exact dtype/layout semantics.
+        cfg = MoeConfig(dim=256, inter_dim=128, experts=8, topk=4)
+        tokens = 96
+        seed = 20260317
+
+        _ = get_init_inputs()
+        inputs = make_inputs(tokens=tokens, cfg=cfg, device=device, seed=seed)
+
+        model = Model(cfg).to(device)
+        model.eval()
+
+        with torch.inference_mode():
+            y_ref = model(*inputs)
+
+        # Call kernel_function as a regular Python function (no Triton launch syntax).
+        y = kernel_function(*inputs)
+
+        if not isinstance(y, torch.Tensor):
+            print(f"kernel_function must return a torch.Tensor, got {type(y)}")
+            return False
+
+        if y.device != inputs[0].device:
+            print(f"Device mismatch: result.device={y.device}, input.device={inputs[0].device}")
+            return False
+
+        if y.shape != y_ref.shape:
+            print(f"Shape mismatch: got {y.shape}, expected {y_ref.shape}")
+            return False
+
+        if y.dtype != y_ref.dtype:
+            print(f"Dtype mismatch: got {y.dtype}, expected {y_ref.dtype}")
+            return False
+
+        if torch.isnan(y).any() or torch.isinf(y).any():
+            print("Result contains NaN or Inf")
+            _print_debug(y_ref, y, inputs)
+            return False
+
+        try:
+            # Default tolerance first.
+            close_default = torch.allclose(y.to(torch.float32), y_ref.to(torch.float32), rtol=1e-3, atol=1e-3)
+            if not close_default:
+                # Relaxed tolerance justified by BF16 output + float8 quantized inputs/weights + large reductions.
+                close_relaxed = torch.allclose(y.to(torch.float32), y_ref.to(torch.float32), rtol=1e-2, atol=2e-2)
+                if not close_relaxed:
+                    print("NUMERICAL MISMATCH: failed default and relaxed tolerances")
+                    _print_debug(y_ref, y, inputs)
+                    return False
+                print("Warning: passed only with relaxed tolerance (rtol=1e-2, atol=2e-2).")
+        except Exception as cmp_err:
+            print(f"Comparison error: {cmp_err}")
+            traceback.print_exc()
+            _print_debug(y_ref, y, inputs)
+            return False
+
+        print("Test passed.")
+        return True
+
+    except Exception as e:
+        if isinstance(e, NameError):
+            print(f"Test failed: NameError (likely undefined helper in kernel.py): {e}")
+        else:
+            print(f"Test failed: {e}")
+        traceback.print_exc()
+        return False
+
+
+if __name__ == "__main__":
+    success = test_kernel()
+    sys.exit(0 if success else 1)
+```
+2026-04-01 01:42:04,281 - TritonKernelAgent - INFO - Successfully generated test code using gpt-5.3-codex
+2026-04-01 01:42:04,281 - TritonKernelAgent - INFO - Generated test code using LLM
+2026-04-01 01:42:04,281 - TritonKernelAgent - INFO - Generating 1 kernel seeds using gpt-5.3-codex
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+2026-04-01 01:45:55,167 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-04-01 01:45:55,189 - utils.providers.openai_base - INFO - OpenAI responses API response (single): {'id': 'resp_0807161e1ef5c9f10069cc77ece3888192948b3a2808a6f8b6', 'created_at': 1775007724.0, 'error': None, 'incomplete_details': None, 'instructions': None, 'metadata': {}, 'model': 'gpt-5.3-codex', 'object': 'response', 'output': [{'id': 'rs_0807161e1ef5c9f10069cc77edd2588192b8c10b3f901a9603', 'summary': [], 'type': 'reasoning', 'content': None, 'encrypted_content': None, 'status': None}, {'id': 'msg_0807161e1ef5c9f10069cc78b62b9c81929067ba2bd0a1e497', 'content': [{'annotations': [], 'text': '```python\nimport torch\nimport triton\nimport triton.language as tl\n\n# Quant block sizes from the problem statement / reference implementation.\n_Q_BLOCK_N = 128\n_Q_BLOCK_K = 128\n\n\n@triton.jit\ndef _fused_moe_kernel(\n    # Inputs\n    input_q_ptr,          # [tokens, model_dim]          float8\n    w1_q_ptr,             # [experts, 2*inter_dim, dim]  float8\n    w2_q_ptr,             # [experts, dim, inter_dim]    float8\n    topk_w_ptr,           # [tokens, topk]               float32\n    topk_ids_ptr,         # [tokens, topk]               int32/int64\n    input_scale_ptr,      # [tokens, dim/128]            float32\n    fc1_scale_ptr,        # [experts, (2*inter/128)*(dim/128)] float32\n    fc2_scale_ptr,        # [experts, (dim/128)*(inter/128)]   float32\n    # Output\n    out_ptr,              # [tokens, model_dim]          bf16\n    # Strides\n    stride_in_t, stride_in_d,\n    stride_w1_e, stride_w1_r, stride_w1_c,\n    stride_w2_e, stride_w2_r, stride_w2_c,\n    stride_tw_t, stride_tw_k,\n    stride_tid_t, stride_tid_k,\n    stride_is_t, stride_is_b,\n    stride_fc1_e, stride_fc1_s,\n    stride_fc2_e, stride_fc2_s,\n    stride_out_t, stride_out_d,\n    # Runtime sizes\n    num_experts,\n    # Compile-time sizes\n    MODEL_DIM: tl.constexpr,\n    INTER_DIM: tl.constexpr,\n    TOPK: tl.constexpr,\n    MODEL_K_BLOCKS: tl.constexpr,   # MODEL_DIM // 128\n    INTER_K_BLOCKS: tl.constexpr,   # INTER_DIM // 128\n    BLOCK_OUT: tl.constexpr,        # output tile in model_dim\n    BLOCK_J: tl.constexpr,          # hidden tile in inter_dim\n    BLOCK_K: tl.constexpr,          # quant K block (128)\n    BLOCK_N: tl.constexpr,          # quant N block (128)\n):\n    """\n    Fused per-token MoE kernel.\n\n    Fused stages:\n      1) input dequant (block-wise)\n      2) FC1 (gate/up) using block-wise dequantized W1\n      3) SiLU(gate) * up\n      4) FC2 using block-wise dequantized W2\n      5) weighted top-k combine\n      6) bf16 output store\n    """\n    token_id = tl.program_id(0)\n    n_block = tl.program_id(1)\n\n    offs_n = n_block * BLOCK_OUT + tl.arange(0, BLOCK_OUT)\n    mask_n = offs_n < MODEL_DIM\n\n    acc_out = tl.zeros((BLOCK_OUT,), dtype=tl.float32)\n\n    # Sum top-k routed experts for this token.\n    for slot in range(TOPK):\n        expert = tl.load(\n            topk_ids_ptr + token_id * stride_tid_t + slot * stride_tid_k\n        ).to(tl.int32)\n        route_w = tl.load(\n            topk_w_ptr + token_id * stride_tw_t + slot * stride_tw_k\n        ).to(tl.float32)\n\n        # Safety clamp for expert index; zero out invalid routes.\n        valid = (expert >= 0) & (expert < num_experts)\n        route_w = tl.where(valid, route_w, 0.0)\n        expert = tl.where(expert < 0, 0, expert)\n        expert = tl.where(expert >= num_experts, num_experts - 1, expert)\n\n        w1_e_ptr = w1_q_ptr + expert * stride_w1_e\n        w2_e_ptr = w2_q_ptr + expert * stride_w2_e\n        fc1_e_ptr = fc1_scale_ptr + expert * stride_fc1_e\n        fc2_e_ptr = fc2_scale_ptr + expert * stride_fc2_e\n\n        # Stream over hidden dimension in BLOCK_J chunks.\n        for j0 in range(0, INTER_DIM, BLOCK_J):\n            offs_j = j0 + tl.arange(0, BLOCK_J)\n            mask_j = offs_j < INTER_DIM\n\n            gate = tl.zeros((BLOCK_J,), dtype=tl.float32)\n            up = tl.zeros((BLOCK_J,), dtype=tl.float32)\n\n            # FC1 K-reduction over model_dim in quantized 128-blocks.\n            for k0 in range(0, MODEL_DIM, BLOCK_K):\n                offs_k = k0 + tl.arange(0, BLOCK_K)\n                mask_k = offs_k < MODEL_DIM\n                kb = k0 // BLOCK_K\n\n                # Dequantized input block x[token, k0:k0+128]\n                x_q = tl.load(\n                    input_q_ptr + token_id * stride_in_t + offs_k * stride_in_d,\n                    mask=mask_k,\n                    other=0.0,\n                ).to(tl.float32)\n                x_scale = tl.load(\n                    input_scale_ptr + token_id * stride_is_t + kb * stride_is_b\n                ).to(tl.float32)\n                x = x_q * x_scale\n\n                # Gate rows: [j, k]\n                w1g_ptrs = w1_e_ptr + offs_j[:, None] * stride_w1_r + offs_k[None, :] * stride_w1_c\n                w1g_q = tl.load(\n                    w1g_ptrs,\n                    mask=mask_j[:, None] & mask_k[None, :],\n                    other=0.0,\n                ).to(tl.float32)\n                gate_rb = offs_j // BLOCK_N\n                sidx_g = gate_rb * MODEL_K_BLOCKS + kb\n                s_g = tl.load(\n                    fc1_e_ptr + sidx_g * stride_fc1_s,\n                    mask=mask_j,\n                    other=0.0,\n                ).to(tl.float32)\n                gate += tl.sum((w1g_q * s_g[:, None]) * x[None, :], axis=1)\n\n                # Up rows: [j + INTER_DIM, k]\n                up_rows = offs_j + INTER_DIM\n                w1u_ptrs = w1_e_ptr + up_rows[:, None] * stride_w1_r + offs_k[None, :] * stride_w1_c\n                w1u_q = tl.load(\n                    w1u_ptrs,\n                    mask=mask_j[:, None] & mask_k[None, :],\n                    other=0.0,\n                ).to(tl.float32)\n                up_rb = up_rows // BLOCK_N\n                sidx_u = up_rb * MODEL_K_BLOCKS + kb\n                s_u = tl.load(\n                    fc1_e_ptr + sidx_u * stride_fc1_s,\n                    mask=mask_j,\n                    other=0.0,\n                ).to(tl.float32)\n                up += tl.sum((w1u_q * s_u[:, None]) * x[None, :], axis=1)\n\n            # SiLU(gate) * up\n            sig = 1.0 / (1.0 + tl.exp(-gate))\n            act = gate * sig * up\n\n            # FC2 contribution for current hidden tile.\n            w2_ptrs = w2_e_ptr + offs_n[:, None] * stride_w2_r + offs_j[None, :] * stride_w2_c\n            w2_q = tl.load(\n                w2_ptrs,\n                mask=mask_n[:, None] & mask_j[None, :],\n                other=0.0,\n            ).to(tl.float32)\n\n            rb2 = offs_n // BLOCK_N\n            cb2 = offs_j // BLOCK_K\n            sidx2 = rb2[:, None] * INTER_K_BLOCKS + cb2[None, :]\n            s2 = tl.load(\n                fc2_e_ptr + sidx2 * stride_fc2_s,\n                mask=mask_n[:, None] & mask_j[None, :],\n                other=0.0,\n            ).to(tl.float32)\n\n            acc_out += route_w * tl.sum((w2_q * s2) * act[None, :], axis=1)\n\n    out_ptrs = out_ptr + token_id * stride_out_t + offs_n * stride_out_d\n    tl.store(out_ptrs, acc_out.to(out_ptr.dtype.element_ty), mask=mask_n)\n\n\ndef kernel_function(\n    input_q: torch.Tensor,\n    w1_q: torch.Tensor,\n    w2_q: torch.Tensor,\n    topk_weights: torch.Tensor,\n    topk_ids: torch.Tensor,\n    input_scale: torch.Tensor,\n    fc1_scale: torch.Tensor,\n    fc2_scale: torch.Tensor,\n) -> torch.Tensor:\n    """\n    Triton MoE implementation.\n\n    Fusion note:\n      This launches one fused kernel that performs the whole operator pipeline\n      (dequant input/weights + FC1 + SiLU*up + FC2 + top-k weighted combine),\n      directly producing bf16 output. No PyTorch math is used in the wrapper.\n    """\n    # Basic validation (wrapper-only: checks + allocation + launch).\n    assert input_q.ndim == 2, "input_q must be [tokens, dim]"\n    assert w1_q.ndim == 3 and w2_q.ndim == 3, "w1_q/w2_q must be 3D"\n    assert topk_weights.ndim == 2 and topk_ids.ndim == 2, "topk tensors must be [tokens, topk]"\n    assert input_scale.ndim == 2 and fc1_scale.ndim == 2 and fc2_scale.ndim == 2, "scale tensors must be 2D"\n\n    tokens, model_dim = input_q.shape\n    experts = w1_q.shape[0]\n    inter2 = w1_q.shape[1]\n    assert inter2 % 2 == 0, "w1_q second dim must be 2 * inter_dim"\n    inter_dim = inter2 // 2\n\n    assert w1_q.shape[2] == model_dim, "w1_q dim mismatch"\n    assert w2_q.shape[0] == experts and w2_q.shape[1] == model_dim and w2_q.shape[2] == inter_dim, "w2_q shape mismatch"\n\n    assert topk_weights.shape[0] == tokens and topk_ids.shape[0] == tokens, "topk token dimension mismatch"\n    topk = topk_ids.shape[1]\n    assert topk_weights.shape[1] == topk, "topk size mismatch"\n\n    assert model_dim % _Q_BLOCK_K == 0, "model_dim must be divisible by 128"\n    assert inter_dim % _Q_BLOCK_K == 0, "inter_dim must be divisible by 128"\n    assert (2 * inter_dim) % _Q_BLOCK_N == 0, "2*inter_dim must be divisible by 128"\n\n    assert input_scale.shape == (tokens, model_dim // _Q_BLOCK_K), "input_scale shape mismatch"\n    expected_fc1 = ((2 * inter_dim) // _Q_BLOCK_N) * (model_dim // _Q_BLOCK_K)\n    expected_fc2 = (model_dim // _Q_BLOCK_N) * (inter_dim // _Q_BLOCK_K)\n    assert fc1_scale.shape == (experts, expected_fc1), "fc1_scale shape mismatch"\n    assert fc2_scale.shape == (experts, expected_fc2), "fc2_scale shape mismatch"\n\n    # Allocate output (required by test: bf16).\n    out = torch.empty((tokens, model_dim), device=input_q.device, dtype=torch.bfloat16)\n    if tokens == 0:\n        return out\n\n    BLOCK_OUT = 64\n    BLOCK_J = 32\n\n    grid = (tokens, triton.cdiv(model_dim, BLOCK_OUT))\n\n    _fused_moe_kernel[grid](\n        input_q,\n        w1_q,\n        w2_q,\n        topk_weights,\n        topk_ids,\n        input_scale,\n        fc1_scale,\n        fc2_scale,\n        out,\n        input_q.stride(0), input_q.stride(1),\n        w1_q.stride(0), w1_q.stride(1), w1_q.stride(2),\n        w2_q.stride(0), w2_q.stride(1), w2_q.stride(2),\n        topk_weights.stride(0), topk_weights.stride(1),\n        topk_ids.stride(0), topk_ids.stride(1),\n        input_scale.stride(0), input_scale.stride(1),\n        fc1_scale.stride(0), fc1_scale.stride(1),\n        fc2_scale.stride(0), fc2_scale.stride(1),\n        out.stride(0), out.stride(1),\n        experts,\n        MODEL_DIM=model_dim,\n        INTER_DIM=inter_dim,\n        TOPK=topk,\n        MODEL_K_BLOCKS=model_dim // _Q_BLOCK_K,\n        INTER_K_BLOCKS=inter_dim // _Q_BLOCK_K,\n        BLOCK_OUT=BLOCK_OUT,\n        BLOCK_J=BLOCK_J,\n        BLOCK_K=_Q_BLOCK_K,\n        BLOCK_N=_Q_BLOCK_N,\n        num_warps=4,\n        num_stages=2,\n    )\n\n    return out\n```', 'type': 'output_text', 'logprobs': []}], 'role': 'assistant', 'status': 'completed', 'type': 'message', 'phase': 'final_answer'}], 'parallel_tool_calls': True, 'temperature': 1.0, 'tool_choice': 'auto', 'tools': [], 'top_p': 0.98, 'background': False, 'completed_at': 1775007954.0, 'conversation': None, 'max_output_tokens': 32000, 'max_tool_calls': None, 'previous_response_id': None, 'prompt': None, 'prompt_cache_key': None, 'prompt_cache_retention': None, 'reasoning': {'effort': 'high', 'generate_summary': None, 'summary': None}, 'safety_identifier': None, 'service_tier': 'default', 'status': 'completed', 'text': {'format': {'type': 'text'}, 'verbosity': 'medium'}, 'top_logprobs': 0, 'truncation': 'disabled', 'usage': {'input_tokens': 9195, 'input_tokens_details': {'cached_tokens': 0}, 'output_tokens': 16887, 'output_tokens_details': {'reasoning_tokens': 14009}, 'total_tokens': 26082}, 'user': None, 'billing': {'payer': 'developer'}, 'frequency_penalty': 0.0, 'presence_penalty': 0.0, 'store': True}
+2026-04-01 01:45:55,190 - TritonKernelAgent - INFO - Successfully generated 1 kernel seeds
+2026-04-01 01:45:55,190 - triton_kernel_agent.manager - INFO - Starting verification with 1 seeds
+2026-04-01 01:45:55,191 - triton_kernel_agent.manager - INFO - Created workdir for worker 0: /tmp/worker_0_0b3fpscx
+2026-04-01 01:45:55,193 - triton_kernel_agent.manager - INFO - Started worker 0
+2026-04-01 01:45:55,214 - worker_0 - INFO - Starting verification for worker 0
+2026-04-01 01:45:55,214 - worker_0 - INFO - Round 1/2
+2026-04-01 01:45:55,214 - worker_0 - INFO - Wrote kernel and test files
+2026-04-01 01:46:01,674 - worker_0 - INFO - Test passed
+2026-04-01 01:46:01,674 - worker_0 - INFO - Success! Kernel passed test in round 1
+2026-04-01 01:46:01,675 - triton_kernel_agent.manager - INFO - Worker 0 succeeded!
+2026-04-01 01:46:01,678 - triton_kernel_agent.manager - INFO - Cleaned up workdir: /tmp/worker_0_0b3fpscx
+2026-04-01 01:46:01,678 - TritonKernelAgent - INFO - Success! Worker 0 found solution
+{
+  "route": "kernelagent",
+  "success": true,
+  "details": {
+    "worker_id": 0,
+    "rounds": 1,
+    "session_dir": "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_runtime/triton_kernel_logs/session_20260401_014204_281347"
+  },
+  "kernel_code": "import torch\nimport triton\nimport triton.language as tl\n\n# Quant block sizes from the problem statement / reference implementation.\n_Q_BLOCK_N = 128\n_Q_BLOCK_K = 128\n\n\n@triton.jit\ndef _fused_moe_kernel(\n    # Inputs\n    input_q_ptr,          # [tokens, model_dim]          float8\n    w1_q_ptr,             # [experts, 2*inter_dim, dim]  float8\n    w2_q_ptr,             # [experts, dim, inter_dim]    float8\n    topk_w_ptr,           # [tokens, topk]               float32\n    topk_ids_ptr,         # [tokens, topk]               int32/int64\n    input_scale_ptr,      # [tokens, dim/128]            float32\n    fc1_scale_ptr,        # [experts, (2*inter/128)*(dim/128)] float32\n    fc2_scale_ptr,        # [experts, (dim/128)*(inter/128)]   float32\n    # Output\n    out_ptr,              # [tokens, model_dim]          bf16\n    # Strides\n    stride_in_t, stride_in_d,\n    stride_w1_e, stride_w1_r, stride_w1_c,\n    stride_w2_e, stride_w2_r, stride_w2_c,\n    stride_tw_t, stride_tw_k,\n    stride_tid_t, stride_tid_k,\n    stride_is_t, stride_is_b,\n    stride_fc1_e, stride_fc1_s,\n    stride_fc2_e, stride_fc2_s,\n    stride_out_t, stride_out_d,\n    # Runtime sizes\n    num_experts,\n    # Compile-time sizes\n    MODEL_DIM: tl.constexpr,\n    INTER_DIM: tl.constexpr,\n    TOPK: tl.constexpr,\n    MODEL_K_BLOCKS: tl.constexpr,   # MODEL_DIM // 128\n    INTER_K_BLOCKS: tl.constexpr,   # INTER_DIM // 128\n    BLOCK_OUT: tl.constexpr,        # output tile in model_dim\n    BLOCK_J: tl.constexpr,          # hidden tile in inter_dim\n    BLOCK_K: tl.constexpr,          # quant K block (128)\n    BLOCK_N: tl.constexpr,          # quant N block (128)\n):\n    \"\"\"\n    Fused per-token MoE kernel.\n\n    Fused stages:\n      1) input dequant (block-wise)\n      2) FC1 (gate/up) using block-wise dequantized W1\n      3) SiLU(gate) * up\n      4) FC2 using block-wise dequantized W2\n      5) weighted top-k combine\n      6) bf16 output store\n    \"\"\"\n    token_id = tl.program_id(0)\n    n_block = tl.program_id(1)\n\n    offs_n = n_block * BLOCK_OUT + tl.arange(0, BLOCK_OUT)\n    mask_n = offs_n < MODEL_DIM\n\n    acc_out = tl.zeros((BLOCK_OUT,), dtype=tl.float32)\n\n    # Sum top-k routed experts for this token.\n    for slot in range(TOPK):\n        expert = tl.load(\n            topk_ids_ptr + token_id * stride_tid_t + slot * stride_tid_k\n        ).to(tl.int32)\n        route_w = tl.load(\n            topk_w_ptr + token_id * stride_tw_t + slot * stride_tw_k\n        ).to(tl.float32)\n\n        # Safety clamp for expert index; zero out invalid routes.\n        valid = (expert >= 0) & (expert < num_experts)\n        route_w = tl.where(valid, route_w, 0.0)\n        expert = tl.where(expert < 0, 0, expert)\n        expert = tl.where(expert >= num_experts, num_experts - 1, expert)\n\n        w1_e_ptr = w1_q_ptr + expert * stride_w1_e\n        w2_e_ptr = w2_q_ptr + expert * stride_w2_e\n        fc1_e_ptr = fc1_scale_ptr + expert * stride_fc1_e\n        fc2_e_ptr = fc2_scale_ptr + expert * stride_fc2_e\n\n        # Stream over hidden dimension in BLOCK_J chunks.\n        for j0 in range(0, INTER_DIM, BLOCK_J):\n            offs_j = j0 + tl.arange(0, BLOCK_J)\n            mask_j = offs_j < INTER_DIM\n\n            gate = tl.zeros((BLOCK_J,), dtype=tl.float32)\n            up = tl.zeros((BLOCK_J,), dtype=tl.float32)\n\n            # FC1 K-reduction over model_dim in quantized 128-blocks.\n            for k0 in range(0, MODEL_DIM, BLOCK_K):\n                offs_k = k0 + tl.arange(0, BLOCK_K)\n                mask_k = offs_k < MODEL_DIM\n                kb = k0 // BLOCK_K\n\n                # Dequantized input block x[token, k0:k0+128]\n                x_q = tl.load(\n                    input_q_ptr + token_id * stride_in_t + offs_k * stride_in_d,\n                    mask=mask_k,\n                    other=0.0,\n                ).to(tl.float32)\n                x_scale = tl.load(\n                    input_scale_ptr + token_id * stride_is_t + kb * stride_is_b\n                ).to(tl.float32)\n                x = x_q * x_scale\n\n                # Gate rows: [j, k]\n                w1g_ptrs = w1_e_ptr + offs_j[:, None] * stride_w1_r + offs_k[None, :] * stride_w1_c\n                w1g_q = tl.load(\n                    w1g_ptrs,\n                    mask=mask_j[:, None] & mask_k[None, :],\n                    other=0.0,\n                ).to(tl.float32)\n                gate_rb = offs_j // BLOCK_N\n                sidx_g = gate_rb * MODEL_K_BLOCKS + kb\n                s_g = tl.load(\n                    fc1_e_ptr + sidx_g * stride_fc1_s,\n                    mask=mask_j,\n                    other=0.0,\n                ).to(tl.float32)\n                gate += tl.sum((w1g_q * s_g[:, None]) * x[None, :], axis=1)\n\n                # Up rows: [j + INTER_DIM, k]\n                up_rows = offs_j + INTER_DIM\n                w1u_ptrs = w1_e_ptr + up_rows[:, None] * stride_w1_r + offs_k[None, :] * stride_w1_c\n                w1u_q = tl.load(\n                    w1u_ptrs,\n                    mask=mask_j[:, None] & mask_k[None, :],\n                    other=0.0,\n                ).to(tl.float32)\n                up_rb = up_rows // BLOCK_N\n                sidx_u = up_rb * MODEL_K_BLOCKS + kb\n                s_u = tl.load(\n                    fc1_e_ptr + sidx_u * stride_fc1_s,\n                    mask=mask_j,\n                    other=0.0,\n                ).to(tl.float32)\n                up += tl.sum((w1u_q * s_u[:, None]) * x[None, :], axis=1)\n\n            # SiLU(gate) * up\n            sig = 1.0 / (1.0 + tl.exp(-gate))\n            act = gate * sig * up\n\n            # FC2 contribution for current hidden tile.\n            w2_ptrs = w2_e_ptr + offs_n[:, None] * stride_w2_r + offs_j[None, :] * stride_w2_c\n            w2_q = tl.load(\n                w2_ptrs,\n                mask=mask_n[:, None] & mask_j[None, :],\n                other=0.0,\n            ).to(tl.float32)\n\n            rb2 = offs_n // BLOCK_N\n            cb2 = offs_j // BLOCK_K\n            sidx2 = rb2[:, None] * INTER_K_BLOCKS + cb2[None, :]\n            s2 = tl.load(\n                fc2_e_ptr + sidx2 * stride_fc2_s,\n                mask=mask_n[:, None] & mask_j[None, :],\n                other=0.0,\n            ).to(tl.float32)\n\n            acc_out += route_w * tl.sum((w2_q * s2) * act[None, :], axis=1)\n\n    out_ptrs = out_ptr + token_id * stride_out_t + offs_n * stride_out_d\n    tl.store(out_ptrs, acc_out.to(out_ptr.dtype.element_ty), mask=mask_n)\n\n\ndef kernel_function(\n    input_q: torch.Tensor,\n    w1_q: torch.Tensor,\n    w2_q: torch.Tensor,\n    topk_weights: torch.Tensor,\n    topk_ids: torch.Tensor,\n    input_scale: torch.Tensor,\n    fc1_scale: torch.Tensor,\n    fc2_scale: torch.Tensor,\n) -> torch.Tensor:\n    \"\"\"\n    Triton MoE implementation.\n\n    Fusion note:\n      This launches one fused kernel that performs the whole operator pipeline\n      (dequant input/weights + FC1 + SiLU*up + FC2 + top-k weighted combine),\n      directly producing bf16 output. No PyTorch math is used in the wrapper.\n    \"\"\"\n    # Basic validation (wrapper-only: checks + allocation + launch).\n    assert input_q.ndim == 2, \"input_q must be [tokens, dim]\"\n    assert w1_q.ndim == 3 and w2_q.ndim == 3, \"w1_q/w2_q must be 3D\"\n    assert topk_weights.ndim == 2 and topk_ids.ndim == 2, \"topk tensors must be [tokens, topk]\"\n    assert input_scale.ndim == 2 and fc1_scale.ndim == 2 and fc2_scale.ndim == 2, \"scale tensors must be 2D\"\n\n    tokens, model_dim = input_q.shape\n    experts = w1_q.shape[0]\n    inter2 = w1_q.shape[1]\n    assert inter2 % 2 == 0, \"w1_q second dim must be 2 * inter_dim\"\n    inter_dim = inter2 // 2\n\n    assert w1_q.shape[2] == model_dim, \"w1_q dim mismatch\"\n    assert w2_q.shape[0] == experts and w2_q.shape[1] == model_dim and w2_q.shape[2] == inter_dim, \"w2_q shape mismatch\"\n\n    assert topk_weights.shape[0] == tokens and topk_ids.shape[0] == tokens, \"topk token dimension mismatch\"\n    topk = topk_ids.shape[1]\n    assert topk_weights.shape[1] == topk, \"topk size mismatch\"\n\n    assert model_dim % _Q_BLOCK_K == 0, \"model_dim must be divisible by 128\"\n    assert inter_dim % _Q_BLOCK_K == 0, \"inter_dim must be divisible by 128\"\n    assert (2 * inter_dim) % _Q_BLOCK_N == 0, \"2*inter_dim must be divisible by 128\"\n\n    assert input_scale.shape == (tokens, model_dim // _Q_BLOCK_K), \"input_scale shape mismatch\"\n    expected_fc1 = ((2 * inter_dim) // _Q_BLOCK_N) * (model_dim // _Q_BLOCK_K)\n    expected_fc2 = (model_dim // _Q_BLOCK_N) * (inter_dim // _Q_BLOCK_K)\n    assert fc1_scale.shape == (experts, expected_fc1), \"fc1_scale shape mismatch\"\n    assert fc2_scale.shape == (experts, expected_fc2), \"fc2_scale shape mismatch\"\n\n    # Allocate output (required by test: bf16).\n    out = torch.empty((tokens, model_dim), device=input_q.device, dtype=torch.bfloat16)\n    if tokens == 0:\n        return out\n\n    BLOCK_OUT = 64\n    BLOCK_J = 32\n\n    grid = (tokens, triton.cdiv(model_dim, BLOCK_OUT))\n\n    _fused_moe_kernel[grid](\n        input_q,\n        w1_q,\n        w2_q,\n        topk_weights,\n        topk_ids,\n        input_scale,\n        fc1_scale,\n        fc2_scale,\n        out,\n        input_q.stride(0), input_q.stride(1),\n        w1_q.stride(0), w1_q.stride(1), w1_q.stride(2),\n        w2_q.stride(0), w2_q.stride(1), w2_q.stride(2),\n        topk_weights.stride(0), topk_weights.stride(1),\n        topk_ids.stride(0), topk_ids.stride(1),\n        input_scale.stride(0), input_scale.stride(1),\n        fc1_scale.stride(0), fc1_scale.stride(1),\n        fc2_scale.stride(0), fc2_scale.stride(1),\n        out.stride(0), out.stride(1),\n        experts,\n        MODEL_DIM=model_dim,\n        INTER_DIM=inter_dim,\n        TOPK=topk,\n        MODEL_K_BLOCKS=model_dim // _Q_BLOCK_K,\n        INTER_K_BLOCKS=inter_dim // _Q_BLOCK_K,\n        BLOCK_OUT=BLOCK_OUT,\n        BLOCK_J=BLOCK_J,\n        BLOCK_K=_Q_BLOCK_K,\n        BLOCK_N=_Q_BLOCK_N,\n        num_warps=4,\n        num_stages=2,\n    )\n\n    return out"
+}
+OptimizationManager initialized: strategy=beam_search, workers=1
+================================================================================
+STARTING OPTIMIZATION
+================================================================================
+BeamSearch initialized: 1 kernels × 1 bottlenecks = 1 workers
+Initial kernel passed correctness verification
+⏳ Waiting for benchmark lock (worker -1)...
+🔓 Acquired benchmark lock (worker -1)
+🔒 Released benchmark lock (worker -1)
+PyTorch baseline benchmark failed: HIP error: operation not permitted when stream is capturing
+Search for `hipErrorStreamCaptureUnsupported' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__HIPRT__TYPES.html for more information.
+HIP kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing AMD_SERIALIZE_KERNEL=3
+Compile with `TORCH_USE_HIP_DSA` to enable device-side assertions.
+
+Traceback (most recent call last):
+  File "/workspace/kernel_benchmark/kernelflacon/workspace/KernelAgent/triton_kernel_agent/opt_worker_component/benchmarking/benchmark.py", line 225, in benchmark_pytorch
+    times = time_with_cuda_graph_replay(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/kernelflacon/workspace/KernelAgent/triton_kernel_agent/opt_worker_component/benchmarking/timing.py", line 401, in time_with_cuda_graph_replay
+    kernel_fn(*args)
+  File "/workspace/kernel_benchmark/kernelflacon/workspace/KernelAgent/triton_kernel_agent/opt_worker_component/benchmarking/benchmark.py", line 226, in <lambda>
+    lambda: model(*inputs),
+            ^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/problem.py", line 304, in forward
+    return self.ref_impl.forward(
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/problem.py", line 167, in forward
+    sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids = self._build_sorted_routes(
+                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/problem.py", line 125, in _build_sorted_routes
+    if not bool(mask.any()):
+           ^^^^^^^^^^^^^^^^
+torch.AcceleratorError: HIP error: operation not permitted when stream is capturing
+Search for `hipErrorStreamCaptureUnsupported' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__HIPRT__TYPES.html for more information.
+HIP kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing AMD_SERIALIZE_KERNEL=3
+Compile with `TORCH_USE_HIP_DSA` to enable device-side assertions.
+
+
+⏳ Waiting for benchmark lock (worker -1)...
+🔓 Acquired benchmark lock (worker -1)
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0] Graph break from `Tensor.item()`, consider setting:
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0]     torch._dynamo.config.capture_scalar_outputs = True
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0] or:
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0]     env TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0] to include these operations in the captured graph.
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0] 
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0] Graph break: from user code at:
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0]   File "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/problem.py", line 172, in torch_dynamo_resume_in_forward_at_167
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0]     num_valid_routes = int(num_valid_ids[0].item())
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0] 
+W0401 01:46:16.180000 149715 torch/_dynamo/variables/tensor.py:1048] [3/0] 
+🔒 Released benchmark lock (worker -1)
+PyTorch compile benchmark failed: HIP error: operation not permitted when stream is capturing
+Search for `hipErrorStreamCaptureUnsupported' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__HIPRT__TYPES.html for more information.
+HIP kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing AMD_SERIALIZE_KERNEL=3
+Compile with `TORCH_USE_HIP_DSA` to enable device-side assertions.
+
+Traceback (most recent call last):
+  File "/workspace/kernel_benchmark/kernelflacon/workspace/KernelAgent/triton_kernel_agent/opt_worker_component/benchmarking/benchmark.py", line 299, in benchmark_pytorch_compile
+    times = time_with_cuda_graph_replay(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/kernelflacon/workspace/KernelAgent/triton_kernel_agent/opt_worker_component/benchmarking/timing.py", line 401, in time_with_cuda_graph_replay
+    kernel_fn(*args)
+  File "/workspace/kernel_benchmark/kernelflacon/workspace/KernelAgent/triton_kernel_agent/opt_worker_component/benchmarking/benchmark.py", line 300, in <lambda>
+    lambda: model(*inputs),
+            ^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 414, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 832, in compile_wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/problem.py", line 304, in forward
+    return self.ref_impl.forward(
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/problem.py", line 167, in forward
+    sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids = self._build_sorted_routes(
+                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/problem.py", line 125, in _build_sorted_routes
+    if not bool(mask.any()):
+           ^^^^^^^^^^^^^^^^
+torch.AcceleratorError: HIP error: operation not permitted when stream is capturing
+Search for `hipErrorStreamCaptureUnsupported' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__HIPRT__TYPES.html for more information.
+HIP kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing AMD_SERIALIZE_KERNEL=3
+Compile with `TORCH_USE_HIP_DSA` to enable device-side assertions.
+
+
+⏳ Waiting for benchmark lock (worker -1)...
+🔓 Acquired benchmark lock (worker -1)
+🔒 Released benchmark lock (worker -1)
+Kernel benchmark failed: Command '['/opt/venv/bin/python3', '/workspace/kernel_benchmark/kernelflacon/workspace/KernelAgent/triton_kernel_agent/opt_worker_component/benchmarking/kernel_subprocess.py', '--problem', '/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/problem.py', '--kernel', '/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/opt_manager_logs_real/artifacts/initial_kernel.py', '--warmup', '25', '--repeat', '100', '--timing-method', 'cuda_graph_event', '--graph-iters', '10', '--json', '/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output/opt_manager_logs_real/artifacts/benchmark_results.json', '--quiet']' timed out after 300 seconds
+
+==================== ROUND 1/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+Worker 150772 still alive after result collection; terminating
+Round 1: 1/1 workers succeeded (1 results received)
+Round 1: 1 successful, best new: 2204.5826ms
+Round 1 best: worker 0 at 2204.5826 ms
+
+==================== ROUND 2/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+Worker 154726 still alive after result collection; terminating
+Round 2: 1/1 workers succeeded (1 results received)
+Round 2: 1 successful, best new: 809.3647ms
+Round 2 best: worker 0 at 809.3647 ms
+
+==================== ROUND 3/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+Worker 157404 still alive after result collection; terminating
+Round 3: 1/1 workers succeeded (1 results received)
+Round 3: 1 successful, best new: 809.3647ms
+Round 3 best: worker 0 at 809.3647 ms
+
+==================== ROUND 4/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+Worker 160943 still alive after result collection; terminating
+Round 4: 1/1 workers succeeded (1 results received)
+Round 4: 1 successful, best new: 809.3647ms
+Round 4 best: worker 0 at 809.3647 ms
+
+==================== ROUND 5/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+Worker 163563 still alive after result collection; terminating
+Round 5: 1/1 workers succeeded (1 results received)
+Round 5: 1 successful, best new: 809.3647ms
+Round 5 best: worker 0 at 809.3647 ms
+
+==================== ROUND 6/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+Worker 166933 still alive after result collection; terminating
+Round 6: 1/1 workers succeeded (1 results received)
+Round 6: 1 successful, best new: 809.3647ms
+Round 6 best: worker 0 at 809.3647 ms
+
+==================== ROUND 7/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+Worker 168301 still alive after result collection; terminating
+Round 7: 1/1 workers succeeded (1 results received)
+Round 7: 1 successful, best new: 194.5221ms
+Round 7 best: worker 0 at 194.5221 ms
+
+==================== ROUND 8/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+Worker 169432 still alive after result collection; terminating
+Round 8: 1/1 workers succeeded (1 results received)
+Round 8: 1 successful, best new: 161.9471ms
+Round 8 best: worker 0 at 161.9471 ms
+
+==================== ROUND 9/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=2
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=3
+Worker 170566 still alive after result collection; terminating
+Round 9: 1/1 workers succeeded (1 results received)
+Round 9: 1 successful, best new: 40.9819ms
+Round 9 best: worker 0 at 40.9819 ms
+
+==================== ROUND 10/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+Worker 171836 still alive after result collection; terminating
+Round 10: 1/1 workers succeeded (1 results received)
+Round 10: 1 successful, best new: 40.9819ms
+Round 10 best: worker 0 at 40.9819 ms
+Strategy signaled termination
+
+================================================================================
+OPTIMIZATION COMPLETE
+================================================================================
+Best time: 40.9819ms
+RUN_DONE True 10 40.981929244995115
+[2026-04-01_03:49:39] done
+[2026-04-01_03:49:39] trace outputs: /workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg

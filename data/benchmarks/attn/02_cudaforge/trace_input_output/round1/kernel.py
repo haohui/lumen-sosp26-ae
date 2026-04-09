@@ -1,0 +1,202 @@
+import os
+import torch
+import torch.nn as nn
+from torch.utils.cpp_extension import load_inline
+
+# HIP/ROCm custom causal SDPA (BF16 in/out, FP32 accumulation)
+_cpp_src = r"""
+torch::Tensor sdpa_causal_bf16(torch::Tensor Q, torch::Tensor K, torch::Tensor V);
+"""
+
+_hip_src = r"""
+#include <torch/extension.h>
+#include <ATen/ATen.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <hip/hip_runtime.h>
+#include <vector>
+#include <cmath>
+#include <limits>
+
+template<int BLOCK_SIZE>
+__global__ void sdpa_causal_bf16_kernel(
+    const at::BFloat16* __restrict__ Q,
+    const at::BFloat16* __restrict__ K,
+    const at::BFloat16* __restrict__ V,
+    at::BFloat16* __restrict__ O,
+    int B, int Hq, int Hk, int S, int D,
+    float scale
+) {
+    const int tid = threadIdx.x;
+    const long long block_id = (long long)blockIdx.x;
+
+    const int i = block_id % S;
+    const long long t1 = block_id / S;
+    const int h = t1 % Hq;
+    const int b = t1 / Hq;
+
+    if (b >= B) return;
+
+    const int kvh = h % Hk;
+
+    __shared__ float red[BLOCK_SIZE];
+    __shared__ float sh_m;
+    __shared__ float sh_l;
+    __shared__ float sh_alpha;
+    __shared__ float sh_beta;
+
+    float acc = 0.0f;
+    const bool active_d = (tid < D);
+
+    if (tid == 0) {
+        sh_m = -INFINITY;
+        sh_l = 0.0f;
+    }
+    __syncthreads();
+
+    const long long q_base = (((long long)b * Hq + h) * S + i) * D;
+    const long long kv_head_base = ((long long)b * Hk + kvh) * S * D;
+
+    for (int j = 0; j <= i; ++j) {
+        float part = 0.0f;
+        if (active_d) {
+            const long long q_idx = q_base + tid;
+            const long long k_idx = kv_head_base + (long long)j * D + tid;
+            part = ((float)Q[q_idx]) * ((float)K[k_idx]);
+        }
+        red[tid] = part;
+        __syncthreads();
+
+        // Reduction over BLOCK_SIZE (power of 2)
+        for (int stride = BLOCK_SIZE >> 1; stride > 0; stride >>= 1) {
+            if (tid < stride) {
+                red[tid] += red[tid + stride];
+            }
+            __syncthreads();
+        }
+
+        if (tid == 0) {
+            const float score = red[0] * scale;
+            const float m_old = sh_m;
+            const float l_old = sh_l;
+            const float m_new = fmaxf(m_old, score);
+            const float alpha = expf(m_old - m_new);
+            const float beta  = expf(score - m_new);
+            const float l_new = l_old * alpha + beta;
+
+            sh_m = m_new;
+            sh_l = l_new;
+            sh_alpha = alpha;
+            sh_beta = beta;
+        }
+        __syncthreads();
+
+        if (active_d) {
+            const long long v_idx = kv_head_base + (long long)j * D + tid;
+            const float v_val = (float)V[v_idx];
+            acc = acc * sh_alpha + sh_beta * v_val;
+        }
+        __syncthreads();
+    }
+
+    if (active_d) {
+        const float out_f = acc / sh_l;
+        const long long o_idx = q_base + tid;
+        O[o_idx] = (at::BFloat16)out_f;
+    }
+}
+
+torch::Tensor sdpa_causal_bf16(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
+    TORCH_CHECK(Q.is_cuda(), "Q must be a CUDA/HIP tensor");
+    TORCH_CHECK(K.is_cuda(), "K must be a CUDA/HIP tensor");
+    TORCH_CHECK(V.is_cuda(), "V must be a CUDA/HIP tensor");
+
+    TORCH_CHECK(Q.dtype() == torch::kBFloat16, "Q must be bfloat16");
+    TORCH_CHECK(K.dtype() == torch::kBFloat16, "K must be bfloat16");
+    TORCH_CHECK(V.dtype() == torch::kBFloat16, "V must be bfloat16");
+
+    TORCH_CHECK(Q.dim() == 4, "Q must be [B, Hq, S, D]");
+    TORCH_CHECK(K.dim() == 4, "K must be [B, Hk, S, D]");
+    TORCH_CHECK(V.dim() == 4, "V must be [B, Hk, S, D]");
+
+    const int64_t B  = Q.size(0);
+    const int64_t Hq = Q.size(1);
+    const int64_t S  = Q.size(2);
+    const int64_t D  = Q.size(3);
+
+    TORCH_CHECK(K.size(0) == B && V.size(0) == B, "Batch mismatch");
+    TORCH_CHECK(K.size(2) == S && V.size(2) == S, "Sequence mismatch");
+    TORCH_CHECK(K.size(3) == D && V.size(3) == D, "Head-dim mismatch");
+
+    const int64_t Hk = K.size(1);
+    TORCH_CHECK(V.size(1) == Hk, "K/V head mismatch");
+    TORCH_CHECK(Hk >= 1, "Hk must be >= 1");
+    TORCH_CHECK(D > 0 && D <= 128, "This kernel currently supports 1 <= D <= 128");
+
+    auto Qc = Q.contiguous();
+    auto Kc = K.contiguous();
+    auto Vc = V.contiguous();
+
+    auto O = torch::zeros_like(Qc);
+
+    constexpr int BLOCK = 128;
+    const long long total_blocks = B * Hq * S;
+    dim3 grid((unsigned int)total_blocks);
+    dim3 block(BLOCK);
+
+    const float scale = 1.0f / std::sqrt((float)D);
+
+    sdpa_causal_bf16_kernel<BLOCK><<<grid, block>>>(
+        reinterpret_cast<at::BFloat16*>(Qc.data_ptr<at::BFloat16>()),
+        reinterpret_cast<at::BFloat16*>(Kc.data_ptr<at::BFloat16>()),
+        reinterpret_cast<at::BFloat16*>(Vc.data_ptr<at::BFloat16>()),
+        reinterpret_cast<at::BFloat16*>(O.data_ptr<at::BFloat16>()),
+        (int)B, (int)Hq, (int)Hk, (int)S, (int)D, scale
+    );
+
+    auto err = hipGetLastError();
+    TORCH_CHECK(err == hipSuccess, "sdpa_causal_bf16 kernel launch failed: ", hipGetErrorString(err));
+
+    return O;
+}
+"""
+
+_sdpa_ext = load_inline(
+    name="sdpa_causal_bf16_hip_ext",
+    cpp_sources=_cpp_src,
+    cuda_sources=_hip_src,
+    functions=["sdpa_causal_bf16"],
+    verbose=False,
+    extra_cflags=["-O3"],
+    extra_cuda_cflags=["-O3"],
+)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super(ModelNew, self).__init__()
+        self.sdpa = _sdpa_ext
+
+    def forward(self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor) -> torch.Tensor:
+        # Keep behavior equivalent to original architecture for provided shapes:
+        # original repeats K/V from head=1 to head=8. Here we natively support Hk=1 via head mapping h % Hk.
+        out = self.sdpa.sdpa_causal_bf16(Q, K, V)
+        return out
+
+
+batch_size = 16
+num_q_heads = 8
+num_kv_heads = 1
+sequence_length = int(os.getenv("ATTN_SEQ_LEN", "1024"))
+head_dim = 128
+supported_sequence_lengths = (1024, 2048, 4096, 8192, 16384)
+
+
+def get_inputs():
+    Q = torch.randn(batch_size, num_q_heads, sequence_length, head_dim, dtype=torch.bfloat16)
+    K = torch.randn(batch_size, num_kv_heads, sequence_length, head_dim, dtype=torch.bfloat16)
+    V = torch.randn(batch_size, num_kv_heads, sequence_length, head_dim, dtype=torch.bfloat16)
+    return [Q, K, V]
+
+
+def get_init_inputs():
+    return []

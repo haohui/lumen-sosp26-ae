@@ -1,0 +1,47 @@
+[01:46:57.964] Loading script /data01/home/daifeng/kernel_benchmark/scripts/mitm_trace_export.py
+[01:46:57.966] HTTP(S) proxy listening at 127.0.0.1:19482.
+[01:46:57.967] Web server listening at http://127.0.0.1:19483/
+[01:46:58.006] No web browser found. Please open a browser and point it to http://127.0.0.1:19483/
+[01:47:16.838][127.0.0.1:59952] client connect
+[01:47:16.851][127.0.0.1:59952] server connect api.openai.com:443 (172.66.0.243:443)
+[01:51:40.965][127.0.0.1:57710] client connect
+[01:51:40.977][127.0.0.1:57710] server connect api.openai.com:443 (162.159.140.245:443)
+[01:55:23.412][127.0.0.1:59952] server disconnect api.openai.com:443 (172.66.0.243:443)
+[01:56:20.571][127.0.0.1:57710] client disconnect
+[01:56:20.572][127.0.0.1:57710] server disconnect api.openai.com:443 (162.159.140.245:443)
+[01:56:20.576][127.0.0.1:56504] client connect
+[01:56:20.582][127.0.0.1:56504] server connect api.openai.com:443 (172.66.0.243:443)
+[02:01:01.702][127.0.0.1:45800] client connect
+[02:01:01.707][127.0.0.1:45800] server connect api.openai.com:443 (172.66.0.243:443)
+[02:04:56.239][127.0.0.1:56504] server disconnect api.openai.com:443 (172.66.0.243:443)
+[02:05:23.414][127.0.0.1:59952] Closing connection due to inactivity: Client(127.0.0.1:59952, state=open, alpn=http/1.1)
+[02:05:23.414][127.0.0.1:59952] client disconnect
+[02:05:26.862][127.0.0.1:34380] client connect
+[02:05:26.874][127.0.0.1:34380] server connect api.openai.com:443 (172.66.0.243:443)
+[02:05:26.882][127.0.0.1:56504] client disconnect
+[02:05:26.882][127.0.0.1:45800] client disconnect
+[02:05:26.883][127.0.0.1:45800] server disconnect api.openai.com:443 (172.66.0.243:443)
+[02:10:37.650][127.0.0.1:54578] client connect
+[02:10:37.657][127.0.0.1:54578] server connect api.openai.com:443 (162.159.140.245:443)
+[02:14:32.086][127.0.0.1:34380] server disconnect api.openai.com:443 (172.66.0.243:443)
+[02:15:32.092][127.0.0.1:48234] client connect
+[02:15:32.104][127.0.0.1:48234] server connect api.openai.com:443 (162.159.140.245:443)
+[02:19:17.252][127.0.0.1:54578] server disconnect api.openai.com:443 (162.159.140.245:443)
+[02:21:43.573][127.0.0.1:40734] client connect
+[02:21:43.580][127.0.0.1:40734] server connect api.openai.com:443 (172.66.0.243:443)
+[02:24:04.472][127.0.0.1:48234] server disconnect api.openai.com:443 (162.159.140.245:443)
+[02:24:12.368][127.0.0.1:54578] client disconnect
+[02:24:12.369][127.0.0.1:48234] client disconnect
+[02:24:32.087][127.0.0.1:34380] Closing connection due to inactivity: Client(127.0.0.1:34380, state=open, alpn=http/1.1)
+[02:24:32.088][127.0.0.1:34380] client disconnect
+[02:28:30.213][127.0.0.1:38582] client connect
+[02:28:30.219][127.0.0.1:38582] server connect api.openai.com:443 (172.66.0.243:443)
+[02:30:52.364][127.0.0.1:40734] server disconnect api.openai.com:443 (172.66.0.243:443)
+[02:34:42.789][127.0.0.1:33178] client connect
+[02:34:42.800][127.0.0.1:33178] server connect api.openai.com:443 (172.66.0.243:443)
+[02:37:03.619][127.0.0.1:38582] server disconnect api.openai.com:443 (172.66.0.243:443)
+[02:40:52.366][127.0.0.1:40734] Closing connection due to inactivity: Client(127.0.0.1:40734, state=open, alpn=http/1.1)
+[02:40:52.367][127.0.0.1:40734] client disconnect
+[02:41:56.538][127.0.0.1:38582] client disconnect
+[02:41:56.539][127.0.0.1:33178] client disconnect
+[02:41:56.539][127.0.0.1:33178] server disconnect api.openai.com:443 (172.66.0.243:443)

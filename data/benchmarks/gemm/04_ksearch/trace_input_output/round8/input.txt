@@ -1,0 +1,609 @@
+You are in a debug-and-improve loop for a HIP C++ kernel on MI300X.
+The current implementation may be buggy OR already correct-but-slower-than-desired.
+
+Original Specification:
+Name: gemm_bf16_var_mnk
+Type: gemm
+
+Axes:
+  M: variable (rows of A and output)
+  N: variable (rows of B (before transpose) and cols of output)
+  K: variable (reduction dimension)
+
+Inputs:
+  A: [M, K] (DType.BFLOAT16) - lhs matrix
+  B: [N, K] (DType.BFLOAT16) - rhs matrix, transposed in matmul
+
+Outputs:
+  C: [M, N] (DType.BFLOAT16) - gemm output
+
+
+Reference Implementation:
+import torch
+
+def run(A, B):
+    C = torch.matmul(A, B.T)
+    return C
+
+Known-Good Base Implementation (reference):
+(no base code; start from spec)
+
+Current Implementation (fix or improve THIS code; keep it aligned with the base and the chosen action):
+<header_file name="kernel.h">
+#ifndef GEMM_BF16_VAR_MNK_KERNEL_H
+#define GEMM_BF16_VAR_MNK_KERNEL_H
+
+#include <hip/hip_runtime.h>
+#include <hip/hip_bfloat16.h>
+#include <cstdint>
+
+hipError_t launch_gemm_bf16_var_mnk(
+    const hip_bfloat16* A,
+    const hip_bfloat16* B,
+    hip_bfloat16* C,
+    int M,
+    int N,
+    int K,
+    hipStream_t stream);
+
+#endif // GEMM_BF16_VAR_MNK_KERNEL_H
+</header_file>
+
+<hip_file name="kernel.cu">
+#include "kernel.h"
+
+#include <cstdint>
+#include <cstddef>
+
+#if defined(__HIP_PLATFORM_AMD__) && __has_include(<rocwmma/rocwmma.hpp>)
+#include <rocwmma/rocwmma.hpp>
+#define GEMM_USE_ROCWMMA 1
+#else
+#define GEMM_USE_ROCWMMA 0
+#endif
+
+__device__ __forceinline__ float bf16_to_float(hip_bfloat16 x) {
+    return static_cast<float>(x);
+}
+
+__global__ void gemm_scalar_direct_kernel(
+    const hip_bfloat16* __restrict__ A,
+    const hip_bfloat16* __restrict__ B,
+    hip_bfloat16* __restrict__ C,
+    int M, int N, int K) {
+
+    int n = blockIdx.x * blockDim.x + threadIdx.x;
+    int m = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (m >= M || n >= N) return;
+
+    float acc = 0.0f;
+    const int a_base = m * K;
+    const int b_base = n * K;
+    for (int k = 0; k < K; ++k) {
+        acc += bf16_to_float(A[a_base + k]) * bf16_to_float(B[b_base + k]);
+    }
+
+    C[static_cast<int64_t>(m) * static_cast<int64_t>(N) + n] = __float2bfloat16(acc);
+}
+
+__global__ void splitk_gemm_scalar_kernel(
+    const hip_bfloat16* __restrict__ A,
+    const hip_bfloat16* __restrict__ B,
+    float* __restrict__ partial,
+    int M, int N, int K,
+    int part_size) {
+
+    int n = blockIdx.x * blockDim.x + threadIdx.x;
+    int m = blockIdx.y * blockDim.y + threadIdx.y;
+    int p = blockIdx.z;
+
+    if (m >= M || n >= N) return;
+
+    int k0 = p * part_size;
+    int k1 = k0 + part_size;
+    if (k1 > K) k1 = K;
+
+    float acc = 0.0f;
+    const int a_base = m * K;
+    const int b_base = n * K;
+
+    for (int k = k0; k < k1; ++k) {
+        acc += bf16_to_float(A[a_base + k]) * bf16_to_float(B[b_base + k]);
+    }
+
+    const int64_t elem_idx = static_cast<int64_t>(m) * static_cast<int64_t>(N) + n;
+    const int64_t out_idx =
+        static_cast<int64_t>(p) * static_cast<int64_t>(M) * static_cast<int64_t>(N) + elem_idx;
+    partial[out_idx] = acc;
+}
+
+#if GEMM_USE_ROCWMMA
+using namespace rocwmma;
+
+__global__ __launch_bounds__(64) void splitk_gemm_mfma_kernel(
+    const hip_bfloat16* __restrict__ A,
+    const hip_bfloat16* __restrict__ B,
+    float* __restrict__ partial,
+    int M, int N, int K,
+    int part_size) {
+
+    constexpr int BlockM = 16;
+    constexpr int BlockN = 16;
+    constexpr int BlockK = 16;
+
+    const int m0 = blockIdx.y * BlockM;
+    const int n0 = blockIdx.x * BlockN;
+    const int p  = blockIdx.z;
+
+    if (m0 + BlockM > M || n0 + BlockN > N) return;
+
+    const int k0 = p * part_size;
+    int k1 = k0 + part_size;
+    if (k1 > K) k1 = K;
+
+    fragment<matrix_a, BlockM, BlockN, BlockK, bfloat16_t, row_major> fragA;
+    fragment<matrix_b, BlockM, BlockN, BlockK, bfloat16_t, col_major> fragB;
+    fragment<accumulator, BlockM, BlockN, BlockK, float> fragAcc;
+
+    fill_fragment(fragAcc, 0.0f);
+
+    const bfloat16_t* A_bf16 = reinterpret_cast<const bfloat16_t*>(A);
+    const bfloat16_t* B_bf16 = reinterpret_cast<const bfloat16_t*>(B);
+
+    for (int k = k0; k < k1; k += BlockK) {
+        const bfloat16_t* aTile = A_bf16 + static_cast<int64_t>(m0) * K + k;
+        const bfloat16_t* bTile = B_bf16 + static_cast<int64_t>(n0) * K + k;
+
+        load_matrix_sync(fragA, aTile, K);
+        load_matrix_sync(fragB, bTile, K);
+        mma_sync(fragAcc, fragA, fragB, fragAcc);
+    }
+
+    float* outTile = partial + (static_cast<int64_t>(p) * M + m0) * N + n0;
+    store_matrix_sync(outTile, fragAcc, N, mem_row_major);
+}
+#endif
+
+__global__ void splitk_merge_kernel(
+    const float* __restrict__ partial,
+    hip_bfloat16* __restrict__ C,
+    int64_t elements,
+    int partitions) {
+
+    int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx >= elements) return;
+
+    float acc = 0.0f;
+    for (int p = 0; p < partitions; ++p) {
+        acc += partial[static_cast<int64_t>(p) * elements + idx];
+    }
+    C[idx] = __float2bfloat16(acc);
+}
+
+hipError_t launch_gemm_bf16_var_mnk(
+    const hip_bfloat16* A,
+    const hip_bfloat16* B,
+    hip_bfloat16* C,
+    int M,
+    int N,
+    int K,
+    hipStream_t stream) {
+
+    if (M <= 0 || N <= 0) {
+        return hipSuccess;
+    }
+
+    const int64_t elements = static_cast<int64_t>(M) * static_cast<int64_t>(N);
+
+    if (K <= 0) {
+        return hipMemsetAsync(C, 0, static_cast<size_t>(elements) * sizeof(hip_bfloat16), stream);
+    }
+
+    const bool k_dominant = (K >= 2048) && (elements <= 262144);
+    const int part_size = k_dominant ? 1024 : K;
+    const int partitions = (K + part_size - 1) / part_size;
+
+#if GEMM_USE_ROCWMMA
+    const bool use_mfma =
+        (M % 16 == 0) &&
+        (N % 16 == 0) &&
+        (K % 16 == 0) &&
+        (part_size % 16 == 0);
+#else
+    const bool use_mfma = false;
+#endif
+
+    if (partitions == 1 && !use_mfma) {
+        dim3 block(16, 16, 1);
+        dim3 grid((N + block.x - 1) / block.x, (M + block.y - 1) / block.y, 1);
+        hipLaunchKernelGGL(
+            gemm_scalar_direct_kernel,
+            grid,
+            block,
+            0,
+            stream,
+            A, B, C, M, N, K
+        );
+        return hipGetLastError();
+    }
+
+    float* partial = nullptr;
+    const size_t partial_bytes =
+        static_cast<size_t>(elements) * static_cast<size_t>(partitions) * sizeof(float);
+
+    hipError_t err = hipMalloc(reinterpret_cast<void**>(&partial), partial_bytes);
+    if (err != hipSuccess) return err;
+
+    if (use_mfma) {
+#if GEMM_USE_ROCWMMA
+        dim3 block(64, 1, 1);
+        dim3 grid((N + 15) / 16, (M + 15) / 16, partitions);
+        hipLaunchKernelGGL(
+            splitk_gemm_mfma_kernel,
+            grid,
+            block,
+            0,
+            stream,
+            A, B, partial, M, N, K, part_size
+        );
+        err = hipGetLastError();
+        if (err != hipSuccess) {
+            hipFree(partial);
+            return err;
+        }
+#endif
+    } else {
+        dim3 block(16, 16, 1);
+        dim3 grid((N + block.x - 1) / block.x, (M + block.y - 1) / block.y, partitions);
+        hipLaunchKernelGGL(
+            splitk_gemm_scalar_kernel,
+            grid,
+            block,
+            0,
+            stream,
+            A, B, partial, M, N, K, part_size
+        );
+        err = hipGetLastError();
+        if (err != hipSuccess) {
+            hipFree(partial);
+            return err;
+        }
+    }
+
+    {
+        constexpr int threads = 256;
+        const int blocks = static_cast<int>((elements + threads - 1) / threads);
+        hipLaunchKernelGGL(
+            splitk_merge_kernel,
+            dim3(blocks),
+            dim3(threads),
+            0,
+            stream,
+            partial, C, elements, partitions
+        );
+        err = hipGetLastError();
+        if (err != hipSuccess) {
+            hipFree(partial);
+            return err;
+        }
+    }
+
+    err = hipFree(partial);
+    return err;
+}
+</hip_file>
+
+<cpp_file name="main.cpp">
+#include <torch/extension.h>
+#include <ATen/BFloat16.h>
+#include <ATen/hip/HIPContext.h>
+#include <c10/hip/HIPGuard.h>
+#include <hip/hip_runtime.h>
+#include <pybind11/pybind11.h>
+
+#include <limits>
+#include <string>
+
+#include "kernel.h"
+
+namespace py = pybind11;
+
+torch::Tensor run(torch::Tensor A, torch::Tensor B) {
+    TORCH_CHECK(A.dim() == 2, "A must be 2D, got dim=", A.dim());
+    TORCH_CHECK(B.dim() == 2, "B must be 2D, got dim=", B.dim());
+
+    auto A_in = A.to(torch::kBFloat16).contiguous();
+    auto B_in = B.to(torch::kBFloat16).contiguous();
+
+    const int64_t M64 = A_in.size(0);
+    const int64_t K64 = A_in.size(1);
+    const int64_t N64 = B_in.size(0);
+
+    TORCH_CHECK(
+        B_in.size(1) == K64,
+        "Shape mismatch: A is [", M64, ", ", K64, "] but B is [", N64, ", ", B_in.size(1), "]");
+
+    TORCH_CHECK(M64 <= std::numeric_limits<int>::max(), "M too large");
+    TORCH_CHECK(N64 <= std::numeric_limits<int>::max(), "N too large");
+    TORCH_CHECK(K64 <= std::numeric_limits<int>::max(), "K too large");
+
+    int device_index = 0;
+    if (A_in.is_hip()) {
+        device_index = A_in.get_device();
+    } else if (B_in.is_hip()) {
+        device_index = B_in.get_device();
+    }
+
+    c10::hip::HIPGuard device_guard(device_index);
+    c10::Device gpu_device(c10::DeviceType::HIP/ROCm, device_index);
+
+    auto A_gpu = A_in.is_hip()
+        ? A_in
+        : A_in.to(gpu_device, torch::kBFloat16, false, false);
+    auto B_gpu = B_in.is_hip()
+        ? B_in
+        : B_in.to(gpu_device, torch::kBFloat16, false, false);
+
+    if (A_gpu.get_device() != device_index) {
+        A_gpu = A_gpu.to(gpu_device, torch::kBFloat16, false, false);
+    }
+    if (B_gpu.get_device() != device_index) {
+        B_gpu = B_gpu.to(gpu_device, torch::kBFloat16, false, false);
+    }
+
+    A_gpu = A_gpu.contiguous();
+    B_gpu = B_gpu.contiguous();
+
+    auto C_gpu = torch::empty(
+        {M64, N64},
+        torch::TensorOptions().device(gpu_device).dtype(torch::kBFloat16));
+
+    auto stream = at::hip::getDefaultHIPStream(device_index);
+
+    hipError_t status = launch_gemm_bf16_var_mnk(
+        reinterpret_cast<const hip_bfloat16*>(A_gpu.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const hip_bfloat16*>(B_gpu.data_ptr<at::BFloat16>()),
+        reinterpret_cast<hip_bfloat16*>(C_gpu.data_ptr<at::BFloat16>()),
+        static_cast<int>(M64),
+        static_cast<int>(N64),
+        static_cast<int>(K64),
+        stream.stream());
+
+    TORCH_CHECK(
+        status == hipSuccess,
+        "launch_gemm_bf16_var_mnk failed: ",
+        hipGetErrorString(status));
+
+    status = hipStreamSynchronize(stream.stream());
+    TORCH_CHECK(
+        status == hipSuccess,
+        "hipStreamSynchronize failed: ",
+        hipGetErrorString(status));
+
+    return C_gpu.to(torch::kCPU);
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("run", &run, py::arg("A"), py::arg("B"), "BF16 GEMM C = A @ B^T");
+}
+</cpp_file>
+
+Performance Summary:
+(none)
+
+Failure Logs:
+Status: COMPILE_ERROR
+Timestamp: 2026-03-12T06:39:44.325958
+
+Execution Log:
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r7_high_828338/kernel.h -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r7_high_828338/kernel.h [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r7_high_828338/kernel.cu -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r7_high_828338/kernel.hip [ok]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r7_high_828338/main.cpp -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r7_high_828338/main.cpp [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r7_high_828338/kernel.h -> /root/.cache/
+...<trace logs truncated for prompt>...
+ONS__=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -fno-gpu-rdc -c -x hip /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r7_high_828338/kernel.hip -o "kernel.HIP/ROCm.o"
+ninja: build stopped: subcommand failed.
+BuildError: No registered builder can build solution 'gpt-5.3-codex_gemm_bf16_var_mnk_hip_optimized_r7_high'
+
+Traceback:
+Traceback (most recent call last):
+  File "/opt/venv/lib/python3.12/site-packages/flashinfer_bench/bench/runner/persistent_runner.py", line 709, in _persistent_worker_main
+    runnable_sol = registry.build(definition, solution)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/flashinfer_bench/compile/registry.py", line 168, in build
+    raise BuildError(f"No registered builder can build solution '{solution.name}'")
+flashinfer_bench.compile.builder.BuildError: No registered builder can build solution 'gpt-5.3-codex_gemm_bf16_var_mnk_hip_optimized_r7_high'
+
+Chosen Next Action (still targeting; do not expand scope):
+World Model: Chosen Next Action (from decision tree node)
+- node_id: n2_k_dominant_partitioned
+- base_node_id: root
+- title: Prototype K-dominant reduction-partitioned path
+- difficulty_1_to_5: 4
+- description: Implement a reduction-partitioned variant for K-dominant workloads (very large K with relatively small or skinny MxN), with a final merge of partial sums.
+- expected_vs_baseline_factor: 1.12x
+- rationale: When K is very large and output surface is small, extra K parallelism can improve utilization versus a single-pass reduction.
+
+Debug-and-improve round: 3/5
+
+Rules:
+- If the current implementation FAILED: fix correctness/compile/runtime issues FIRST.
+- If the current implementation PASSED: improve performance while preserving correctness.
+- Keep changes minimal; do not introduce extra unrelated optimizations.
+- Keep the implementation aligned with the base and the chosen action intent.
+- Return only the full corrected XML blocks (no explanations, no markdown).
+
+IMPORTANT: Generate code in XML format with exactly 3 files with these strict names:
+
+<header_file name="kernel.h">
+- All HIP kernel function declarations
+- Host function declarations
+- Any necessary struct/type definitions
+- Include guards and necessary headers
+</header_file>
+
+<hip_file name="kernel.cu">
+- All __global__ kernel implementations
+- All __device__ helper functions
+- HIP-specific optimizations and memory patterns
+- Proper error checking and memory management
+</hip_file>
+
+<cpp_file name="main.cpp">
+- Host function that launches kernels
+- Memory allocation and data transfer management
+- Device management and error handling
+- Entry point function named "run" that can be called to execute the implementation
+- Handle both args and kwargs properly
+- Move CPU data to GPU, execute kernels, and return results to CPU
+- MUST include PyTorch C++ extension bindings using PYBIND11_MODULE
+- The "run" function must be exposed to Python through the binding
+- Include proper tensor type conversion between PyTorch tensors and device pointers
+- Include all necessary PyTorch headers: #include <torch/extension.h>
+</cpp_file>
+
+Code Generation Guidelines:
+- Use modern HIP features appropriate for MI300X
+- Optimize memory coalescing and reduce bank conflicts
+- Utilize shared memory effectively for data reuse
+- Consider occupancy and register usage
+- Implement proper error checking with hipGetLastError()
+- Use appropriate grid and block dimensions for the problem size
+- Leverage constant memory for frequently accessed read-only data
+- Use PyTorch tensor API (torch::Tensor) for all tensor arguments in the "run" function
+- Convert PyTorch tensors to HIP pointers using .data_ptr<float>() or similar methods
+- Ensure proper HIP stream synchronization and error handling
+
+** You MUST use MFMA to utilize the matrix cores on MI300X! ** For each round, you can see your current best solution and the previous round's summary, therefore you can implement the kernel step by step.
+
+Generate the corrected implementation:
+
+World Model (persistent across rounds; use it to guide kernel design):
+{
+  "computed_signals": {
+    "round_index": 0,
+    "trace": {
+      "latency_ms": null,
+      "mean_vs_baseline_factor": null,
+      "reference_latency_ms": null,
+      "speedup_factor": null,
+      "status": "initialized_world_model_no_benchmark"
+    }
+  },
+  "decision_tree": {
+    "active_leaf_id": "n2_k_dominant_partitioned",
+    "nodes": [
+      {
+        "action": {
+          "difficulty_1_to_5": 1,
+          "expected_vs_baseline_factor": 1.0,
+          "score_0_to_1": 0.58,
+          "title": "World-model initialization"
+        },
+        "choice": null,
+        "confidence_0_to_1": 0.66,
+        "decision": null,
+        "node_id": "root",
+        "node_type": "root",
+        "overall_rating_0_to_10": 5.8,
+        "parent_id": null,
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "unscored"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 4,
+          "expected_vs_baseline_factor": 1.12,
+          "score_0_to_1": 0.7,
+          "title": "Prototype K-dominant reduction-partitioned path"
+        },
+        "choice": "k_dominant_partitioned",
+        "confidence_0_to_1": 0.53,
+        "decision": "initial_family_selection",
+        "node_id": "n2_k_dominant_partitioned",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 7.0,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 2,
+          "expected_vs_baseline_factor": 1.09,
+          "score_0_to_1": 0.63,
+          "title": "Prototype small/irregular-shape low-latency path"
+        },
+        "choice": "small_irregular_latency",
+        "confidence_0_to_1": 0.52,
+        "decision": "initial_family_selection",
+        "node_id": "n3_small_irregular_latency",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 6.3,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 4,
+          "expected_vs_baseline_factor": 1.05,
+          "score_0_to_1": 0.34,
+          "title": "Prototype balanced large-MN kernel path"
+        },
+        "choice": "balanced_large_mn",
+        "confidence_0_to_1": 0.37,
+        "decision": "initial_family_selection",
+        "node_id": "n1_balanced_large_mn",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 3.4,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      }
+    ],
+    "root_id": "root"
+  },
+  "kernel_summary": "gemm_bf16_var_mnk is a dense GEMM computing C[M,N] = A[M,K] * B[N,K]^T with BF16 inputs/outputs and K-reduction per output element; all axes are runtime-variable, so performance depends on selecting shape-appropriate tiling while preserving correctness on arbitrary tails. Because A and B are each contiguous along K for the canonical access pattern, strong block-level reuse is possible and large balanced cases should be compute-limited on MI300X, whereas small/skinny/edge-heavy cases are likely limited by memory/launch overheads and utilization loss. Key constraints are BF16 output with likely FP32 accumulation, efficient handling of non-multiple dimensions, and minimizing extra global traffic.",
+  "open_questions": [
+    "What is the real runtime distribution of (M, N, K) (percentiles, common shape clusters, and frequency of skinny or tiny cases)?",
+    "Are A, B, and C guaranteed contiguous row-major tensors, or must arbitrary leading dimensions/strides be supported?",
+    "Is FP32 accumulation required for numerical accuracy, and are there determinism/reproducibility constraints on reductions?",
+    "Is temporary workspace allowed (and how much) for reduction-partitioned/K-split style paths?",
+    "What baseline should be used for scorekeeping (naive HIP kernel, rocBLAS, or current production kernel)?",
+    "Are there epilogue requirements beyond pure matmul (alpha/beta scaling, bias, activation), or strictly C = A @ B^T?"
+  ]
+}

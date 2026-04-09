@@ -1,0 +1,20 @@
+{
+  "was_diagnosis_correct": true,
+  "was_fix_effective": true,
+  "expected_outcome": "If compute was the primary bottleneck, reducing FP32 arithmetic pressure should lower runtime noticeably while memory utilization remains relatively secondary.",
+  "actual_outcome": "Runtime improved from 194.5221ms to 161.9471ms (+16.7%) with verification passing, and NCU SOL still indicates compute-dominant behavior (Compute 92.8% vs Memory 42.1%).",
+  "reasoning": "The kernel sped up substantially after reducing FP32 work via lower-precision/math-path reformulation and activation simplification, which is exactly the expected direction for a compute-bound kernel. The post-change SOL profile still shows much higher compute saturation than memory, consistent with the original root-cause diagnosis. Since memory SOL is moderate and did not become the limiter, the optimization likely removed part of the ALU/math pressure but did not fully eliminate compute bottlenecks, leaving additional headroom in compute-side tuning.",
+  "lessons": [
+    "Targeting arithmetic intensity (precision strategy, tensor/matrix instruction paths, activation fusion/simplification) can deliver meaningful gains in compute-bound kernels.",
+    "A strong speedup with unchanged correctness and continued high compute SOL suggests the fix addressed the right bottleneck but only partially; additional compute-focused optimizations are still worthwhile."
+  ],
+  "avoid_patterns": [
+    "Prioritizing memory-traffic optimizations first when SOL and behavior indicate compute saturation is the dominant limiter.",
+    "Assuming one precision-path change fully resolves compute bottlenecks without checking remaining pipeline/instruction-level inefficiencies."
+  ],
+  "try_patterns": [
+    "Further increase use of MFMA/Tensor-Core style tiling and instruction mix optimization to improve throughput per cycle.",
+    "Reduce expensive transcendental/nonlinear activation cost via polynomial approximations, lookup-assisted methods, or deeper fusion where accuracy allows.",
+    "Improve ILP/unrolling and scheduling to keep compute pipelines fed while controlling register pressure/occupancy trade-offs."
+  ]
+}

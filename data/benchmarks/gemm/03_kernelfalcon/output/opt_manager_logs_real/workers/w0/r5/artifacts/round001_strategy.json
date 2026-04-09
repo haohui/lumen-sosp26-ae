@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Roofline marks this kernel as underutilized (Compute SOL 54.8%, Memory SOL 36.4%, not at roofline). Tensor path is unused (0%), and achieved DRAM bandwidth (~1.17 TB/s) is far below MI300X peak (5.3 TB/s), indicating headroom is lost to execution inefficiencies rather than pure compute or memory limits.",
+    "root_causes": [
+      {
+        "cause": "No matrix-core/tensor-core utilization for GEMM, limiting arithmetic throughput on CDNA3.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "Tensor/matrix execution units are completely idle during matmul."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Retune/force Triton configs that map `tl.dot` to MFMA (matrix cores), e.g., use MI300X-friendly block shapes and mixed-precision paths (fp16/bf16 inputs with fp32 accumulate) known to trigger matrix instructions.",
+            "rationale": "Activating MFMA/tensor paths can substantially raise compute SOL and move the kernel closer to the roofline."
+          }
+        ]
+      },
+      {
+        "cause": "On-chip memory access inefficiency from significant LDS bank conflicts creates stall overhead despite high warp occupancy.",
+        "evidence": [
+          {
+            "metric": "rocm__SQ_LDS_BANK_CONFLICT",
+            "value": 1048576.0,
+            "interpretation": "High LDS bank conflict count suggests shared-memory contention and serialization."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Change tile layout/access pattern to reduce LDS conflicts (e.g., add padding/skew to shared tiles, adjust BLOCK_M/BLOCK_N/BLOCK_K so per-wave LDS strides avoid same-bank hits).",
+            "rationale": "Reducing bank conflicts lowers latency stalls and improves both effective compute and memory utilization."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Retune/force Triton configs that map `tl.dot` to MFMA (matrix cores), e.g., use MI300X-friendly block shapes and mixed-precision paths (fp16/bf16 inputs with fp32 accumulate) known to trigger matrix instructions.",
+        "rationale": "Activating MFMA/tensor paths can substantially raise compute SOL and move the kernel closer to the roofline."
+      },
+      {
+        "fix": "Change tile layout/access pattern to reduce LDS conflicts (e.g., add padding/skew to shared tiles, adjust BLOCK_M/BLOCK_N/BLOCK_K so per-wave LDS strides avoid same-bank hits).",
+        "rationale": "Reducing bank conflicts lowers latency stalls and improves both effective compute and memory utilization."
+      }
+    ]
+  }
+]

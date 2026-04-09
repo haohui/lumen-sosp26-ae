@@ -1,0 +1,82 @@
+[
+  {
+    "cache_dir": "3YKZHWLFDSD4UJYSC5VJXWDDPUDQ6B2WMPUESFWOKDPEHUZT3FEQ",
+    "hash": "de1593d9651c87ca2712176a9bd8637d070f075663e84916ce50de43d333d949",
+    "config": {
+      "BLOCK_SIZE_M": 128,
+      "BLOCK_SIZE_N": 256,
+      "BLOCK_SIZE_K": 16,
+      "GROUP_SIZE_M": 1,
+      "num_warps": 4,
+      "num_stages": 2,
+      "waves_per_eu": 2,
+      "REMAP_XCD": 1,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 8
+    }
+  },
+  {
+    "cache_dir": "4DVL5IXPG6NEHIOBHPI5AV7SBA3RIJ6M74TMN35MSLZDBBSE7Q6Q",
+    "hash": "e0eabea2ef379a43a1c13bd1d057f208371427ccff26c6efac92f2308644fc3d",
+    "config": {
+      "BLOCK_SIZE_M": 128,
+      "BLOCK_SIZE_N": 256,
+      "BLOCK_SIZE_K": 16,
+      "GROUP_SIZE_M": 1,
+      "num_warps": 4,
+      "num_stages": 2,
+      "waves_per_eu": 2,
+      "REMAP_XCD": 0,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 4
+    }
+  },
+  {
+    "cache_dir": "OTBXYJV2KEW4J4CLVTYPRC7KCKDKQX2RE4TM4AUG7G6M5RRZDJ4Q",
+    "hash": "74c37c26ba512dc4f04bacf0f88bea1286a85f512726ce0286f9bccec6391a79",
+    "config": {
+      "BLOCK_SIZE_M": 128,
+      "BLOCK_SIZE_N": 256,
+      "BLOCK_SIZE_K": 16,
+      "GROUP_SIZE_M": 1,
+      "num_warps": 4,
+      "num_stages": 2,
+      "waves_per_eu": 2,
+      "REMAP_XCD": 0,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 8
+    }
+  },
+  {
+    "cache_dir": "P5QT7HITWVOI2IU2TRQRXO3BCBO4N7BLABHKSO6NXJZGPN6FI5EA",
+    "hash": "7f613f9d13b55c8d229a9c611bbb61105dc6fc2b004ea93bcdba7267b7c54748",
+    "config": {
+      "BLOCK_SIZE_M": 64,
+      "BLOCK_SIZE_N": 64,
+      "BLOCK_SIZE_K": 32,
+      "GROUP_SIZE_M": 1,
+      "num_warps": 4,
+      "num_stages": 2,
+      "waves_per_eu": 8,
+      "REMAP_XCD": 1,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 1
+    }
+  },
+  {
+    "cache_dir": "SIDJYFVTSR55HCLUWLQQAK3CC7TJVWE4CBMYXMRHBO3X2XTUMVTA",
+    "hash": "92069c16b3947bd38974b2e1002b6217e69ad89c10598bb2270bb77d5e746566",
+    "config": {
+      "BLOCK_SIZE_M": 64,
+      "BLOCK_SIZE_N": 128,
+      "BLOCK_SIZE_K": 32,
+      "GROUP_SIZE_M": 8,
+      "num_warps": 4,
+      "num_stages": 2,
+      "waves_per_eu": 3,
+      "REMAP_XCD": 0,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 1
+    }
+  }
+]

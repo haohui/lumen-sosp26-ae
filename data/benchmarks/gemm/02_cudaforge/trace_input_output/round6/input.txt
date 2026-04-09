@@ -1,0 +1,436 @@
+===== round005_problem_identify_prompt.txt =====
+You are given:
+
+ERROR_LOG:
+load_inline() got an unexpected keyword argument 'hip_sources'
+
+Target dtype:
+BF16 (`torch.bfloat16`) is the required primary compute dtype.
+
+PyTorch reference (ground truth):
+
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+    """
+    Simple model that performs a single square matrix multiplication (C = A * B)
+    """
+    def __init__(self):
+        super(Model, self).__init__()
+    
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        """
+        Performs the matrix multiplication.
+
+        Args:
+            A (torch.Tensor): Input matrix A of shape (N, N).
+            B (torch.Tensor): Input matrix B of shape (N, N).
+
+        Returns:
+            torch.Tensor: Output matrix C of shape (N, N).
+        """
+        return torch.matmul(A, B)
+
+N = 2048 * 2
+
+def get_inputs():
+    A = torch.rand(N, N)
+    B = torch.rand(N, N)
+    return [A, B]
+
+def get_init_inputs():
+    return []  # No special initialization inputs needed
+
+HIP/ROCm candidate (to audit):
+
+# <complete ModelNew code>
+import torch
+import torch.nn as nn
+from torch.utils.cpp_extension import load_inline
+
+source = r"""
+#include <torch/extension.h>
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+constexpr int BLOCK_M = 32;
+constexpr int BLOCK_N = 32;
+constexpr int BLOCK_K = 32;
+constexpr int THREADS_X = 16;
+constexpr int THREADS_Y = 16;
+
+__device__ __forceinline__ float bf16_to_float(uint16_t x) {
+    union {
+        uint32_t u;
+        float f;
+    } v;
+    v.u = static_cast<uint32_t>(x) << 16;
+    return v.f;
+}
+
+__device__ __forceinline__ uint16_t float_to_bf16_rn(float x) {
+    union {
+        uint32_t u;
+        float f;
+    } v;
+    v.f = x;
+    uint32_t u = v.u;
+    const uint32_t lsb = (u >> 16) & 1u;
+    u += 0x7FFFu + lsb;  // round-to-nearest-even
+    return static_cast<uint16_t>(u >> 16);
+}
+
+// Optimization applied: 2x2 register blocking per thread on a 32x32 tile.
+__global__ __launch_bounds__(256) void bf16_gemm_tiled_2x2_kernel(
+    const uint16_t* __restrict__ A,
+    const uint16_t* __restrict__ B,
+    uint16_t* __restrict__ C,
+    int N, int K, int M
+) {
+    __shared__ uint16_t As[BLOCK_M][BLOCK_K + 1];
+    __shared__ uint16_t Bs[BLOCK_K][BLOCK_N + 1];
+
+    const int tx = threadIdx.x;          // [0, 15]
+    const int ty = threadIdx.y;          // [0, 15]
+    const int tid = ty * THREADS_X + tx; // [0, 255]
+
+    const int block_row = blockIdx.y * BLOCK_M;
+    const int block_col = blockIdx.x * BLOCK_N;
+
+    const int row0 = block_row + ty;
+    const int row1 = row0 + THREADS_Y;   // +16
+    const int col0 = block_col + tx;
+    const int col1 = col0 + THREADS_X;   // +16
+
+    float acc00 = 0.0f, acc01 = 0.0f, acc10 = 0.0f, acc11 = 0.0f;
+
+    for (int t = 0; t < K; t += BLOCK_K) {
+        #pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            const int idx = tid + i * 256; // covers 0..1023
+            const int r = idx >> 5;        // /32
+            const int c = idx & 31;        // %32
+
+            const int a_row = block_row + r;
+            const int a_col = t + c;
+            As[r][c] = (a_row < N && a_col < K) ? A[a_row * K + a_col] : static_cast<uint16_t>(0);
+
+            const int b_row = t + r;
+            const int b_col = block_col + c;
+            Bs[r][c] = (b_row < K && b_col < M) ? B[b_row * M + b_col] : static_cast<uint16_t>(0);
+        }
+
+        __syncthreads();
+
+        #pragma unroll
+        for (int k = 0; k < BLOCK_K; ++k) {
+            const float a0 = bf16_to_float(As[ty][k]);
+            const float a1 = bf16_to_float(As[ty + THREADS_Y][k]);
+            const float b0 = bf16_to_float(Bs[k][tx]);
+            const float b1 = bf16_to_float(Bs[k][tx + THREADS_X]);
+
+            acc00 = fmaf(a0, b0, acc00);
+            acc01 = fmaf(a0, b1, acc01);
+            acc10 = fmaf(a1, b0, acc10);
+            acc11 = fmaf(a1, b1, acc11);
+        }
+
+        __syncthreads();
+    }
+
+    if (row0 < N && col0 < M) C[row0 * M + col0] = float_to_bf16_rn(acc00);
+    if (row0 < N && col1 < M) C[row0 * M + col1] = float_to_bf16_rn(acc01);
+    if (row1 < N && col0 < M) C[row1 * M + col0] = float_to_bf16_rn(acc10);
+    if (row1 < N && col1 < M) C[row1 * M + col1] = float_to_bf16_rn(acc11);
+}
+
+torch::Tensor bf16_matmul_hip(torch::Tensor A, torch::Tensor B) {
+    TORCH_CHECK(A.is_hip(), "A must be a GPU tensor");
+    TORCH_CHECK(B.is_hip(), "B must be a GPU tensor");
+    TORCH_CHECK(A.scalar_type() == at::kBFloat16, "A must be torch.bfloat16");
+    TORCH_CHECK(B.scalar_type() == at::kBFloat16, "B must be torch.bfloat16");
+    TORCH_CHECK(A.dim() == 2 && B.dim() == 2, "A and B must be 2D tensors");
+    TORCH_CHECK(A.size(1) == B.size(0), "matmul dimension mismatch");
+    TORCH_CHECK(A.get_device() == B.get_device(), "A and B must be on the same device");
+
+    auto A_c = A.contiguous();
+    auto B_c = B.contiguous();
+
+    const int N = static_cast<int>(A_c.size(0));
+    const int K = static_cast<int>(A_c.size(1));
+    const int M = static_cast<int>(B_c.size(1));
+
+    auto C = torch::empty({N, M}, A_c.options());
+
+    const dim3 threads(THREADS_X, THREADS_Y);
+    const dim3 blocks((M + BLOCK_N - 1) / BLOCK_N, (N + BLOCK_M - 1) / BLOCK_M);
+
+    const uint16_t* A_ptr = reinterpret_cast<const uint16_t*>(A_c.data_ptr<c10::BFloat16>());
+    const uint16_t* B_ptr = reinterpret_cast<const uint16_t*>(B_c.data_ptr<c10::BFloat16>());
+    uint16_t* C_ptr = reinterpret_cast<uint16_t*>(C.data_ptr<c10::BFloat16>());
+
+    hipLaunchKernelGGL(
+        bf16_gemm_tiled_2x2_kernel,
+        blocks,
+        threads,
+        0,
+        0,
+        A_ptr, B_ptr, C_ptr,
+        N, K, M
+    );
+
+    auto err = hipGetLastError();
+    TORCH_CHECK(err == hipSuccess, "bf16_gemm_tiled_2x2_kernel launch failed: ", hipGetErrorString(err));
+
+    return C;
+}
+"""
+
+cpp_src = r"""
+torch::Tensor bf16_matmul_hip(torch::Tensor A, torch::Tensor B);
+"""
+
+_bf16_matmul_ext = load_inline(
+    name="bf16_matmul_rocm_ext_opt_v1",
+    cpp_sources=cpp_src,
+    hip_sources=source,
+    functions=["bf16_matmul_hip"],
+    with_hip=True,
+    extra_cflags=["-O3"],
+    extra_hip_cflags=["-O3"],
+    verbose=False,
+)
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._ext = _bf16_matmul_ext
+
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        if (
+            A.is_hip
+            and B.is_hip
+            and A.dtype == torch.bfloat16
+            and B.dtype == torch.bfloat16
+            and A.dim() == 2
+            and B.dim() == 2
+            and A.shape[1] == B.shape[0]
+        ):
+            return self._ext.bf16_matmul_hip(A, B)
+        return torch.matmul(A, B)
+
+
+Follow the Rules and produce the JSON exactly in the specified format.
+===== round005_repair_prompt.txt =====
+You are a senior HIP/ROCm-extension developer.
+Your job is to **FIX** the compilation or runtime errors in the Python script
+shown below.
+Target data type for kernel compute path: BF16 (`torch.bfloat16`).
+
+OUTPUT RULES (STRICT) ────────────────────────────────────────────────────────────────
+1. Inside the block, follow **exactly** this order:
+   1. Imports – `torch`, `torch.nn`, `load_inline`.
+   2. `source` – triple-quoted HIP/ROCm string(s) (kernel + host wrapper).
+   3. `cpp_src` – prototypes for *all* kernels you expose.
+   4. **One** `load_inline` call per kernel group.
+   5. `class ModelNew(nn.Module)` – mirrors original inputs/outputs but calls
+      your HIP/ROCm kernels.
+2. **Do NOT include** testing code, `if __name__ == "__main__"`, or extra prose.
+
+────────────────────────────────────────────────────────────────
+ERROR LOG
+────────────────────────────────────────────────────────────────
+[Target backend: hip]\nload_inline() got an unexpected keyword argument 'hip_sources'
+
+────────────────────────────────────────────────────────────────
+OLD CODE (read-only)
+────────────────────────────────────────────────────────────────
+# <complete ModelNew code>
+import torch
+import torch.nn as nn
+from torch.utils.cpp_extension import load_inline
+
+source = r"""
+#include <torch/extension.h>
+#include <hip/hip_runtime.h>
+#include <cstdint>
+
+constexpr int BLOCK_M = 32;
+constexpr int BLOCK_N = 32;
+constexpr int BLOCK_K = 32;
+constexpr int THREADS_X = 16;
+constexpr int THREADS_Y = 16;
+
+__device__ __forceinline__ float bf16_to_float(uint16_t x) {
+    union {
+        uint32_t u;
+        float f;
+    } v;
+    v.u = static_cast<uint32_t>(x) << 16;
+    return v.f;
+}
+
+__device__ __forceinline__ uint16_t float_to_bf16_rn(float x) {
+    union {
+        uint32_t u;
+        float f;
+    } v;
+    v.f = x;
+    uint32_t u = v.u;
+    const uint32_t lsb = (u >> 16) & 1u;
+    u += 0x7FFFu + lsb;  // round-to-nearest-even
+    return static_cast<uint16_t>(u >> 16);
+}
+
+// Optimization applied: 2x2 register blocking per thread on a 32x32 tile.
+__global__ __launch_bounds__(256) void bf16_gemm_tiled_2x2_kernel(
+    const uint16_t* __restrict__ A,
+    const uint16_t* __restrict__ B,
+    uint16_t* __restrict__ C,
+    int N, int K, int M
+) {
+    __shared__ uint16_t As[BLOCK_M][BLOCK_K + 1];
+    __shared__ uint16_t Bs[BLOCK_K][BLOCK_N + 1];
+
+    const int tx = threadIdx.x;          // [0, 15]
+    const int ty = threadIdx.y;          // [0, 15]
+    const int tid = ty * THREADS_X + tx; // [0, 255]
+
+    const int block_row = blockIdx.y * BLOCK_M;
+    const int block_col = blockIdx.x * BLOCK_N;
+
+    const int row0 = block_row + ty;
+    const int row1 = row0 + THREADS_Y;   // +16
+    const int col0 = block_col + tx;
+    const int col1 = col0 + THREADS_X;   // +16
+
+    float acc00 = 0.0f, acc01 = 0.0f, acc10 = 0.0f, acc11 = 0.0f;
+
+    for (int t = 0; t < K; t += BLOCK_K) {
+        #pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            const int idx = tid + i * 256; // covers 0..1023
+            const int r = idx >> 5;        // /32
+            const int c = idx & 31;        // %32
+
+            const int a_row = block_row + r;
+            const int a_col = t + c;
+            As[r][c] = (a_row < N && a_col < K) ? A[a_row * K + a_col] : static_cast<uint16_t>(0);
+
+            const int b_row = t + r;
+            const int b_col = block_col + c;
+            Bs[r][c] = (b_row < K && b_col < M) ? B[b_row * M + b_col] : static_cast<uint16_t>(0);
+        }
+
+        __syncthreads();
+
+        #pragma unroll
+        for (int k = 0; k < BLOCK_K; ++k) {
+            const float a0 = bf16_to_float(As[ty][k]);
+            const float a1 = bf16_to_float(As[ty + THREADS_Y][k]);
+            const float b0 = bf16_to_float(Bs[k][tx]);
+            const float b1 = bf16_to_float(Bs[k][tx + THREADS_X]);
+
+            acc00 = fmaf(a0, b0, acc00);
+            acc01 = fmaf(a0, b1, acc01);
+            acc10 = fmaf(a1, b0, acc10);
+            acc11 = fmaf(a1, b1, acc11);
+        }
+
+        __syncthreads();
+    }
+
+    if (row0 < N && col0 < M) C[row0 * M + col0] = float_to_bf16_rn(acc00);
+    if (row0 < N && col1 < M) C[row0 * M + col1] = float_to_bf16_rn(acc01);
+    if (row1 < N && col0 < M) C[row1 * M + col0] = float_to_bf16_rn(acc10);
+    if (row1 < N && col1 < M) C[row1 * M + col1] = float_to_bf16_rn(acc11);
+}
+
+torch::Tensor bf16_matmul_hip(torch::Tensor A, torch::Tensor B) {
+    TORCH_CHECK(A.is_hip(), "A must be a GPU tensor");
+    TORCH_CHECK(B.is_hip(), "B must be a GPU tensor");
+    TORCH_CHECK(A.scalar_type() == at::kBFloat16, "A must be torch.bfloat16");
+    TORCH_CHECK(B.scalar_type() == at::kBFloat16, "B must be torch.bfloat16");
+    TORCH_CHECK(A.dim() == 2 && B.dim() == 2, "A and B must be 2D tensors");
+    TORCH_CHECK(A.size(1) == B.size(0), "matmul dimension mismatch");
+    TORCH_CHECK(A.get_device() == B.get_device(), "A and B must be on the same device");
+
+    auto A_c = A.contiguous();
+    auto B_c = B.contiguous();
+
+    const int N = static_cast<int>(A_c.size(0));
+    const int K = static_cast<int>(A_c.size(1));
+    const int M = static_cast<int>(B_c.size(1));
+
+    auto C = torch::empty({N, M}, A_c.options());
+
+    const dim3 threads(THREADS_X, THREADS_Y);
+    const dim3 blocks((M + BLOCK_N - 1) / BLOCK_N, (N + BLOCK_M - 1) / BLOCK_M);
+
+    const uint16_t* A_ptr = reinterpret_cast<const uint16_t*>(A_c.data_ptr<c10::BFloat16>());
+    const uint16_t* B_ptr = reinterpret_cast<const uint16_t*>(B_c.data_ptr<c10::BFloat16>());
+    uint16_t* C_ptr = reinterpret_cast<uint16_t*>(C.data_ptr<c10::BFloat16>());
+
+    hipLaunchKernelGGL(
+        bf16_gemm_tiled_2x2_kernel,
+        blocks,
+        threads,
+        0,
+        0,
+        A_ptr, B_ptr, C_ptr,
+        N, K, M
+    );
+
+    auto err = hipGetLastError();
+    TORCH_CHECK(err == hipSuccess, "bf16_gemm_tiled_2x2_kernel launch failed: ", hipGetErrorString(err));
+
+    return C;
+}
+"""
+
+cpp_src = r"""
+torch::Tensor bf16_matmul_hip(torch::Tensor A, torch::Tensor B);
+"""
+
+_bf16_matmul_ext = load_inline(
+    name="bf16_matmul_rocm_ext_opt_v1",
+    cpp_sources=cpp_src,
+    hip_sources=source,
+    functions=["bf16_matmul_hip"],
+    with_hip=True,
+    extra_cflags=["-O3"],
+    extra_hip_cflags=["-O3"],
+    verbose=False,
+)
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._ext = _bf16_matmul_ext
+
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        if (
+            A.is_hip
+            and B.is_hip
+            and A.dtype == torch.bfloat16
+            and B.dtype == torch.bfloat16
+            and A.dim() == 2
+            and B.dim() == 2
+            and A.shape[1] == B.shape[0]
+        ):
+            return self._ext.bf16_matmul_hip(A, B)
+        return torch.matmul(A, B)
+
+────────────────────────────────────────────────────────────────
+Main Critical Problem
+────────────────────────────────────────────────────────────────
+critical_issue: Extension build uses unsupported load_inline argument `hip_sources`, causing import-time failure before any matmul execution.
+why_it_matters: ModelNew cannot instantiate, so custom HIP kernel never runs and behavior diverges from reference by crashing instead of returning matmul output.
+minimal_fix_hint: Replace `hip_sources` with supported `hip_sources`/ROCm path for this PyTorch version, or use `torch.utils.cpp_extension.load`.
+
+```python
+# <your corrected code>
+```
+# ==========================================================
+

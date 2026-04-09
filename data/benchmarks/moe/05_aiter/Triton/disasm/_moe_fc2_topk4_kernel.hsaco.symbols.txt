@@ -1,0 +1,15 @@
+0000000000003880 d _DYNAMIC
+0000000000001700 T _moe_fc2_topk4_kernel
+0000000000000000 a _moe_fc2_topk4_kernel.has_dyn_sized_stack
+0000000000000000 a _moe_fc2_topk4_kernel.has_indirect_call
+0000000000000000 a _moe_fc2_topk4_kernel.has_recursion
+0000000000000680 R _moe_fc2_topk4_kernel.kd
+0000000000000000 a _moe_fc2_topk4_kernel.num_agpr
+000000000000004a a _moe_fc2_topk4_kernel.num_vgpr
+0000000000000024 a _moe_fc2_topk4_kernel.numbered_sgpr
+0000000000000000 a _moe_fc2_topk4_kernel.private_seg_size
+0000000000000000 a _moe_fc2_topk4_kernel.uses_flat_scratch
+0000000000000001 a _moe_fc2_topk4_kernel.uses_vcc
+0000000000000000 a amdgpu.max_num_agpr
+0000000000000000 a amdgpu.max_num_sgpr
+0000000000000000 a amdgpu.max_num_vgpr

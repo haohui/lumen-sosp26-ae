@@ -1,0 +1,21 @@
+{
+  "was_diagnosis_correct": false,
+  "was_fix_effective": false,
+  "expected_outcome": "If compute was truly the limiting factor, forcing MFMA/tensor-core lowering should have reduced kernel time and likely raised effective compute utilization (or reduced cycles per math op) while keeping correctness.",
+  "actual_outcome": "Kernel time regressed from 0.0214ms to 0.0226ms (-5.7%) despite passing verification, so the change made execution slower rather than faster.",
+  "reasoning": "The applied fix targeted compute throughput, but observed performance moved in the opposite direction. A successful compute-bottleneck fix would typically improve runtime and show better compute-side efficiency indicators. Instead, runtime worsened. NCU SOL still reports compute as higher than memory (69.0% vs 33.1%), but this alone does not prove the new mapping improved compute efficiency; it may indicate compute remains the dominant limiter and/or that occupancy/scheduling/register effects from the new config hurt throughput. The config changes (BLOCK_N 32→64, removing matrix_instr_nonkdim hint, removing waves_per_eu control) likely altered tile shape and wave residency in ways that offset or prevented MFMA gains.",
+  "lessons": [
+    "Do not treat 'compute SOL is high' as sufficient evidence that a specific MFMA-forcing change will speed up the kernel; validate with instruction-level and occupancy metrics.",
+    "Bundle fewer tuning changes at once; changing instruction mapping and launch/tile parameters together makes regressions hard to attribute.",
+    "MFMA/tensor-core paths can regress when tile shape, wave residency, or register pressure become unfavorable, even if math units are theoretically faster."
+  ],
+  "avoid_patterns": [
+    "Avoid simultaneously changing multiple knobs (instruction selection + BLOCK sizes + waves_per_eu) in one experiment without isolation.",
+    "Avoid assuming tensor-core/MFMA lowering is automatically beneficial for every problem size and shape."
+  ],
+  "try_patterns": [
+    "Run an A/B sequence with isolated changes: (1) MFMA enable only, (2) tile-size change only, (3) waves_per_eu change only.",
+    "Profile deeper compute-side counters (MFMA issue rate, VALU/MFMA mix, occupancy, register usage, wave stalls) to confirm whether MFMA is actually engaged and efficient.",
+    "Retune tile dimensions and wave settings specifically for the MFMA path (including BLOCK_M/N/K and num_warps/waves_per_eu) rather than reusing prior scalar/VALU-oriented shapes."
+  ]
+}

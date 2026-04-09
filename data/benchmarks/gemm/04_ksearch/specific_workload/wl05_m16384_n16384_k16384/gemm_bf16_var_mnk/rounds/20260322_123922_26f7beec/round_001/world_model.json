@@ -1,0 +1,212 @@
+{
+  "computed_signals": {
+    "round_index": 0,
+    "trace": {
+      "latency_ms": null,
+      "mean_vs_baseline_factor": null,
+      "reference_latency_ms": null,
+      "speedup_factor": null,
+      "status": "initialized_no_measurements"
+    }
+  },
+  "decision_tree": {
+    "active_leaf_id": "path_balanced_general",
+    "nodes": [
+      {
+        "action": {
+          "description": "Dummy root node holding initial world model and candidate first-step alternatives.",
+          "difficulty_1_to_5": 1,
+          "expected_vs_baseline_factor": 1.0,
+          "rationale": "Before profiling, rank plausible kernel families by shape regime fit on MI300X.",
+          "score_0_to_1": 0.59,
+          "title": "Search root (no-op)"
+        },
+        "choice": null,
+        "confidence_0_to_1": 0.52,
+        "decision": null,
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "MI300X (CDNA3) favors high-occupancy tiled GEMM with BF16-friendly matrix math; wave64 and LDS/register limits constrain tile shape.",
+            "notes": "GEMM has high arithmetic intensity for large K; shape variance can break ideal hardware mapping.",
+            "rating_0_to_10": 6.0,
+            "risk": "Unknown runtime shape distribution may make one mapping suboptimal."
+          },
+          "memory_bandwidth": {
+            "notes": "A and B are dense and reusable across N/M respectively; bandwidth pressure depends on tile reuse quality.",
+            "rating_0_to_10": 6.0,
+            "risk": "Poor tile reuse or edge-heavy shapes can shift behavior toward bandwidth-bound."
+          },
+          "register_pressure": {
+            "notes": "Accumulator-heavy design (BF16 input, likely FP32 accumulate) can reduce occupancy if tile is too large.",
+            "rating_0_to_10": 5.0,
+            "risk": "Overly aggressive per-thread output tile may trigger register spill."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "root",
+        "node_type": "root",
+        "notes": "- [1] Problem classification: Dense matrix-multiply-like kernel, C[M,N]=A[M,K] x B[N,K]^T, reduction over K; outputs independent per (m,n) aside from reduction; M/N/K all runtime-variable.\n- [2] Canonical math & dependencies: C[m,n]=sum_{k=0..K-1} A[m,k]*B[n,k]. Parallelism over (m,n) tiles; K reduced in chunks. Reordering by tiled K loop is valid; accumulate in higher precision then cast to BF16 for store.\n- [3] Data layout & access: A [M,K] BF16 likely row-major contiguous in k; B [N,K] BF16 and matmul uses B.T so B rows are contiguous along k (good for K streaming). C [M,N] BF16 write-once. A tile reused across multiple n, B tile reused across multiple m.\n- [4] Bottleneck regimes: (R1) large M,N,K -> compute/matrix-core throughput limited; (R2) small K or tiny M/N -> launch+memory latency limited; (R3) highly skinny matrices (M>>N or N>>M) -> occupancy/reuse imbalance and edge overhead dominate.\n- [5] Kernel design knobs: CTA tile (M,N,K), wave mapping, per-thread output tile, K-chunk depth, staging policy (LDS/register), accumulation precision, epilogue cast, shape-specialized dispatch, optional split-K for large K/low M*N.\n- [6] High-level skeleton: choose shape bucket -> loop over K tiles: global load A/B -> stage to LDS/registers -> sync -> compute partial accumulators -> sync -> repeat; finalize with BF16 conversion + coalesced C store.\n- [7] Candidate families (pruned): (F1) balanced general throughput path for medium/large M,N; (F2) M-dominant skinny-N path to keep waves busy when N small; (F3) N-dominant skinny-M path to mirror for small M. Integration constraint: host must launch via ksearch_launch_* wrappers (main.cpp cannot use <<<>>>/hipLaunchKernelGGL).\n\nReference Implementation (excerpt):\nimport torch\n\ndef run(A, B):\n    C = torch.matmul(A, B.T)\n    return C",
+        "overall_rating_0_to_10": 6.0,
+        "parent_id": null,
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "initialized"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement one robust blocked GEMM path tuned for medium-to-large balanced shapes, using BF16 inputs with higher-precision accumulation and BF16 output.",
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.35,
+          "rationale": "Most workloads see strong gains from a good general path before adding aspect-ratio specializations.",
+          "score_0_to_1": 0.75,
+          "title": "Build balanced-shape baseline kernel path"
+        },
+        "choice": "balanced_general",
+        "confidence_0_to_1": 0.64,
+        "decision": "initial_kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Good match to MI300X for large tiles and steady K-loop; supports high matrix throughput when M and N are both non-trivial.",
+            "notes": "Maximizes reuse and arithmetic intensity on common GEMM regions.",
+            "rating_0_to_10": 8.0,
+            "risk": "May underperform on extreme skinny or tiny dimensions."
+          },
+          "memory_bandwidth": {
+            "notes": "Tiling can significantly reduce redundant global reads of A and B.",
+            "rating_0_to_10": 7.0,
+            "risk": "Edge tiles and small-K cases reduce effective reuse."
+          },
+          "register_pressure": {
+            "notes": "Moderate-to-high due to accumulator footprint; manageable with conservative per-thread tile.",
+            "rating_0_to_10": 6.0,
+            "risk": "Aggressive tile sizes may lower occupancy."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "path_balanced_general",
+        "node_type": "decision",
+        "notes": "Primary target: M and N both moderate/large, K moderate/large. Good first implementation for stable baseline metrics.\nSELF_CHECK: Cannot be combined with sibling skinny-specialized first-step actions in a single iteration because each implies different top-level mapping priorities and validation focus.",
+        "overall_rating_0_to_10": 8.0,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open_not_evaluated"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a shape-specialized path for workloads where M is large and N is small, prioritizing row-panel output mapping and reduced wasted work on narrow N.",
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.22,
+          "rationale": "Tall-skinny outputs often suffer from poor wave utilization in balanced kernels; specialization can recover occupancy.",
+          "score_0_to_1": 0.7,
+          "title": "Implement M-dominant skinny-N specialization"
+        },
+        "choice": "m_dominant_skinny_n",
+        "confidence_0_to_1": 0.57,
+        "decision": "initial_kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Improves wave assignment when N is narrow; better CU utilization than generic square-oriented mapping.",
+            "notes": "Better fit for aspect-ratio-skewed problems with N bottleneck.",
+            "rating_0_to_10": 7.0,
+            "risk": "Can lose efficiency on balanced shapes."
+          },
+          "memory_bandwidth": {
+            "notes": "Can improve useful-byte ratio by reducing padded/idle compute on N dimension.",
+            "rating_0_to_10": 7.0,
+            "risk": "Lower B reuse across tiny N may still expose bandwidth/latency overhead."
+          },
+          "register_pressure": {
+            "notes": "Potentially lower accumulator width per thread than balanced kernels.",
+            "rating_0_to_10": 6.0,
+            "risk": "If overcompensated, may increase control overhead and reduce ILP."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "path_m_dominant_skinny_n",
+        "node_type": "decision",
+        "notes": "Primary target: M>>N regimes (e.g., embedding/projection tails) where generic kernels leave lanes underutilized.\nSELF_CHECK: Alternative to siblings for first implementation; cannot be merged in one small iteration due to different dispatch criterion and tile aspect assumptions.",
+        "overall_rating_0_to_10": 7.0,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open_not_evaluated"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a shape-specialized path for workloads where N is large and M is small, prioritizing column-panel output mapping and reduced wasted work on narrow M.",
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.2,
+          "rationale": "Wide-skinny outputs mirror tall-skinny inefficiencies and benefit from dedicated mapping.",
+          "score_0_to_1": 0.69,
+          "title": "Implement N-dominant skinny-M specialization"
+        },
+        "choice": "n_dominant_skinny_m",
+        "confidence_0_to_1": 0.56,
+        "decision": "initial_kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Improves lane utilization when M is narrow; better scheduling balance on MI300X for this aspect ratio.",
+            "notes": "Addresses shape-induced underutilization in generic kernels.",
+            "rating_0_to_10": 7.0,
+            "risk": "Performance may regress for balanced or tall-skinny shapes."
+          },
+          "memory_bandwidth": {
+            "notes": "Potentially better coalescing/utilization on C and B-side dominant traversal.",
+            "rating_0_to_10": 6.0,
+            "risk": "Small M limits A reuse and may expose load inefficiency."
+          },
+          "register_pressure": {
+            "notes": "Often moderate; narrower M tile can reduce accumulator pressure.",
+            "rating_0_to_10": 6.0,
+            "risk": "Too many small tiles can increase overhead and reduce effective occupancy."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "path_n_dominant_skinny_m",
+        "node_type": "decision",
+        "notes": "Primary target: N>>M regimes where balanced mappings waste compute on M edge/idle lanes.\nSELF_CHECK: Alternative to siblings for the next single iteration; combining all families now would violate small-change scope and blur attribution.",
+        "overall_rating_0_to_10": 7.0,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open_not_evaluated"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      }
+    ],
+    "root_id": "root"
+  },
+  "kernel_summary": "gemm_bf16_var_mnk is a dense GEMM computing C[M,N] = A[M,K] * B[N,K]^T with BF16 inputs/outputs and K-reduction, where all dimensions are runtime-variable; access is dense and regular, with substantial reuse potential via tiling (A reused across N, B reused across M), so MI300X performance should be compute-bound for large balanced shapes but can become latency/bandwidth/occupancy limited for small-K or highly skinny aspect ratios, making shape-aware kernel family selection and careful accumulation/register/LDS balance the key constraints.",
+  "open_questions": [
+    "What are the real runtime distributions of (M, N, K), especially frequency of skinny or tiny dimensions?",
+    "Are A and B guaranteed contiguous row-major, and are leading dimensions/alignment (e.g., 16B/32B) guaranteed?",
+    "What numerical behavior is required: strict match to torch.matmul BF16 semantics (likely FP32 accumulation) or relaxed tolerance?",
+    "Is this standalone GEMM only (no alpha/beta, no fused bias/activation), and is C always overwrite-only?",
+    "How important is single-call latency versus throughput under stream concurrency (many concurrent GEMMs vs one large GEMM)?",
+    "Are we allowed to use multiple specialized kernels with runtime dispatch, or must there be one universal kernel path?",
+    "What workspace and synchronization overhead is acceptable if later considering split-K for extreme K regimes?"
+  ]
+}

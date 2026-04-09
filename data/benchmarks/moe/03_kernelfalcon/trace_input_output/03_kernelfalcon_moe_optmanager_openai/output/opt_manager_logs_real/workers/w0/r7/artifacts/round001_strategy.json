@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "For _fused_moe_kernel, SM throughput is 91.94% of peak while DRAM throughput is 42.12%; roofline also marks compute bottleneck (Compute SOL 91.9% vs Memory SOL 42.1%). Warps active are 100%, so the primary limit is arithmetic throughput, not occupancy or bandwidth.",
+    "root_causes": [
+      {
+        "cause": "Very high FP/VALU instruction pressure from fully fused FC1 + SiLU + FC2 loops dominates runtime.",
+        "evidence": [
+          {
+            "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 91.9379213597584,
+            "interpretation": "SM compute pipelines are close to peak, indicating compute saturation."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Reduce instruction count per output by increasing tile reuse/unrolling efficiency (autotune BLOCK_J/BLOCK_OUT/num_warps and consider splitting fusion if it lowers redundant math).",
+            "rationale": "When compute is saturated, speedup comes from fewer executed instructions per result or better instruction efficiency."
+          }
+        ]
+      },
+      {
+        "cause": "Kernel uses non-tensor-core path (VALU-heavy) for matrix-style work, limiting peak math throughput headroom.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "No tensor/matrix core utilization; math runs on standard vector ALUs."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Refactor math to matrix-instruction/tensor-core-compatible formulation and datatypes where possible (or use Triton patterns that lower to MFMA on CDNA3).",
+            "rationale": "Moving dense dot-product work to matrix engines can raise effective compute ceiling and reduce VALU bottleneck."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Reduce instruction count per output by increasing tile reuse/unrolling efficiency (autotune BLOCK_J/BLOCK_OUT/num_warps and consider splitting fusion if it lowers redundant math).",
+        "rationale": "When compute is saturated, speedup comes from fewer executed instructions per result or better instruction efficiency."
+      },
+      {
+        "fix": "Refactor math to matrix-instruction/tensor-core-compatible formulation and datatypes where possible (or use Triton patterns that lower to MFMA on CDNA3).",
+        "rationale": "Moving dense dot-product work to matrix engines can raise effective compute ceiling and reduce VALU bottleneck."
+      }
+    ]
+  }
+]

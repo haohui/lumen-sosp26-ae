@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Compute SOL is 54.5% and memory SOL is 36.3%, both below saturation; roofline also flags underutilized with 45.5% headroom and not at roofline.",
+    "root_causes": [
+      {
+        "cause": "Non-tensor-core execution limits math throughput for GEMM on MI300X.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "No tensor/XDLOPS pipeline activity, so matrix math runs on less efficient VALU path."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Refactor kernel/autotune configs to use MFMA/XDLOPS-compatible tile shapes and Triton AMD matrix-core codegen path (for fp16/bf16) so tl.dot lowers to tensor instructions.",
+            "rationale": "Enabling matrix cores typically raises compute utilization substantially for GEMM and shifts kernel closer to roofline."
+          }
+        ]
+      },
+      {
+        "cause": "On-chip data movement inefficiency (LDS conflicts) likely introduces stall overhead despite full wave occupancy.",
+        "evidence": [
+          {
+            "metric": "rocm__SQ_LDS_BANK_CONFLICT",
+            "value": 1048576.0,
+            "interpretation": "Significant LDS bank conflicts indicate shared-memory access serialization, reducing effective throughput."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Retune BLOCK_M/BLOCK_N/BLOCK_K and LDS layout (padding/swizzled shared-memory indexing) to reduce bank conflicts in A/B tile staging.",
+            "rationale": "Lower LDS conflicts reduces pipeline stalls and improves both compute issue efficiency and memory-feed regularity."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Refactor kernel/autotune configs to use MFMA/XDLOPS-compatible tile shapes and Triton AMD matrix-core codegen path (for fp16/bf16) so tl.dot lowers to tensor instructions.",
+        "rationale": "Enabling matrix cores typically raises compute utilization substantially for GEMM and shifts kernel closer to roofline."
+      },
+      {
+        "fix": "Retune BLOCK_M/BLOCK_N/BLOCK_K and LDS layout (padding/swizzled shared-memory indexing) to reduce bank conflicts in A/B tile staging.",
+        "rationale": "Lower LDS conflicts reduces pipeline stalls and improves both compute issue efficiency and memory-feed regularity."
+      }
+    ]
+  }
+]

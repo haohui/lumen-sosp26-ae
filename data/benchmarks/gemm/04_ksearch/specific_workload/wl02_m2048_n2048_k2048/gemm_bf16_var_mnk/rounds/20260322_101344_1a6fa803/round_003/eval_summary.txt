@@ -1,0 +1,3 @@
+- round_mean_latency_ms: 0.7489
+- round_speedup_vs_ref: 0.060x
+- round_score: 0.0600

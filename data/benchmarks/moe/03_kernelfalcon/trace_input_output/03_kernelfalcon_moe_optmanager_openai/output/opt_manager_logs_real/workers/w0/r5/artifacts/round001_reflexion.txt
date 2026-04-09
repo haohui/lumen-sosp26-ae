@@ -1,0 +1,24 @@
+{
+  "was_diagnosis_correct": false,
+  "was_fix_effective": false,
+  "expected_outcome": "If compute was truly the bottleneck, reducing FP/VALU instruction pressure should have lowered runtime and increased compute SOL utilization, potentially with similar or slightly higher memory SOL.",
+  "actual_outcome": "Runtime regressed catastrophically from 809.3647ms to infms, and both compute and memory SOL reported 0.0%, indicating the kernel did not produce meaningful performance data despite passing verification.",
+  "reasoning": "The observed outcome does not match a successful compute optimization. A real compute-side improvement should show measurable runtime reduction and better compute saturation. Instead, infms plus 0.0%/0.0% SOL strongly suggests a launch/profiling/runtime failure mode (e.g., invalid execution path, non-terminating/timeout behavior, or instrumentation not capturing active work) rather than a valid but slower kernel. Therefore, we cannot confirm the original compute diagnosis from this run, and the applied fix was not effective in practice. 'Passed Verification: Yes' only indicates output correctness for tested cases, not that the optimized path executed efficiently or robustly under profiling.",
+  "lessons": [
+    "Treat inf/invalid timing and 0% SOL as a failed experiment first; debug kernel execution/profiling integrity before drawing bottleneck conclusions.",
+    "For compute optimizations, require paired evidence: lower instruction count/issue pressure and improved compute SOL with finite runtime.",
+    "Introduce changes incrementally (one transformation at a time) so regressions can be attributed quickly.",
+    "When exploring MFMA/tensor-core lowering, validate that the fast path is actually selected and dimension/alignment constraints are satisfied."
+  ],
+  "avoid_patterns": [
+    "Applying broad loop/math restructuring plus backend-lowering changes in one step without guardrails.",
+    "Interpreting correctness pass alone as proof of optimization success.",
+    "Proceeding to further tuning without first resolving inf runtime and zeroed profiler metrics."
+  ],
+  "try_patterns": [
+    "Reproduce with a minimal benchmark and confirm stable finite runtime before/after each micro-change.",
+    "Collect low-level counters tied to the hypothesis (instruction mix, VALU utilization, tensor-core utilization, occupancy, stall reasons).",
+    "Gate MFMA/tensor-core path with explicit checks and fallback, and log which path is active.",
+    "Start with targeted compute reductions (e.g., hoist invariants, fuse FMAs, reduce transcendental/scalar ops) and validate each with NCU deltas."
+  ]
+}

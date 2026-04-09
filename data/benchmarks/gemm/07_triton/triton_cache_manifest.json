@@ -1,0 +1,62 @@
+[
+  {
+    "cache_dir": "3YKY3VOMWECRLC7WQL5U55SXS37QRO5SOJJK3WCPUPPYI4SRKLDA",
+    "kernel_json": "_matmul_kernel.json",
+    "name": "_matmul_kernel",
+    "hash": "de158dd5ccb105158bf682fb4ef65796ff08bbb27252add84fa3df84725152c6",
+    "num_warps": 8,
+    "num_stages": 2,
+    "shared": 16384,
+    "waves_per_eu": 1,
+    "triton_version": "3.5.1+rocm7.1.1.gita272dfa8",
+    "tt_func": "tt.func public @_matmul_kernel(%a_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"a_ptr\"(#loc)), %b_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"b_ptr\"(#loc)), %c_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"c_ptr\"(#loc)), %M: i32 {tt.divisibility = 16 : i32} loc(\"M\"(#loc)), %N: i32 {tt.divisibility = 16 : i32} loc(\"N\"(#loc)), %K: i32 {tt.divisibility = 16 : i32} loc(\"K\"(#loc)), %stride_am: i32 {tt.divisibility = 16 : i32} loc(\"stride_am\"(#loc)), %stride_bk: i32 {tt.divisibi"
+  },
+  {
+    "cache_dir": "4FGA76GNHQUPL2NNHKEOQEVZAQO65ZMCJUT7COGXSXX2UG3FA52A",
+    "kernel_json": "_matmul_kernel.json",
+    "name": "_matmul_kernel",
+    "hash": "e14c0ff8cd3c28f5e9ad3a88e812b9041deee5824d27f138d795efaa1b650774",
+    "num_warps": 8,
+    "num_stages": 2,
+    "shared": 16384,
+    "waves_per_eu": 1,
+    "triton_version": "3.5.1+rocm7.1.1.gita272dfa8",
+    "tt_func": "tt.func public @_matmul_kernel(%a_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"a_ptr\"(#loc)), %b_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"b_ptr\"(#loc)), %c_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"c_ptr\"(#loc)), %M: i32 {tt.divisibility = 16 : i32} loc(\"M\"(#loc)), %N: i32 {tt.divisibility = 16 : i32} loc(\"N\"(#loc)), %K: i32 {tt.divisibility = 16 : i32} loc(\"K\"(#loc)), %stride_am: i32 {tt.divisibility = 16 : i32} loc(\"stride_am\"(#loc)), %stride_bk: i32 {tt.divisibi"
+  },
+  {
+    "cache_dir": "ECODQQKRJ7BCLI4JN5IEOLZCL2TOIIB5AB752F4BLLJ7Z6K5J26A",
+    "kernel_json": "_matmul_kernel.json",
+    "name": "_matmul_kernel",
+    "hash": "209c3841514fc225a3896f50472f225ea6e4203d007fdd17815ad3fcf95d4ebc",
+    "num_warps": 8,
+    "num_stages": 2,
+    "shared": 16384,
+    "waves_per_eu": 1,
+    "triton_version": "3.5.1+rocm7.1.1.gita272dfa8",
+    "tt_func": "tt.func public @_matmul_kernel(%a_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"a_ptr\"(#loc)), %b_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"b_ptr\"(#loc)), %c_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"c_ptr\"(#loc)), %M: i32 {tt.divisibility = 16 : i32} loc(\"M\"(#loc)), %N: i32 {tt.divisibility = 16 : i32} loc(\"N\"(#loc)), %K: i32 {tt.divisibility = 16 : i32} loc(\"K\"(#loc)), %stride_am: i32 {tt.divisibility = 16 : i32} loc(\"stride_am\"(#loc)), %stride_bk: i32 {tt.divisibi"
+  },
+  {
+    "cache_dir": "FDTL3YIHDWY3VBZQF4ELAP5OPCZNNVZARXPB76S6WAKFIJZBPEWQ",
+    "kernel_json": "_matmul_kernel.json",
+    "name": "_matmul_kernel",
+    "hash": "28e6bde1071db1ba87302f08b03fae78b2d6d7208dde1ffa5eb014542721792d",
+    "num_warps": 8,
+    "num_stages": 2,
+    "shared": 16384,
+    "waves_per_eu": 1,
+    "triton_version": "3.5.1+rocm7.1.1.gita272dfa8",
+    "tt_func": "tt.func public @_matmul_kernel(%a_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"a_ptr\"(#loc)), %b_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"b_ptr\"(#loc)), %c_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"c_ptr\"(#loc)), %M: i32 {tt.divisibility = 16 : i32} loc(\"M\"(#loc)), %N: i32 {tt.divisibility = 16 : i32} loc(\"N\"(#loc)), %K: i32 {tt.divisibility = 16 : i32} loc(\"K\"(#loc)), %stride_am: i32 {tt.divisibility = 16 : i32} loc(\"stride_am\"(#loc)), %stride_bk: i32 {tt.divisibi"
+  },
+  {
+    "cache_dir": "ZJMPNOQQ4ZHR7KKPHNXRGZRS3M3OQ4OC3CIDX3NZVEMLZ6RZQJGA",
+    "kernel_json": "_matmul_kernel.json",
+    "name": "_matmul_kernel",
+    "hash": "ca58f6ba10e64f1fa94f3b6f136632db36e871c2d8903bedb9a918bcfa39824c",
+    "num_warps": 8,
+    "num_stages": 2,
+    "shared": 16384,
+    "waves_per_eu": 1,
+    "triton_version": "3.5.1+rocm7.1.1.gita272dfa8",
+    "tt_func": "tt.func public @_matmul_kernel(%a_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"a_ptr\"(#loc)), %b_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"b_ptr\"(#loc)), %c_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"c_ptr\"(#loc)), %M: i32 {tt.divisibility = 16 : i32} loc(\"M\"(#loc)), %N: i32 {tt.divisibility = 16 : i32} loc(\"N\"(#loc)), %K: i32 {tt.divisibility = 16 : i32} loc(\"K\"(#loc)), %stride_am: i32 {tt.divisibility = 16 : i32} loc(\"stride_am\"(#loc)), %stride_bk: i32 {tt.divisibi"
+  }
+]

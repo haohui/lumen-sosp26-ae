@@ -1,0 +1,17 @@
+{
+  "gpu_count": "1",
+  "backend": "AITER-triton-gemm_a16w16",
+  "dtype": "BF16",
+  "M": "1024",
+  "N": "1024",
+  "K": "1024",
+  "warmup": "5",
+  "iters": "30",
+  "graph_iters": "1",
+  "l2_flush_mb": "256",
+  "timer": "cuda_graph_event",
+  "timing_ms": "0.048485",
+  "tflops": "44.291377",
+  "status": "ok",
+  "note": "python callable benchmark; max_abs_err=0.250000; max_rel_err=0.058559; atol=1.0; rtol=0.02; shared_input_seed=20260307"
+}

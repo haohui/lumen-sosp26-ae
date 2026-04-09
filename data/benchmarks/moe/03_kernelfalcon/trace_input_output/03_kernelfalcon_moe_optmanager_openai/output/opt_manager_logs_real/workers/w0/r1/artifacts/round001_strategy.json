@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Roofline reports compute bottleneck with Compute SOL 89.8% vs Memory SOL 42.1%. Kernel metrics match this: sm__throughput 89.85% of peak sustained elapsed and dram/gpu memory throughput only 42.11%, so performance is limited by arithmetic throughput rather than memory bandwidth.",
+    "root_causes": [
+      {
+        "cause": "High FP32 vector-ALU intensity from fused FC1 + SiLU + FC2 reductions dominates runtime.",
+        "evidence": [
+          {
+            "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 89.845594940631,
+            "interpretation": "Compute pipeline is already close to peak sustained throughput, indicating ALU-bound execution."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Increase math throughput per cycle by retuning tile shapes and software pipelining (e.g., try larger BLOCK_J/BLOCK_OUT and higher num_stages if registers allow) to improve ILP and reduce reduction overhead.",
+            "rationale": "When compute is the limiter, better instruction scheduling/ILP is the main lever for gaining remaining headroom."
+          }
+        ]
+      },
+      {
+        "cause": "Kernel does not use tensor-core/matrix instructions, leaving faster low-precision matrix hardware unused for this GEMM-like workload.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "No tensor/matrix pipe utilization; all math is executed on regular vector ALUs."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Refactor inner products to tensor-core-compatible Triton matmul patterns (block sizes/layouts and datatypes that map to MFMA/WGMMA equivalents on gfx942).",
+            "rationale": "Shifting dense dot-product work to matrix hardware can raise peak attainable compute and reduce time in VALU-bound sections."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Increase math throughput per cycle by retuning tile shapes and software pipelining (e.g., try larger BLOCK_J/BLOCK_OUT and higher num_stages if registers allow) to improve ILP and reduce reduction overhead.",
+        "rationale": "When compute is the limiter, better instruction scheduling/ILP is the main lever for gaining remaining headroom."
+      },
+      {
+        "fix": "Refactor inner products to tensor-core-compatible Triton matmul patterns (block sizes/layouts and datatypes that map to MFMA/WGMMA equivalents on gfx942).",
+        "rationale": "Shifting dense dot-product work to matrix hardware can raise peak attainable compute and reduce time in VALU-bound sections."
+      }
+    ]
+  }
+]

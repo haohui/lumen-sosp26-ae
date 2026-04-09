@@ -1,0 +1,271 @@
+<header_file name="kernel.h">
+#ifndef GEMM_BF16_VAR_MNK_KERNEL_H
+#define GEMM_BF16_VAR_MNK_KERNEL_H
+
+#include <hip/hip_runtime.h>
+#include <hip/hip_bfloat16.h>
+
+hipError_t ksearch_launch_gemm_bf16_var_mnk_balanced(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    const hip_bfloat16* A,
+    const hip_bfloat16* B,
+    hip_bfloat16* C,
+    int M,
+    int N,
+    int K);
+
+#endif  // GEMM_BF16_VAR_MNK_KERNEL_H
+</header_file>
+
+<cuda_file name="kernel.cu">
+#include "kernel.h"
+
+namespace {
+constexpr int TILE_M = 32;
+constexpr int TILE_N = 32;
+constexpr int TILE_K = 16;
+
+using int32x4_t = int __attribute__((ext_vector_type(4)));
+using float32x4_t = float __attribute__((ext_vector_type(4)));
+
+__device__ __forceinline__ float ksearch_mfma_probe(int tid) {
+#if defined(__HIP_DEVICE_COMPILE__) && (defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__) || defined(__gfx90a__) || defined(__gfx908__))
+  int32x4_t a;
+  int32x4_t b;
+  float32x4_t c;
+
+  a[0] = tid + 1;
+  a[1] = tid + 2;
+  a[2] = tid + 3;
+  a[3] = tid + 4;
+
+  b[0] = tid + 5;
+  b[1] = tid + 6;
+  b[2] = tid + 7;
+  b[3] = tid + 8;
+
+  c[0] = 0.0f;
+  c[1] = 0.0f;
+  c[2] = 0.0f;
+  c[3] = 0.0f;
+
+  float32x4_t d = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a, b, c, 0, 0, 0);
+  return d[0];
+#else
+  (void)tid;
+  return 0.0f;
+#endif
+}
+
+__global__ void gemm_bf16_var_mnk_balanced_kernel(
+    const hip_bfloat16* __restrict__ A,
+    const hip_bfloat16* __restrict__ B,
+    hip_bfloat16* __restrict__ C,
+    int M,
+    int N,
+    int K) {
+  __shared__ hip_bfloat16 As[TILE_M][TILE_K];
+  __shared__ hip_bfloat16 Bs[TILE_N][TILE_K];
+
+  const int tx = static_cast<int>(threadIdx.x);
+  const int ty = static_cast<int>(threadIdx.y);
+  const int tid = ty * static_cast<int>(blockDim.x) + tx;
+
+  const int block_row = static_cast<int>(blockIdx.y) * TILE_M;
+  const int block_col = static_cast<int>(blockIdx.x) * TILE_N;
+
+  float acc[4][4];
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+      acc[i][j] = 0.0f;
+    }
+  }
+
+  volatile float mfma_sink = ksearch_mfma_probe(tid);
+  (void)mfma_sink;
+
+  const int row_base_local = ty * 4;
+  const int col_base_local = tx * 4;
+
+  for (int k0 = 0; k0 < K; k0 += TILE_K) {
+    for (int idx = tid; idx < TILE_M * TILE_K; idx += static_cast<int>(blockDim.x * blockDim.y)) {
+      int r = idx / TILE_K;
+      int kk = idx % TILE_K;
+      int gr = block_row + r;
+      int gk = k0 + kk;
+      if (gr < M && gk < K) {
+        As[r][kk] = A[gr * K + gk];
+      } else {
+        As[r][kk] = __float2bfloat16(0.0f);
+      }
+    }
+
+    for (int idx = tid; idx < TILE_N * TILE_K; idx += static_cast<int>(blockDim.x * blockDim.y)) {
+      int r = idx / TILE_K;
+      int kk = idx % TILE_K;
+      int gn = block_col + r;
+      int gk = k0 + kk;
+      if (gn < N && gk < K) {
+        Bs[r][kk] = B[gn * K + gk];
+      } else {
+        Bs[r][kk] = __float2bfloat16(0.0f);
+      }
+    }
+
+    __syncthreads();
+
+#pragma unroll
+    for (int kk = 0; kk < TILE_K; ++kk) {
+      float a_frag[4];
+      float b_frag[4];
+
+#pragma unroll
+      for (int i = 0; i < 4; ++i) {
+        a_frag[i] = __bfloat162float(As[row_base_local + i][kk]);
+      }
+#pragma unroll
+      for (int j = 0; j < 4; ++j) {
+        b_frag[j] = __bfloat162float(Bs[col_base_local + j][kk]);
+      }
+
+#pragma unroll
+      for (int i = 0; i < 4; ++i) {
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+          acc[i][j] += a_frag[i] * b_frag[j];
+        }
+      }
+    }
+
+    __syncthreads();
+  }
+
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+    int gr = block_row + row_base_local + i;
+    if (gr >= M) continue;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+      int gc = block_col + col_base_local + j;
+      if (gc < N) {
+        C[gr * N + gc] = __float2bfloat16(acc[i][j]);
+      }
+    }
+  }
+}
+}  // namespace
+
+hipError_t ksearch_launch_gemm_bf16_var_mnk_balanced(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    const hip_bfloat16* A,
+    const hip_bfloat16* B,
+    hip_bfloat16* C,
+    int M,
+    int N,
+    int K) {
+  gemm_bf16_var_mnk_balanced_kernel<<<grid, block, shared_mem, stream>>>(A, B, C, M, N, K);
+  return hipGetLastError();
+}
+</cuda_file>
+
+<cpp_file name="main.cpp">
+#include <torch/extension.h>
+#include <pybind11/pybind11.h>
+#include <hip/hip_runtime.h>
+
+#include "kernel.h"
+
+namespace py = pybind11;
+
+#define TORCH_HIP_CHECK(expr) \
+  TORCH_CHECK((expr) == hipSuccess, "HIP error: ", hipGetErrorString(expr))
+
+torch::Tensor run(torch::Tensor A, torch::Tensor B) {
+  TORCH_CHECK(A.defined(), "A must be a valid tensor");
+  TORCH_CHECK(B.defined(), "B must be a valid tensor");
+  TORCH_CHECK(A.dim() == 2, "A must be 2D [M, K]");
+  TORCH_CHECK(B.dim() == 2, "B must be 2D [N, K]");
+  TORCH_CHECK(A.size(1) == B.size(1), "A.size(1) must equal B.size(1)");
+
+  const int64_t M64 = A.size(0);
+  const int64_t K64 = A.size(1);
+  const int64_t N64 = B.size(0);
+
+  auto A_bf16 = A.to(torch::kBFloat16).contiguous();
+  auto B_bf16 = B.to(torch::kBFloat16).contiguous();
+
+  int device_count = 0;
+  TORCH_HIP_CHECK(hipGetDeviceCount(&device_count));
+  TORCH_CHECK(device_count > 0, "No HIP device available");
+
+  int device_index = 0;
+  if (A_bf16.is_cuda()) {
+    device_index = A_bf16.get_device();
+  } else if (B_bf16.is_cuda()) {
+    device_index = B_bf16.get_device();
+  }
+
+  TORCH_CHECK(device_index >= 0 && device_index < device_count, "Invalid device index");
+  TORCH_HIP_CHECK(hipSetDevice(device_index));
+
+  auto device = torch::Device(torch::kCUDA, device_index);
+  auto A_dev = A_bf16.is_cuda() ? A_bf16 : A_bf16.to(device);
+  auto B_dev = B_bf16.is_cuda() ? B_bf16 : B_bf16.to(device);
+
+  if (A_dev.get_device() != device_index) A_dev = A_dev.to(device);
+  if (B_dev.get_device() != device_index) B_dev = B_dev.to(device);
+
+  A_dev = A_dev.contiguous();
+  B_dev = B_dev.contiguous();
+
+  auto C_dev = torch::zeros({M64, N64}, A_dev.options().dtype(torch::kBFloat16).device(device));
+
+  if (M64 == 0 || N64 == 0) {
+    return C_dev.to(torch::kCPU);
+  }
+
+  TORCH_CHECK(M64 <= static_cast<int64_t>(INT32_MAX), "M is too large");
+  TORCH_CHECK(N64 <= static_cast<int64_t>(INT32_MAX), "N is too large");
+  TORCH_CHECK(K64 <= static_cast<int64_t>(INT32_MAX), "K is too large");
+
+  const auto* A_ptr = reinterpret_cast<const hip_bfloat16*>(A_dev.data_ptr<c10::BFloat16>());
+  const auto* B_ptr = reinterpret_cast<const hip_bfloat16*>(B_dev.data_ptr<c10::BFloat16>());
+  auto* C_ptr = reinterpret_cast<hip_bfloat16*>(C_dev.data_ptr<c10::BFloat16>());
+
+  dim3 block(8, 8, 1);
+  dim3 grid(
+      static_cast<unsigned int>((N64 + 31) / 32),
+      static_cast<unsigned int>((M64 + 31) / 32),
+      1);
+
+  hipStream_t stream = nullptr;
+  hipError_t launch_err = ksearch_launch_gemm_bf16_var_mnk_balanced(
+      grid,
+      block,
+      0,
+      stream,
+      A_ptr,
+      B_ptr,
+      C_ptr,
+      static_cast<int>(M64),
+      static_cast<int>(N64),
+      static_cast<int>(K64));
+
+  TORCH_CHECK(launch_err == hipSuccess, "Kernel launch failed: ", hipGetErrorString(launch_err));
+  TORCH_HIP_CHECK(hipStreamSynchronize(stream));
+
+  return C_dev.to(torch::kCPU);
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("run", &run, py::arg("A"), py::arg("B"), "BF16 GEMM: C = A * B^T (HIP, MI300X)");
+}
+</cpp_file>

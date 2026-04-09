@@ -1,0 +1,19 @@
+{
+  "seq_len": 8192,
+  "ttir_exists": true,
+  "so_exists": true,
+  "files": [
+    "__grp___fused_moe_kernel.json",
+    "_fused_moe_kernel.amdgcn",
+    "_fused_moe_kernel.hsaco",
+    "_fused_moe_kernel.json",
+    "_fused_moe_kernel.llir",
+    "_fused_moe_kernel.source",
+    "_fused_moe_kernel.ttgir",
+    "_fused_moe_kernel.ttir",
+    "kernel.ttir",
+    "kernel_launcher.so"
+  ],
+  "triton_cache_dir": "/tmp/triton_cache_b03_20260401_063128_8192",
+  "triton_dump_dir": "/tmp/triton_dump_b03_20260401_063128_8192"
+}

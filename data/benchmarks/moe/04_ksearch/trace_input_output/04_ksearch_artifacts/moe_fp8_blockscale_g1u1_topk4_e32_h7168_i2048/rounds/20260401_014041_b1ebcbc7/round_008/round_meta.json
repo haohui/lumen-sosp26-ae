@@ -1,0 +1,19 @@
+{
+  "round_num": 8,
+  "saved_at_utc": "2026-04-01T02:06:03Z",
+  "status": "passed",
+  "score": 0.6434436225495045,
+  "prompt_chars": 58053,
+  "raw_response_chars": 17966,
+  "trace_logs_chars": 27,
+  "world_model_chars": 15614,
+  "extra": {
+    "wm_enabled": true,
+    "action_node_id": "alt_A_token_major",
+    "attempt_idx_in_cycle": 8,
+    "cycle_start_round": 1,
+    "parent_is_root": true,
+    "all_passed": true,
+    "score": 0.6434436225495045
+  }
+}

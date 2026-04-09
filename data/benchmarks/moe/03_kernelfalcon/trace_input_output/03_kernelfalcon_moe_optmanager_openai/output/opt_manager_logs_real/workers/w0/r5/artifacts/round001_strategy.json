@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Roofline reports compute bottleneck with Compute SOL 92.0% vs Memory SOL 42.1%. Kernel metrics match: sm__throughput 91.95% and dram__throughput 42.13%, with full warp activity (100%), indicating arithmetic pipelines\u2014not DRAM\u2014are the primary limiter.",
+    "root_causes": [
+      {
+        "cause": "Very high FP/VALU instruction pressure from fused FC1 + SiLU + FC2 accumulation dominates runtime.",
+        "evidence": [
+          {
+            "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 91.9545980877966,
+            "interpretation": "SM compute pipelines are near saturation, leaving little compute headroom."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Reduce instruction count by increasing math efficiency (e.g., restructure dot-product loops to improve data reuse and replace expensive scalar ops where possible), and evaluate MFMA/tensor-core style lowering paths for supported dtypes.",
+            "rationale": "When compute is ~92% of peak, only fewer instructions per output or faster math units can materially improve performance."
+          }
+        ]
+      },
+      {
+        "cause": "Register-heavy kernel configuration (116 VGPR/thread) in a deeply fused kernel increases per-thread execution cost and limits further scheduling flexibility.",
+        "evidence": [
+          {
+            "metric": "launch__registers_per_thread",
+            "value": 116.0,
+            "interpretation": "High register footprint is consistent with large fused live state, making the kernel harder to optimize beyond current compute ceiling."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Tune Triton tile sizes/unrolling (BLOCK_J, BLOCK_OUT, num_warps, num_stages) to lower live ranges and register usage, even if it slightly increases memory traffic.",
+            "rationale": "In a compute-bound kernel, reducing register pressure can improve instruction scheduling/latency hiding and raise effective ALU utilization."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Reduce instruction count by increasing math efficiency (e.g., restructure dot-product loops to improve data reuse and replace expensive scalar ops where possible), and evaluate MFMA/tensor-core style lowering paths for supported dtypes.",
+        "rationale": "When compute is ~92% of peak, only fewer instructions per output or faster math units can materially improve performance."
+      },
+      {
+        "fix": "Tune Triton tile sizes/unrolling (BLOCK_J, BLOCK_OUT, num_warps, num_stages) to lower live ranges and register usage, even if it slightly increases memory traffic.",
+        "rationale": "In a compute-bound kernel, reducing register pressure can improve instruction scheduling/latency hiding and raise effective ALU utilization."
+      }
+    ]
+  }
+]

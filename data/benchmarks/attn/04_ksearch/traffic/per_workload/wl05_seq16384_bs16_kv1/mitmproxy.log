@@ -1,0 +1,352 @@
+Loading script /workspace/kernel_benchmark/scripts/mitm_trace_export.py
+Proxy server listening at 127.0.0.1:18180
+127.0.0.1:49224: client connect
+127.0.0.1:49224: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:49224: POST https://api.openai.com/v1/responses
+              << 200 OK 4.8k
+127.0.0.1:49224: POST https://api.openai.com/v1/responses
+              << 200 OK 3.4k
+127.0.0.1:49224: client disconnect
+127.0.0.1:59286: client connect
+127.0.0.1:49224: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:59286: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:59286: POST https://api.openai.com/v1/responses
+              << 200 OK 3.4k
+127.0.0.1:59286: client disconnect
+127.0.0.1:49476: client connect
+127.0.0.1:59286: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:49476: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:49476: POST https://api.openai.com/v1/responses
+              << 200 OK 3.2k
+127.0.0.1:49476: client disconnect
+127.0.0.1:50702: client connect
+127.0.0.1:49476: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:50702: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:50702: POST https://api.openai.com/v1/responses
+              << 503 Service Unavailable 95b
+127.0.0.1:50702: POST https://api.openai.com/v1/responses
+              << 200 OK 3.5k
+127.0.0.1:50702: client disconnect
+127.0.0.1:40064: client connect
+127.0.0.1:50702: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:40064: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:40064: POST https://api.openai.com/v1/responses
+              << 200 OK 3.8k
+127.0.0.1:40064: client disconnect
+127.0.0.1:58164: client connect
+127.0.0.1:40064: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:58164: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:58164: POST https://api.openai.com/v1/responses
+              << 200 OK 3.5k
+127.0.0.1:58164: client disconnect
+127.0.0.1:59754: client connect
+127.0.0.1:58164: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:59754: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:59754: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:59754: client disconnect
+127.0.0.1:45136: client connect
+127.0.0.1:59754: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:45136: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:45136: POST https://api.openai.com/v1/responses
+              << 200 OK 3.5k
+127.0.0.1:45136: client disconnect
+127.0.0.1:59650: client connect
+127.0.0.1:45136: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:59650: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:59650: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:59650: client disconnect
+127.0.0.1:55572: client connect
+127.0.0.1:59650: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:55572: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:55572: POST https://api.openai.com/v1/responses
+              << 200 OK 3.5k
+127.0.0.1:55572: client disconnect
+127.0.0.1:45750: client connect
+127.0.0.1:55572: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:45750: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:45750: POST https://api.openai.com/v1/responses
+              << 200 OK 2.8k
+127.0.0.1:45750: client disconnect
+127.0.0.1:45750: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:32866: client connect
+127.0.0.1:32866: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:32866: POST https://api.openai.com/v1/responses
+              << 200 OK 4.9k
+127.0.0.1:32866: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:32866: client disconnect
+127.0.0.1:50888: client connect
+127.0.0.1:32866: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:50888: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:50888: POST https://api.openai.com/v1/responses
+              << 200 OK 3.8k
+127.0.0.1:50888: client disconnect
+127.0.0.1:48778: client connect
+127.0.0.1:50888: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:48778: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:48778: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:48778: client disconnect
+127.0.0.1:48352: client connect
+127.0.0.1:48778: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:48352: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:48352: POST https://api.openai.com/v1/responses
+              << 200 OK 3.8k
+127.0.0.1:48352: client disconnect
+127.0.0.1:51710: client connect
+127.0.0.1:48352: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:51710: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:51710: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:51710: client disconnect
+127.0.0.1:48022: client connect
+127.0.0.1:51710: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:48022: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:48022: POST https://api.openai.com/v1/responses
+              << 200 OK 4.0k
+127.0.0.1:48022: client disconnect
+127.0.0.1:54444: client connect
+127.0.0.1:48022: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:54444: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:54444: POST https://api.openai.com/v1/responses
+              << 200 OK 4.0k
+127.0.0.1:54444: client disconnect
+127.0.0.1:44544: client connect
+127.0.0.1:54444: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:44544: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:44544: POST https://api.openai.com/v1/responses
+              << 200 OK 4.0k
+127.0.0.1:44544: client disconnect
+127.0.0.1:32866: client connect
+127.0.0.1:44544: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:32866: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:32866: POST https://api.openai.com/v1/responses
+              << 200 OK 4.0k
+127.0.0.1:32866: client disconnect
+127.0.0.1:45122: client connect
+127.0.0.1:32866: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:45122: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:45122: POST https://api.openai.com/v1/responses
+              << 200 OK 4.2k
+127.0.0.1:45122: client disconnect
+127.0.0.1:37080: client connect
+127.0.0.1:45122: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:37080: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:37080: POST https://api.openai.com/v1/responses
+              << 200 OK 2.9k
+127.0.0.1:37080: POST https://api.openai.com/v1/responses
+              << 200 OK 2.3k
+127.0.0.1:37080: POST https://api.openai.com/v1/responses
+              << 200 OK 2.8k
+127.0.0.1:37080: client disconnect
+127.0.0.1:37080: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:57700: client connect
+127.0.0.1:57700: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:57700: POST https://api.openai.com/v1/responses
+              << 200 OK 4.7k
+127.0.0.1:57700: POST https://api.openai.com/v1/responses
+              << 200 OK 3.1k
+127.0.0.1:57700: client disconnect
+127.0.0.1:40820: client connect
+127.0.0.1:57700: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:40820: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:40820: POST https://api.openai.com/v1/responses
+              << 200 OK 3.3k
+127.0.0.1:40820: client disconnect
+127.0.0.1:46388: client connect
+127.0.0.1:40820: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:46388: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:46388: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:46388: client disconnect
+127.0.0.1:48942: client connect
+127.0.0.1:46388: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:48942: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:48942: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:48942: client disconnect
+127.0.0.1:36308: client connect
+127.0.0.1:48942: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:36308: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:36308: POST https://api.openai.com/v1/responses
+              << 200 OK 3.9k
+127.0.0.1:36308: client disconnect
+127.0.0.1:43258: client connect
+127.0.0.1:36308: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:43258: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:43258: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:43258: client disconnect
+127.0.0.1:38004: client connect
+127.0.0.1:43258: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:38004: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:38004: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:38004: client disconnect
+127.0.0.1:38080: client connect
+127.0.0.1:38004: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:38080: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:38080: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:38080: client disconnect
+127.0.0.1:60906: client connect
+127.0.0.1:38080: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:60906: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:60906: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:60906: client disconnect
+127.0.0.1:53056: client connect
+127.0.0.1:60906: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:53056: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:53056: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:53056: client disconnect
+127.0.0.1:39802: client connect
+127.0.0.1:53056: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:39802: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:39802: POST https://api.openai.com/v1/responses
+              << 200 OK 2.7k
+127.0.0.1:39802: client disconnect
+127.0.0.1:39802: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:35280: client connect
+127.0.0.1:35280: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:35280: POST https://api.openai.com/v1/responses
+              << 200 OK 5.1k
+127.0.0.1:35280: POST https://api.openai.com/v1/responses
+              << 200 OK 3.2k
+127.0.0.1:35280: client disconnect
+127.0.0.1:44956: client connect
+127.0.0.1:35280: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:44956: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:44956: POST https://api.openai.com/v1/responses
+              << 200 OK 3.3k
+127.0.0.1:44956: client disconnect
+127.0.0.1:44956: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:46552: client connect
+127.0.0.1:46552: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:46552: POST https://api.openai.com/v1/responses
+              << 200 OK 3.4k
+127.0.0.1:46552: client disconnect
+127.0.0.1:54488: client connect
+127.0.0.1:46552: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:54488: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:54488: POST https://api.openai.com/v1/responses
+              << 200 OK 3.5k
+127.0.0.1:54488: client disconnect
+127.0.0.1:55922: client connect
+127.0.0.1:54488: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:55922: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:55922: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:55922: client disconnect
+127.0.0.1:44640: client connect
+127.0.0.1:55922: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:44640: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:44640: POST https://api.openai.com/v1/responses
+              << 200 OK 3.8k
+127.0.0.1:44640: client disconnect
+127.0.0.1:50582: client connect
+127.0.0.1:44640: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:50582: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:50582: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:50582: client disconnect
+127.0.0.1:40374: client connect
+127.0.0.1:50582: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:40374: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:40374: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:40374: client disconnect
+127.0.0.1:42628: client connect
+127.0.0.1:40374: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:42628: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:42628: POST https://api.openai.com/v1/responses
+              << 200 OK 4.1k
+127.0.0.1:42628: client disconnect
+127.0.0.1:50098: client connect
+127.0.0.1:42628: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:50098: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:50098: POST https://api.openai.com/v1/responses
+              << 200 OK 4.1k
+127.0.0.1:50098: client disconnect
+127.0.0.1:40394: client connect
+127.0.0.1:50098: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:40394: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:40394: POST https://api.openai.com/v1/responses
+              << 200 OK 2.8k
+127.0.0.1:40394: POST https://api.openai.com/v1/responses
+              << 200 OK 3.0k
+127.0.0.1:40394: POST https://api.openai.com/v1/responses
+              << 200 OK 2.9k
+127.0.0.1:40394: client disconnect
+127.0.0.1:40394: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:36062: client connect
+127.0.0.1:36062: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:36062: POST https://api.openai.com/v1/responses
+              << 200 OK 5.2k
+127.0.0.1:36062: POST https://api.openai.com/v1/responses
+              << 200 OK 3.4k
+127.0.0.1:36062: client disconnect
+127.0.0.1:39014: client connect
+127.0.0.1:36062: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:39014: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:39014: POST https://api.openai.com/v1/responses
+              << 200 OK 3.5k
+127.0.0.1:39014: client disconnect
+127.0.0.1:50052: client connect
+127.0.0.1:39014: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:50052: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:50052: POST https://api.openai.com/v1/responses
+              << 200 OK 3.6k
+127.0.0.1:50052: client disconnect
+127.0.0.1:50052: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:36170: client connect
+127.0.0.1:36170: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:36170: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:36170: client disconnect
+127.0.0.1:36378: client connect
+127.0.0.1:36170: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:36378: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:36378: POST https://api.openai.com/v1/responses
+              << 200 OK 3.7k
+127.0.0.1:36378: client disconnect
+127.0.0.1:46246: client connect
+127.0.0.1:36378: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:46246: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:46246: POST https://api.openai.com/v1/responses
+              << 200 OK 4.0k
+127.0.0.1:46246: client disconnect
+127.0.0.1:48256: client connect
+127.0.0.1:46246: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:48256: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:48256: POST https://api.openai.com/v1/responses
+              << 200 OK 4.0k
+127.0.0.1:48256: client disconnect
+127.0.0.1:46856: client connect
+127.0.0.1:48256: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:46856: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:46856: POST https://api.openai.com/v1/responses
+              << 200 OK 4.1k
+127.0.0.1:46856: client disconnect
+127.0.0.1:44948: client connect
+127.0.0.1:46856: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:44948: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:44948: POST https://api.openai.com/v1/responses
+              << 200 OK 4.4k
+127.0.0.1:44948: client disconnect
+127.0.0.1:39470: client connect
+127.0.0.1:44948: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:39470: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:39470: POST https://api.openai.com/v1/responses
+              << 200 OK 4.7k
+127.0.0.1:39470: client disconnect
+127.0.0.1:41104: client connect
+127.0.0.1:39470: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:41104: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:41104: POST https://api.openai.com/v1/responses
+              << 200 OK 2.6k
+127.0.0.1:41104: client disconnect
+127.0.0.1:41104: server disconnect api.openai.com:443 (172.66.0.243:443)

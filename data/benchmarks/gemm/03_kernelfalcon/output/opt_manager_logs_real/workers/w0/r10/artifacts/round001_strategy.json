@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Roofline reports compute SOL 41.8% and memory SOL 36.5%, both well below 60%, with 58.2% headroom and not at roofline. This indicates performance is limited by execution inefficiencies (instruction mix/tiling/latency effects) rather than pure bandwidth or raw ALU throughput limits.",
+    "root_causes": [
+      {
+        "cause": "Non-tensor-core/vector FMA execution path leaves large compute headroom on MI300X.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "No tensor-core/MFMA utilization; matrix math is not using highest-throughput matrix units."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Retune kernel to force MFMA-friendly matmul configs (dtype-specific BLOCK_K/BLOCK_M/BLOCK_N and matrix_instr_nonkdim choices) and validate generated ISA uses matrix instructions.",
+            "rationale": "Activating matrix units on CDNA3 substantially increases effective compute throughput and can move compute SOL closer to peak."
+          }
+        ]
+      },
+      {
+        "cause": "Memory subsystem is only moderately used despite full warp activity, implying latency/tiling inefficiency rather than bandwidth saturation.",
+        "evidence": [
+          {
+            "metric": "dram__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 36.50653418122947,
+            "interpretation": "HBM bandwidth is far from saturated, so kernel likely spends cycles in non-bandwidth-limited stalls or inefficient data reuse."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Increase data reuse and pipeline depth by autotuning larger reuse-oriented tiles and num_stages (e.g., higher BLOCK_K or stages where occupancy allows), while keeping occupancy healthy.",
+            "rationale": "Better blocking/prefetch overlap reduces memory-latency exposure and raises both compute and memory utilization."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Retune kernel to force MFMA-friendly matmul configs (dtype-specific BLOCK_K/BLOCK_M/BLOCK_N and matrix_instr_nonkdim choices) and validate generated ISA uses matrix instructions.",
+        "rationale": "Activating matrix units on CDNA3 substantially increases effective compute throughput and can move compute SOL closer to peak."
+      },
+      {
+        "fix": "Increase data reuse and pipeline depth by autotuning larger reuse-oriented tiles and num_stages (e.g., higher BLOCK_K or stages where occupancy allows), while keeping occupancy healthy.",
+        "rationale": "Better blocking/prefetch overlap reduces memory-latency exposure and raises both compute and memory utilization."
+      }
+    ]
+  }
+]

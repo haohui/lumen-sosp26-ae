@@ -1,0 +1,135 @@
+import torch
+import triton
+import triton.language as tl
+
+
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_K": 32, "GROUP_M": 8}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 32, "GROUP_M": 8}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_K": 32, "GROUP_M": 8}, num_stages=3, num_warps=8),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 32, "GROUP_M": 8}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 16, "GROUP_M": 8}, num_stages=2, num_warps=4),
+    ],
+    key=["M", "N", "K"],
+)
+@triton.jit
+def _matmul_kernel(
+    a_ptr,
+    b_ptr,
+    c_ptr,
+    M,
+    N,
+    K,
+    stride_am,
+    stride_ak,
+    stride_bk,
+    stride_bn,
+    stride_cm,
+    stride_cn,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    pid = tl.program_id(axis=0)
+
+    num_pid_m = tl.cdiv(M, BLOCK_M)
+    num_pid_n = tl.cdiv(N, BLOCK_N)
+
+    # Grouped ordering for better L2 behavior
+    num_pid_in_group = GROUP_M * num_pid_n
+    group_id = pid // num_pid_in_group
+    first_pid_m = group_id * GROUP_M
+    group_size_m = tl.minimum(num_pid_m - first_pid_m, GROUP_M)
+
+    pid_in_group = pid % num_pid_in_group
+    pid_m = first_pid_m + (pid_in_group % group_size_m)
+    pid_n = pid_in_group // group_size_m
+
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    # Single fused kernel: load A/B tiles -> dot accumulate -> store C.
+    for k_block in range(0, tl.cdiv(K, BLOCK_K)):
+        k_idx = k_block * BLOCK_K + offs_k
+
+        a_ptrs = a_ptr + offs_m[:, None] * stride_am + k_idx[None, :] * stride_ak
+        b_ptrs = b_ptr + k_idx[:, None] * stride_bk + offs_n[None, :] * stride_bn
+
+        a = tl.load(a_ptrs, mask=(offs_m[:, None] < M) & (k_idx[None, :] < K), other=0.0)
+        b = tl.load(b_ptrs, mask=(k_idx[:, None] < K) & (offs_n[None, :] < N), other=0.0)
+
+        acc = tl.dot(a, b, acc)
+
+    c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
+    out = acc.to(c_ptr.dtype.element_ty)
+    tl.store(c_ptrs, out, mask=(offs_m[:, None] < M) & (offs_n[None, :] < N))
+
+
+def kernel_function(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    if not isinstance(a, torch.Tensor) or not isinstance(b, torch.Tensor):
+        raise TypeError("kernel_function expects torch.Tensor inputs")
+
+    if a.device != b.device:
+        raise ValueError(f"Input device mismatch: a.device={a.device}, b.device={b.device}")
+    if a.device.type == "cpu":
+        raise ValueError("Inputs must be on a GPU device")
+
+    if a.dtype != b.dtype:
+        raise ValueError(f"Input dtype mismatch: a.dtype={a.dtype}, b.dtype={b.dtype}")
+    if a.dtype not in (torch.float16, torch.bfloat16, torch.float32):
+        raise TypeError(f"Unsupported dtype: {a.dtype}")
+
+    # Normalize to 2D views for a single fused matmul kernel.
+    if a.ndim == 1:
+        a_mat = a.unsqueeze(0)  # [1, K]
+    elif a.ndim == 2:
+        a_mat = a
+    else:
+        raise ValueError(f"a must be 1D or 2D, got shape={tuple(a.shape)}")
+
+    if b.ndim == 1:
+        b_mat = b.unsqueeze(1)  # [K, 1]
+    elif b.ndim == 2:
+        b_mat = b
+    else:
+        raise ValueError(f"b must be 1D or 2D, got shape={tuple(b.shape)}")
+
+    if a_mat.shape[1] != b_mat.shape[0]:
+        raise ValueError(f"Incompatible shapes: a={tuple(a.shape)}, b={tuple(b.shape)}")
+
+    M, K = a_mat.shape
+    _, N = b_mat.shape
+
+    c = torch.empty((M, N), device=a.device, dtype=a.dtype)
+
+    def grid(meta):
+        return (triton.cdiv(M, meta["BLOCK_M"]) * triton.cdiv(N, meta["BLOCK_N"]),)
+
+    _matmul_kernel[grid](
+        a_mat,
+        b_mat,
+        c,
+        M,
+        N,
+        K,
+        a_mat.stride(0),
+        a_mat.stride(1),
+        b_mat.stride(0),
+        b_mat.stride(1),
+        c.stride(0),
+        c.stride(1),
+    )
+
+    # Restore expected output rank
+    if a.ndim == 1 and b.ndim == 1:
+        return c[0, 0]
+    if a.ndim == 1 and b.ndim == 2:
+        return c[0, :]
+    if a.ndim == 2 and b.ndim == 1:
+        return c[:, 0]
+    return c

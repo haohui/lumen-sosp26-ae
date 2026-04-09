@@ -1,0 +1,96 @@
+OptimizationManager initialized: strategy=beam_search, workers=1
+================================================================================
+STARTING OPTIMIZATION
+================================================================================
+BeamSearch initialized: 1 kernels × 1 bottlenecks = 1 workers
+Initial kernel passed correctness verification
+⏳ Waiting for benchmark lock (worker -1)...
+🔓 Acquired benchmark lock (worker -1)
+🔒 Released benchmark lock (worker -1)
+PyTorch baseline: 0.2918ms
+⏳ Waiting for benchmark lock (worker -1)...
+🔓 Acquired benchmark lock (worker -1)
+🔒 Released benchmark lock (worker -1)
+PyTorch compile baseline: 0.2523ms
+⏳ Waiting for benchmark lock (worker -1)...
+🔓 Acquired benchmark lock (worker -1)
+🔒 Released benchmark lock (worker -1)
+Initial kernel time: 0.9708ms
+
+==================== ROUND 1/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1315473 still alive after result collection; terminating
+Round 1: 1/1 workers succeeded (1 results received)
+Round 1: 1 successful, best new: 0.3863ms
+Round 1 best: worker 0 at 0.3863 ms
+
+==================== ROUND 2/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1316794 still alive after result collection; terminating
+Round 2: 1/1 workers succeeded (1 results received)
+Round 2: 1 successful, best new: 0.3863ms
+Round 2 best: worker 0 at 0.3863 ms
+
+==================== ROUND 3/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1318291 still alive after result collection; terminating
+Round 3: 1/1 workers succeeded (1 results received)
+Round 3: 1 successful, best new: 0.3863ms
+Round 3 best: worker 0 at 0.3863 ms
+
+==================== ROUND 4/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1319720 still alive after result collection; terminating
+Round 4: 1/1 workers succeeded (1 results received)
+Round 4: 1 successful, best new: 0.3863ms
+Round 4 best: worker 0 at 0.3863 ms
+
+==================== ROUND 5/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1320893 still alive after result collection; terminating
+Round 5: 1/1 workers succeeded (1 results received)
+Round 5: 1 successful, best new: 0.3863ms
+Round 5 best: worker 0 at 0.3863 ms
+
+==================== ROUND 6/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1322386 still alive after result collection; terminating
+Round 6: 1/1 workers succeeded (1 results received)
+Round 6: 1 successful, best new: 0.3863ms
+Round 6 best: worker 0 at 0.3863 ms
+
+==================== ROUND 7/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1323559 still alive after result collection; terminating
+Round 7: 1/1 workers succeeded (1 results received)
+Round 7: 1 successful, best new: 0.3863ms
+Round 7 best: worker 0 at 0.3863 ms
+
+==================== ROUND 8/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1331394 still alive after result collection; terminating
+Round 8: 1/1 workers succeeded (1 results received)
+Round 8: 1 successful, best new: 0.3863ms
+Round 8 best: worker 0 at 0.3863 ms
+
+==================== ROUND 9/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1332759 still alive after result collection; terminating
+Round 9: 1/1 workers succeeded (1 results received)
+Round 9: 1 successful, best new: 0.3863ms
+Round 9 best: worker 0 at 0.3863 ms
+
+==================== ROUND 10/10 ====================
+Unknown GPU: 'AMD Instinct MI300X'. Disable Optimization. Available GPUs: NVIDIA A100 SXM4 40GB, NVIDIA A100 SXM4 80GB, NVIDIA A100 PCIe 40GB, NVIDIA A100 PCIe 80GB, NVIDIA H100 SXM5 80GB, NVIDIA H100 PCIe 80GB, NVIDIA H100 NVL 94GB, NVIDIA RTX 4090, NVIDIA RTX 5080
+Worker 1334147 still alive after result collection; terminating
+Round 10: 1/1 workers succeeded (1 results received)
+Round 10: 1 successful, best new: 0.3261ms
+Round 10 best: worker 0 at 0.3261 ms
+Strategy signaled termination
+
+================================================================================
+OPTIMIZATION COMPLETE
+================================================================================
+Best time: 0.3261ms
+Speedup vs initial kernel: 2.98x
+Speedup vs PyTorch eager: 0.89x

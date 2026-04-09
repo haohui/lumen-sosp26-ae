@@ -1,0 +1,468 @@
+# Target GPU
+GPU Name: MI300X
+Architecture: CDNA3 (gfx942)
+Details:
+• GPU Memory: 192GB HBM3
+• Memory Bandwidth: 5.3 TB/s
+• Primary Compute DType: BF16
+• BF16 Matrix Core TFLOPS: ~1300 (dense theoretical)
+• Compute Units: 304
+• SIMD per CU: 4
+• Wavefront Size: 64
+• Max Workgroup Size: 1024
+• Max Waves per CU: 32
+• L1 Cache per CU: 32 KB
+• L2 Cache (total): 4 MB
+• L2 Channels: 128
+• LDS per CU: 64 KB
+• Max SCLK: 2100 MHz
+• Max MCLK: 2100 MHz
+• Matrix Core Instruction Family: MFMA
+
+# ----------  Previously generated kernels ----------
+(None)
+
+
+You are a HIP/ROCm-kernel optimization specialist.
+
+Analyze the provided architecture and kernel history and **strictly apply the following STRATEGY** to produce an improved HIP/ROCm kernel.
+
+[ARCHITECTURE FILE]
+```python
+import torch
+import torch.nn as nn
+from torch.utils.cpp_extension import load_inline
+
+source = r"""
+#include <torch/extension.h>
+#include <ATen/HIP/ROCm/CUDAContext.h>
+#include <c10/HIP/ROCm/CUDAGuard.h>
+#include <c10/HIP/ROCm/CUDAException.h>
+#include <stdint.h>
+#include <math.h>
+
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#include <hip/hip_runtime.h>
+#endif
+
+namespace {
+
+constexpr int BLOCK_Q = 128;
+constexpr int THREADS = 256;
+constexpr int FC1_ROWS_PER_THREAD = 2;
+
+// Optimization: replace ldexpf/branch-heavy FP8 decode with bit-manip decode.
+__device__ __forceinline__ float fp8_e4m3fnuz_to_float_fast(uint8_t v) {
+    const uint32_t sign = (uint32_t)(v & 0x80u) << 24; // move sign to bit31
+    const uint32_t exp  = ((uint32_t)v >> 3) & 0x0Fu;
+    const uint32_t man  = (uint32_t)(v & 0x07u);
+
+    if (exp != 0u) {
+        // value = (1 + man/8) * 2^(exp-8)
+        // fp32 exponent = (exp - 8 + 127) = exp + 119
+        union { uint32_t u; float f; } cvt;
+        cvt.u = sign | ((exp + 119u) << 23) | (man << 20);
+        return cvt.f;
+    } else {
+        // subnormal: man * 2^-10
+        float out = (float)man * 0.0009765625f; // 2^-10
+        if (sign) out = -out;
+        return out;
+    }
+}
+
+__device__ __forceinline__ float silu_f32(float x) {
+    return x / (1.0f + expf(-x));
+}
+
+__device__ __forceinline__ uint16_t float_to_bf16_bits(float x) {
+    union { float f; uint32_t u; } v;
+    v.f = x;
+    uint32_t lsb = (v.u >> 16) & 1u;
+    v.u += 0x7FFFu + lsb;
+    return (uint16_t)(v.u >> 16);
+}
+
+template <typename index_t>
+__global__ __launch_bounds__(THREADS, 2) void fused_moe_kernel_opt(
+    const uint8_t* __restrict__ input_q,      // [T, D] fp8 bytes
+    const uint8_t* __restrict__ w1_q,         // [E, 2I, D] fp8 bytes
+    const uint8_t* __restrict__ w2_q,         // [E, D, I] fp8 bytes
+    const float* __restrict__ topk_weights,   // [T, K]
+    const index_t* __restrict__ topk_ids,     // [T, K]
+    const float* __restrict__ input_scale,    // [T, D/128]
+    const float* __restrict__ fc1_scale,      // [E, (2I/128)*(D/128)]
+    const float* __restrict__ fc2_scale,      // [E, (D/128)*(I/128)]
+    uint16_t* __restrict__ out,               // [T, D] bf16 bits
+    int tokens,
+    int dim,
+    int inter_dim,
+    int experts,
+    int topk
+) {
+    const int t = (int)blockIdx.x;
+    if (t >= tokens) return;
+    const int tid = (int)threadIdx.x;
+
+    extern __shared__ float smem[];
+    float* out_accum = smem;          // [dim]
+    float* activated = smem + dim;    // [inter_dim]
+
+    for (int o = tid; o < dim; o += blockDim.x) {
+        out_accum[o] = 0.0f;
+    }
+    __syncthreads();
+
+    const int dim_blocks = dim / BLOCK_Q;
+    const int fc1_row_blocks = (2 * inter_dim) / BLOCK_Q;
+    const int fc1_scale_stride = fc1_row_blocks * dim_blocks;
+
+    const int fc2_row_blocks = dim / BLOCK_Q;
+    const int fc2_col_blocks = inter_dim / BLOCK_Q;
+    const int fc2_scale_stride = fc2_row_blocks * fc2_col_blocks;
+
+    const int64_t input_base = (int64_t)t * (int64_t)dim;
+    const int64_t topk_base = (int64_t)t * (int64_t)topk;
+    const int64_t in_scale_base = (int64_t)t * (int64_t)dim_blocks;
+
+    const uint8_t* x_ptr = input_q + input_base;
+    const float* in_s_ptr = input_scale + in_scale_base;
+
+    for (int k = 0; k < topk; ++k) {
+        const int64_t e_raw = (int64_t)topk_ids[topk_base + k];
+        const int e = (int)e_raw;
+        const float rw = topk_weights[topk_base + k];
+        const bool active = ((unsigned)e < (unsigned)experts) && (rw != 0.0f);
+
+        if (active) {
+            const int64_t w1_e_base = (int64_t)e * (int64_t)(2 * inter_dim) * (int64_t)dim;
+            const float* fc1_e = fc1_scale + (int64_t)e * (int64_t)fc1_scale_stride;
+
+            for (int base_i = tid; base_i < inter_dim; base_i += blockDim.x * FC1_ROWS_PER_THREAD) {
+                const int i0 = base_i;
+                const int i1 = base_i + blockDim.x;
+                const bool v0 = (i0 < inter_dim);
+                const bool v1 = (i1 < inter_dim);
+
+                float gate0 = 0.0f, up0 = 0.0f;
+                float gate1 = 0.0f, up1 = 0.0f;
+
+                int rb_g0 = 0, rb_u0 = 0, rb_g1 = 0, rb_u1 = 0;
+                int64_t row_g0_base = 0, row_u0_base = 0, row_g1_base = 0, row_u1_base = 0;
+
+                if (v0) {
+                    const int row_g0 = i0;
+                    const int row_u0 = i0 + inter_dim;
+                    rb_g0 = row_g0 >> 7;
+                    rb_u0 = row_u0 >> 7;
+                    row_g0_base = w1_e_base + (int64_t)row_g0 * (int64_t)dim;
+                    row_u0_base = w1_e_base + (int64_t)row_u0 * (int64_t)dim;
+                }
+                if (v1) {
+                    const int row_g1 = i1;
+                    const int row_u1 = i1 + inter_dim;
+                    rb_g1 = row_g1 >> 7;
+                    rb_u1 = row_u1 >> 7;
+                    row_g1_base = w1_e_base + (int64_t)row_g1 * (int64_t)dim;
+                    row_u1_base = w1_e_base + (int64_t)row_u1 * (int64_t)dim;
+                }
+
+                for (int cb = 0; cb < dim_blocks; ++cb) {
+                    const int d0 = cb * BLOCK_Q;
+                    const float in_sc = in_s_ptr[cb];
+
+                    float sg0 = 0.0f, su0 = 0.0f, sg1 = 0.0f, su1 = 0.0f;
+                    if (v0) {
+                        sg0 = fc1_e[rb_g0 * dim_blocks + cb];
+                        su0 = fc1_e[rb_u0 * dim_blocks + cb];
+                    }
+                    if (v1) {
+                        sg1 = fc1_e[rb_g1 * dim_blocks + cb];
+                        su1 = fc1_e[rb_u1 * dim_blocks + cb];
+                    }
+
+                    for (int j = 0; j < BLOCK_Q; ++j) {
+                        const int d = d0 + j;
+                        const float xs = fp8_e4m3fnuz_to_float_fast(x_ptr[d]) * in_sc;
+
+                        if (v0) {
+                            const float wg = fp8_e4m3fnuz_to_float_fast(w1_q[row_g0_base + d]) * sg0;
+                            const float wu = fp8_e4m3fnuz_to_float_fast(w1_q[row_u0_base + d]) * su0;
+                            gate0 += xs * wg;
+                            up0 += xs * wu;
+                        }
+                        if (v1) {
+                            const float wg = fp8_e4m3fnuz_to_float_fast(w1_q[row_g1_base + d]) * sg1;
+                            const float wu = fp8_e4m3fnuz_to_float_fast(w1_q[row_u1_base + d]) * su1;
+                            gate1 += xs * wg;
+                            up1 += xs * wu;
+                        }
+                    }
+                }
+
+                if (v0) activated[i0] = silu_f32(gate0) * up0;
+                if (v1) activated[i1] = silu_f32(gate1) * up1;
+            }
+        }
+
+        __syncthreads();
+
+        if (active) {
+            const int64_t w2_e_base = (int64_t)e * (int64_t)dim * (int64_t)inter_dim;
+            const float* fc2_e = fc2_scale + (int64_t)e * (int64_t)fc2_scale_stride;
+
+            for (int o = tid; o < dim; o += blockDim.x) {
+                const int ob = o >> 7;
+                const int ob_off = ob * fc2_col_blocks;
+                float sum = 0.0f;
+                const int64_t w2_row_base = w2_e_base + (int64_t)o * (int64_t)inter_dim;
+
+                for (int ib = 0; ib < fc2_col_blocks; ++ib) {
+                    const float ws = fc2_e[ob_off + ib];
+                    const int i0 = ib * BLOCK_Q;
+                    for (int j = 0; j < BLOCK_Q; ++j) {
+                        const int i = i0 + j;
+                        const float w = fp8_e4m3fnuz_to_float_fast(w2_q[w2_row_base + i]) * ws;
+                        sum += activated[i] * w;
+                    }
+                }
+                out_accum[o] += rw * sum;
+            }
+        }
+
+        __syncthreads();
+    }
+
+    const int64_t out_base = (int64_t)t * (int64_t)dim;
+    for (int o = tid; o < dim; o += blockDim.x) {
+        out[out_base + o] = float_to_bf16_bits(out_accum[o]);
+    }
+}
+
+} // namespace
+
+torch::Tensor fused_moe_forward(
+    torch::Tensor input_q,
+    torch::Tensor w1_q,
+    torch::Tensor w2_q,
+    torch::Tensor topk_weights,
+    torch::Tensor topk_ids,
+    torch::Tensor input_scale,
+    torch::Tensor fc1_scale,
+    torch::Tensor fc2_scale
+) {
+    TORCH_CHECK(input_q.is_cuda(), "input_q must be a GPU tensor");
+    TORCH_CHECK(w1_q.is_cuda() && w2_q.is_cuda() && topk_weights.is_cuda() && topk_ids.is_cuda() &&
+                input_scale.is_cuda() && fc1_scale.is_cuda() && fc2_scale.is_cuda(),
+                "All runtime tensors must be on GPU");
+
+    const auto dev = input_q.device();
+    TORCH_CHECK(w1_q.device() == dev && w2_q.device() == dev && topk_weights.device() == dev &&
+                topk_ids.device() == dev && input_scale.device() == dev &&
+                fc1_scale.device() == dev && fc2_scale.device() == dev,
+                "All runtime tensors must be on the same GPU device");
+
+    TORCH_CHECK(input_q.element_size() == 1, "input_q must be FP8/byte-backed tensor");
+    TORCH_CHECK(w1_q.element_size() == 1, "w1_q must be FP8/byte-backed tensor");
+    TORCH_CHECK(w2_q.element_size() == 1, "w2_q must be FP8/byte-backed tensor");
+
+    TORCH_CHECK(topk_weights.scalar_type() == at::kFloat, "topk_weights must be float32");
+    TORCH_CHECK(input_scale.scalar_type() == at::kFloat, "input_scale must be float32");
+    TORCH_CHECK(fc1_scale.scalar_type() == at::kFloat, "fc1_scale must be float32");
+    TORCH_CHECK(fc2_scale.scalar_type() == at::kFloat, "fc2_scale must be float32");
+    TORCH_CHECK(topk_ids.scalar_type() == at::kInt || topk_ids.scalar_type() == at::kLong,
+                "topk_ids must be int32 or int64");
+
+    TORCH_CHECK(input_q.is_contiguous() && w1_q.is_contiguous() && w2_q.is_contiguous() &&
+                topk_weights.is_contiguous() && topk_ids.is_contiguous() &&
+                input_scale.is_contiguous() && fc1_scale.is_contiguous() && fc2_scale.is_contiguous(),
+                "All tensors must be contiguous");
+
+    TORCH_CHECK(input_q.dim() == 2, "input_q must be [T, D]");
+    TORCH_CHECK(w1_q.dim() == 3, "w1_q must be [E, 2I, D]");
+    TORCH_CHECK(w2_q.dim() == 3, "w2_q must be [E, D, I]");
+    TORCH_CHECK(topk_weights.dim() == 2 && topk_ids.dim() == 2, "topk tensors must be [T, K]");
+    TORCH_CHECK(input_scale.dim() == 2 && fc1_scale.dim() == 2 && fc2_scale.dim() == 2, "scale tensors must be 2D");
+
+    const int64_t tokens = input_q.size(0);
+    const int64_t dim = input_q.size(1);
+    const int64_t experts = w1_q.size(0);
+    const int64_t inter2 = w1_q.size(1);
+    TORCH_CHECK(inter2 % 2 == 0, "w1_q second dim must be 2*inter_dim");
+    const int64_t inter_dim = inter2 / 2;
+
+    TORCH_CHECK(w1_q.size(2) == dim, "w1_q shape mismatch");
+    TORCH_CHECK(w2_q.size(0) == experts && w2_q.size(1) == dim && w2_q.size(2) == inter_dim, "w2_q shape mismatch");
+    TORCH_CHECK(topk_weights.size(0) == tokens && topk_ids.size(0) == tokens, "topk token mismatch");
+
+    const int64_t topk = topk_ids.size(1);
+    TORCH_CHECK(topk_weights.size(1) == topk, "topk_weights/topk_ids mismatch");
+
+    TORCH_CHECK(dim % BLOCK_Q == 0, "dim must be divisible by 128");
+    TORCH_CHECK(inter_dim % BLOCK_Q == 0, "inter_dim must be divisible by 128");
+    TORCH_CHECK((2 * inter_dim) % BLOCK_Q == 0, "2*inter_dim must be divisible by 128");
+
+    TORCH_CHECK(input_scale.size(0) == tokens && input_scale.size(1) == dim / BLOCK_Q, "input_scale shape mismatch");
+
+    const int64_t fc1_expected = ((2 * inter_dim) / BLOCK_Q) * (dim / BLOCK_Q);
+    const int64_t fc2_expected = (dim / BLOCK_Q) * (inter_dim / BLOCK_Q);
+    TORCH_CHECK(fc1_scale.size(0) == experts && fc1_scale.size(1) == fc1_expected, "fc1_scale shape mismatch");
+    TORCH_CHECK(fc2_scale.size(0) == experts && fc2_scale.size(1) == fc2_expected, "fc2_scale shape mismatch");
+
+    const int64_t shared_bytes = (dim + inter_dim) * (int64_t)sizeof(float);
+    TORCH_CHECK(shared_bytes <= 64 * 1024, "Shared memory requirement exceeds 64KB");
+
+    c10::HIP/ROCm::CUDAGuard device_guard(dev);
+    auto out = torch::empty({tokens, dim}, input_q.options().dtype(at::kBFloat16));
+    auto stream = at::HIP/ROCm::getCurrentCUDAStream(input_q.get_device());
+
+    const uint8_t* input_q_ptr = reinterpret_cast<const uint8_t*>(input_q.data_ptr());
+    const uint8_t* w1_q_ptr = reinterpret_cast<const uint8_t*>(w1_q.data_ptr());
+    const uint8_t* w2_q_ptr = reinterpret_cast<const uint8_t*>(w2_q.data_ptr());
+    const float* topk_w_ptr = topk_weights.data_ptr<float>();
+    const float* in_s_ptr = input_scale.data_ptr<float>();
+    const float* fc1_s_ptr = fc1_scale.data_ptr<float>();
+    const float* fc2_s_ptr = fc2_scale.data_ptr<float>();
+    uint16_t* out_ptr = reinterpret_cast<uint16_t*>(out.data_ptr<at::BFloat16>());
+
+    if (topk_ids.scalar_type() == at::kInt) {
+        const int32_t* topk_i_ptr = topk_ids.data_ptr<int32_t>();
+        fused_moe_kernel_opt<int32_t><<<static_cast<int>(tokens), THREADS, static_cast<size_t>(shared_bytes), stream.stream()>>>(
+            input_q_ptr, w1_q_ptr, w2_q_ptr, topk_w_ptr, topk_i_ptr,
+            in_s_ptr, fc1_s_ptr, fc2_s_ptr, out_ptr,
+            static_cast<int>(tokens), static_cast<int>(dim), static_cast<int>(inter_dim),
+            static_cast<int>(experts), static_cast<int>(topk)
+        );
+    } else {
+        const int64_t* topk_i_ptr = topk_ids.data_ptr<int64_t>();
+        fused_moe_kernel_opt<int64_t><<<static_cast<int>(tokens), THREADS, static_cast<size_t>(shared_bytes), stream.stream()>>>(
+            input_q_ptr, w1_q_ptr, w2_q_ptr, topk_w_ptr, topk_i_ptr,
+            in_s_ptr, fc1_s_ptr, fc2_s_ptr, out_ptr,
+            static_cast<int>(tokens), static_cast<int>(dim), static_cast<int>(inter_dim),
+            static_cast<int>(experts), static_cast<int>(topk)
+        );
+    }
+
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    return out;
+}
+"""
+
+cpp_src = r"""
+#include <torch/extension.h>
+
+torch::Tensor fused_moe_forward(
+    torch::Tensor input_q,
+    torch::Tensor w1_q,
+    torch::Tensor w2_q,
+    torch::Tensor topk_weights,
+    torch::Tensor topk_ids,
+    torch::Tensor input_scale,
+    torch::Tensor fc1_scale,
+    torch::Tensor fc2_scale
+);
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("fused_moe_forward", &fused_moe_forward, "Fused MoE forward (HIP/ROCm optimized)");
+}
+"""
+
+_fused_moe_ext = load_inline(
+    name="fused_moe_hip_ext_opt_v6",
+    cpp_sources=cpp_src,
+    cuda_sources=source,
+    with_cuda=True,
+    extra_cflags=["-O3"],
+    extra_cuda_cflags=["-O3", "-std=c++17", "-ffast-math"],
+    verbose=False,
+)
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self,
+        input_q: torch.Tensor,
+        w1_q: torch.Tensor,
+        w2_q: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        input_scale: torch.Tensor,
+        fc1_scale: torch.Tensor,
+        fc2_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        if not (input_q.is_cuda and w1_q.is_cuda and w2_q.is_cuda and topk_weights.is_cuda and
+                topk_ids.is_cuda and input_scale.is_cuda and fc1_scale.is_cuda and fc2_scale.is_cuda):
+            raise RuntimeError("All runtime tensors must be on GPU")
+
+        dev = input_q.device
+        for t in (w1_q, w2_q, topk_weights, topk_ids, input_scale, fc1_scale, fc2_scale):
+            if t.device != dev:
+                raise RuntimeError("All runtime tensors must be on the same GPU device")
+
+        if topk_ids.dtype not in (torch.int32, torch.int64):
+            raise RuntimeError("topk_ids must be int32 or int64 on GPU")
+
+        if topk_weights.dtype != torch.float32:
+            topk_weights = topk_weights.to(dtype=torch.float32)
+        if input_scale.dtype != torch.float32:
+            input_scale = input_scale.to(dtype=torch.float32)
+        if fc1_scale.dtype != torch.float32:
+            fc1_scale = fc1_scale.to(dtype=torch.float32)
+        if fc2_scale.dtype != torch.float32:
+            fc2_scale = fc2_scale.to(dtype=torch.float32)
+
+        return _fused_moe_ext.fused_moe_forward(
+            input_q.contiguous(),
+            w1_q.contiguous(),
+            w2_q.contiguous(),
+            topk_weights.contiguous(),
+            topk_ids.contiguous(),
+            input_scale.contiguous(),
+            fc1_scale.contiguous(),
+            fc2_scale.contiguous(),
+        )
+```
+
+[optimization instructions]
+{
+  "bottleneck": "latency-only mode on backend=hip",
+  "optimisation method": "apply one backend-compatible optimization while preserving correctness",
+  "modification plan": "target lower latency than current avg 1482.98896484375"
+}
+
+GOAL
+────
+- Improve latency and throughput on the target GPU.
+- Maintain correctness within atol=1e-4 or rtol=1e-4.
+- Preserve the public Python API (same inputs/outputs, shapes, dtypes).
+- Target compute dtype is BF16 (`torch.bfloat16`) for the main kernel path.
+
+NO-HACK POLICY (STRICT)
+────
+- Do NOT call framework attention core operators, directly or indirectly.
+- Forbidden APIs include:
+  - `torch.nn.functional.scaled_dot_product_attention`
+  - `torch.nn.functional.multi_head_attention_forward`
+  - `torch.nn.MultiheadAttention`
+  - `flash_attn*` / `flash_attention*`
+- Do NOT implement attention via framework dense ops either (forbidden fallback path):
+  - `torch.matmul` / `torch.bmm` / `torch.einsum` for QK^T or AV
+  - `torch.softmax` / `torch.nn.functional.softmax` on attention scores
+- Keep the optimization as true custom HIP/ROCm kernel code.
+
+OUTPUT RULES (STRICT) ────────────────────────────────────────────────
+1. Inside the block, follow **exactly** this order:
+   1. Imports – `torch`, `torch.nn`, `load_inline`.
+   2. `source` – triple-quoted HIP/ROCm string(s) (kernel + host wrapper).
+   3. `cpp_src` – prototypes for *all* kernels you expose.
+   4. **One** `load_inline` call per kernel group.
+   5. `class ModelNew(nn.Module)` – mirrors original inputs/outputs but calls
+      your HIP/ROCm kernels.
+2. **Do NOT include** testing code, `if __name__ == "__main__"`, or extra prose.
+
+```python
+# <your corrected code>
+```
+# ==========================================================

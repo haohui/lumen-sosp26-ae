@@ -1,0 +1,38 @@
+loaded /workspace/kernel_benchmark/third_party/HipKittens/analysis/baselines/attn/triton_baseline_v02.py
+TRITON_CACHE_DIR /workspace/kernel_benchmark/opt_kernel/attention-d128-openai/05_HipKittens/kernels/triton_cache_capture_runtimepick_20260324
+SEQ=1024
+  best_repr BLOCK_M: 128, BLOCK_N: 64, waves_per_eu: 2, PRE_LOAD_V: False, GRID_CU_MULTIP: 2, num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None
+  best_kwargs {'BLOCK_M': 128, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2}
+  best_num_warps 4
+  best_num_stages 1
+  best_maxnreg None
+  best_pre_hook None
+SEQ=2048
+  best_repr BLOCK_M: 128, BLOCK_N: 64, waves_per_eu: 2, PRE_LOAD_V: False, GRID_CU_MULTIP: 2, num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None
+  best_kwargs {'BLOCK_M': 128, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2}
+  best_num_warps 4
+  best_num_stages 1
+  best_maxnreg None
+  best_pre_hook None
+SEQ=4096
+  best_repr BLOCK_M: 128, BLOCK_N: 64, waves_per_eu: 2, PRE_LOAD_V: False, GRID_CU_MULTIP: 2, num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None
+  best_kwargs {'BLOCK_M': 128, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2}
+  best_num_warps 4
+  best_num_stages 1
+  best_maxnreg None
+  best_pre_hook None
+SEQ=8192
+  best_repr BLOCK_M: 128, BLOCK_N: 64, waves_per_eu: 2, PRE_LOAD_V: False, GRID_CU_MULTIP: 2, num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None
+  best_kwargs {'BLOCK_M': 128, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2}
+  best_num_warps 4
+  best_num_stages 1
+  best_maxnreg None
+  best_pre_hook None
+SEQ=16384
+  best_repr BLOCK_M: 128, BLOCK_N: 64, waves_per_eu: 2, PRE_LOAD_V: False, GRID_CU_MULTIP: 2, num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None
+  best_kwargs {'BLOCK_M': 128, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2}
+  best_num_warps 4
+  best_num_stages 1
+  best_maxnreg None
+  best_pre_hook None
+DONE

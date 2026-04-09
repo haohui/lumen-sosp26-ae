@@ -1,0 +1,21 @@
+{
+  "was_diagnosis_correct": true,
+  "was_fix_effective": true,
+  "expected_outcome": "If compute pressure was the true bottleneck, reducing FP/VALU instruction pressure and improving tile reuse should significantly reduce runtime, with compute remaining the dominant limiter.",
+  "actual_outcome": "Runtime improved from 809.3647ms to 194.5221ms (+76.0%), verification passed, and NCU SOL still shows high compute utilization (89.7%) versus lower memory pressure (42.2%).",
+  "reasoning": "The very large speedup is consistent with successfully addressing a compute-heavy kernel. Since memory SOL is moderate (42.2%) while compute SOL is high (89.7%), the kernel remains primarily compute-bound, which matches the original diagnosis. The applied strategy (reducing instruction count via better tiling/unrolling/autotuning and fusion tradeoff consideration) is exactly what should help in this regime, and the measured improvement confirms it.",
+  "lessons": [
+    "The initial bottleneck diagnosis (compute-dominated due to fused FC1+SiLU+FC2 instruction pressure) was accurate and led to high-impact optimization.",
+    "For heavily fused kernels, instruction-count reduction via tile/unroll parameter tuning can deliver outsized gains without changing correctness.",
+    "A large speedup can still leave the kernel compute-bound; this means there is likely additional headroom in math pipeline efficiency rather than memory optimization."
+  ],
+  "avoid_patterns": [
+    "Do not prematurely prioritize memory-traffic optimizations when SOL indicates compute is much more saturated than memory.",
+    "Avoid assuming fusion is always optimal; over-fusion can increase redundant math/instruction pressure."
+  ],
+  "try_patterns": [
+    "Run systematic autotuning over BLOCK_J/BLOCK_OUT/num_warps/num_stages focused on reducing FP/VALU pressure and improving instruction-level efficiency.",
+    "Evaluate selective defusion/split points (e.g., FC1+SiLU and FC2 separation) when fusion increases instruction overhead more than it saves memory traffic.",
+    "Inspect instruction mix and issue efficiency (e.g., VALU utilization, dependency stalls) to target the next compute-side bottleneck."
+  ]
+}

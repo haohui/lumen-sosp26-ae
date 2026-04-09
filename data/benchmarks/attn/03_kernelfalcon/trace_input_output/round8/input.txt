@@ -1,0 +1,335 @@
+
+TASK: Optimize the following Triton kernel based on hardware profiling analysis to achieve better performance.
+
+## TARGET GPU
+- GPU: AMD Instinct MI300X
+- Architecture: CDNA3 (gfx942)
+- Peak Memory Bandwidth: 5300.0 GB/s
+- Peak FP32: 163.0 TFLOPS
+- Peak FP16: 1300.0 TFLOPS
+- Peak BF16: 1300.0 TFLOPS
+- SM Count: 304
+- Max Threads per SM: 2048
+- L1 Cache per SM: 32 KB
+- L2 Cache: 4 MB
+- Memory: 192 GB HBM3
+
+## PROBLEM DESCRIPTION
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import os
+
+
+class Model(nn.Module):
+    def __init__(self):
+        super(Model, self).__init__()
+
+    def forward(self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor) -> torch.Tensor:
+        if K.shape[1] == 1:
+            K = K.repeat_interleave(8, dim=1)
+            V = V.repeat_interleave(8, dim=1)
+
+        return F.scaled_dot_product_attention(
+            Q, K, V, attn_mask=None, dropout_p=0.0, is_causal=True
+        )
+
+
+batch_size = 16
+num_q_heads = 8
+num_kv_heads = 1
+sequence_length = int(os.getenv("ATTN_SEQ_LEN", "1024"))
+head_dim = 128
+supported_sequence_lengths = (1024, 2048, 4096, 8192, 16384)
+
+
+def get_inputs():
+    Q = torch.randn(batch_size, num_q_heads, sequence_length, head_dim, dtype=torch.bfloat16)
+    K = torch.randn(batch_size, num_kv_heads, sequence_length, head_dim, dtype=torch.bfloat16)
+    V = torch.randn(batch_size, num_kv_heads, sequence_length, head_dim, dtype=torch.bfloat16)
+    return [Q, K, V]
+
+
+def get_init_inputs():
+    return []
+
+PyTorch Eager baseline: 0.2918 ms
+
+## CURRENT KERNEL
+```python
+import torch
+import triton
+import triton.language as tl
+
+
+@triton.jit
+def _fused_causal_attention_mfma(
+    q_ptr, k_ptr, v_ptr, o_ptr,
+    B, HQ, HKV, S, D,
+    stride_qb, stride_qh, stride_qs, stride_qd,
+    stride_kb, stride_kh, stride_ks, stride_kd,
+    stride_vb, stride_vh, stride_vs, stride_vd,
+    stride_ob, stride_oh, stride_os, stride_od,
+    scale,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+):
+    pid_m = tl.program_id(axis=0)
+    pid_bh = tl.program_id(axis=1)
+
+    b = pid_bh // HQ
+    hq = pid_bh % HQ
+    hkv = tl.where(HKV == 1, 0, hq)
+
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_d = tl.arange(0, BLOCK_D)
+
+    q_ptrs = (
+        q_ptr
+        + b * stride_qb
+        + hq * stride_qh
+        + offs_m[:, None] * stride_qs
+        + offs_d[None, :] * stride_qd
+    )
+    q_mask = (offs_m[:, None] < S) & (offs_d[None, :] < D)
+    q = tl.load(q_ptrs, mask=q_mask, other=0).to(tl.bfloat16)
+
+    m_i = tl.full((BLOCK_M,), -float("inf"), dtype=tl.float32)
+    l_i = tl.zeros((BLOCK_M,), dtype=tl.float32)
+    acc = tl.zeros((BLOCK_M, BLOCK_D), dtype=tl.float32)
+
+    n_start = 0
+    while n_start < S:
+        offs_n = n_start + tl.arange(0, BLOCK_N)
+
+        k_ptrs = (
+            k_ptr
+            + b * stride_kb
+            + hkv * stride_kh
+            + offs_n[:, None] * stride_ks
+            + offs_d[None, :] * stride_kd
+        )
+        k_mask = (offs_n[:, None] < S) & (offs_d[None, :] < D)
+        k = tl.load(k_ptrs, mask=k_mask, other=0).to(tl.bfloat16)
+
+        qk = tl.dot(q, tl.trans(k), input_precision="ieee") * scale
+
+        causal = offs_m[:, None] >= offs_n[None, :]
+        valid_n = offs_n[None, :] < S
+        valid_m = offs_m[:, None] < S
+        qk = tl.where(causal & valid_n & valid_m, qk, -float("inf"))
+
+        m_ij = tl.maximum(m_i, tl.max(qk, axis=1))
+        p = tl.exp(qk - m_ij[:, None])
+        l_ij = tl.sum(p, axis=1)
+
+        alpha = tl.exp(m_i - m_ij)
+        l_i = l_i * alpha + l_ij
+        acc = acc * alpha[:, None]
+
+        v_ptrs = (
+            v_ptr
+            + b * stride_vb
+            + hkv * stride_vh
+            + offs_n[:, None] * stride_vs
+            + offs_d[None, :] * stride_vd
+        )
+        v_mask = (offs_n[:, None] < S) & (offs_d[None, :] < D)
+        v = tl.load(v_ptrs, mask=v_mask, other=0).to(tl.bfloat16)
+
+        acc = tl.dot(p.to(tl.bfloat16), v, acc, input_precision="ieee")
+        m_i = m_ij
+        n_start += BLOCK_N
+
+    out = acc / l_i[:, None]
+
+    o_ptrs = (
+        o_ptr
+        + b * stride_ob
+        + hq * stride_oh
+        + offs_m[:, None] * stride_os
+        + offs_d[None, :] * stride_od
+    )
+    o_mask = (offs_m[:, None] < S) & (offs_d[None, :] < D)
+    tl.store(o_ptrs, out.to(o_ptr.dtype.element_ty), mask=o_mask)
+
+
+def kernel_function(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor) -> torch.Tensor:
+    # Validation only (no compute in wrapper)
+    assert isinstance(Q, torch.Tensor) and isinstance(K, torch.Tensor) and isinstance(V, torch.Tensor)
+    assert Q.is_hip and K.is_hip and V.is_hip
+    assert Q.dtype == torch.bfloat16 and K.dtype == torch.bfloat16 and V.dtype == torch.bfloat16
+    assert Q.ndim == 4 and K.ndim == 4 and V.ndim == 4
+
+    B, HQ, S, D = Q.shape
+    BK, HKV, SK, DK = K.shape
+    BV, HKV2, SV, DV = V.shape
+
+    assert B == BK == BV
+    assert S == SK == SV
+    assert D == DK == DV
+    assert HKV == HKV2
+    assert HKV == 1 or HKV == HQ
+    assert D == 128
+
+    O = torch.empty_like(Q)
+    scale = 1.0 / (D ** 0.5)
+
+    BLOCK_M = 128
+    BLOCK_N = 64
+    BLOCK_D = 128
+
+    grid = (triton.cdiv(S, BLOCK_M), B * HQ)
+
+    _fused_causal_attention_mfma[grid](
+        Q, K, V, O,
+        B, HQ, HKV, S, D,
+        Q.stride(0), Q.stride(1), Q.stride(2), Q.stride(3),
+        K.stride(0), K.stride(1), K.stride(2), K.stride(3),
+        V.stride(0), V.stride(1), V.stride(2), V.stride(3),
+        O.stride(0), O.stride(1), O.stride(2), O.stride(3),
+        scale,
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        BLOCK_D=BLOCK_D,
+        num_warps=4,
+        num_stages=1,
+    )
+    return O
+```
+
+## ROOFLINE ANALYSIS
+- Primary Bottleneck: COMPUTE
+- Compute SOL: 90.7%
+- Memory SOL: 22.4%
+- Efficiency: 90.7% (headroom: 9.3%)
+- At Roofline: No
+- Tensor Cores: Inactive
+## BOTTLENECK ANALYSIS
+### Category: COMPUTE
+Pre-computed: compute-bound kernel
+
+**Reasoning:** Compute utilization is very high (sm__throughput 90.74%, rocm__compute_mix_pct 90.74%) while DRAM throughput is low relative to peak (22.43%), matching roofline (compute SOL 90.7% vs memory SOL 22.4%). Warps are fully active (100%), so the remaining headroom is primarily math-pipeline efficiency, not bandwidth.
+
+**Root Cause:** Non-tensor-core path: BF16 attention math is executed without tensor/MFMA tensor-pipe usage, limiting peak math throughput.  Evidence: sm__inst_executed_pipe_tensor.avg.pct_of_peak_sustained_active=0.0
+**Recommended Fix:** Retune/rewrite the Triton kernel to force MFMA-friendly matmul lowering (e.g., architecture-specific MFMA configs, autotune BLOCK_M/BLOCK_N/BLOCK_K and num_warps/num_stages, verify generated ISA uses MFMA instructions). (Using MFMA/tensor-like matrix instructions increases effective compute throughput and reduces the 9.3% compute headroom.)
+
+
+RECENT OPTIMIZATION ATTEMPTS:
+#### Attempt 1 (Worker 0) [✗ NO IMPROVEMENT 101.7% slower]
+**Prescription Applied**: `compute` tier
+**Root Cause**: Heavy non-tensor vector/scalar math dominates (dot + softmax exp/reduction) and tensor cores are not used.
+**Fix Applied**: Rewrite to use MFMA/tensor-core paths for BF16 matmul portions (QK and PV), and keep softmax in FP32 only where needed.
+**Performance**: 0.3863ms → 0.7794ms (101.7% slower)
+**NCU SOL (% of Peak)**: Combined: 90.3%, Compute: 90.3%, Memory: 16.9%
+
+#### Attempt 1 (Worker 0) [✗ NO IMPROVEMENT 102.6% slower]
+**Prescription Applied**: `compute` tier
+**Root Cause**: Attention math density (QK matmul + softmax + PV matmul) dominates runtime relative to bytes moved.
+**Fix Applied**: Reduce FLOPs per output by using lower-precision/faster math paths where acceptable (e.g., relaxed softmax precision or approximate attention variants) and retune BLOCK_N/BLOCK_M for fewer total dot/exp operations.
+**Performance**: 0.3863ms → 0.7827ms (102.6% slower)
+**NCU SOL (% of Peak)**: Combined: 90.3%, Compute: 90.3%, Memory: 17.6%
+
+#### Attempt 1 (Worker 0) [✗ NO IMPROVEMENT 18.6% slower]
+**Prescription Applied**: `compute` tier
+**Root Cause**: High non-tensor FP/VALU instruction pressure in attention math (QK, softmax, PV) saturates compute pipelines.
+**Fix Applied**: Reduce FLOPs per output by using algorithmic attention optimizations (e.g., split-K/sequence tiling with fewer recomputations, approximate/sparse attention where acceptable).
+**Performance**: 0.3863ms → 0.4580ms (18.6% slower)
+**NCU SOL (% of Peak)**: Combined: 89.5%, Compute: 89.5%, Memory: 31.6%
+
+#### Attempt 1 (Worker 0) [✗ NO IMPROVEMENT 99.8% slower]
+**Prescription Applied**: `compute` tier
+**Root Cause**: Non-tensor-core execution path for bf16 matmul/attention math limits peak achievable FLOPs on CDNA3.
+**Fix Applied**: Rewrite/tune the Triton kernel to force MFMA/matrix-core lowering for QK and PV dot products (e.g., block shapes and datatypes aligned to MFMA-supported bf16 tiles, verify generated ISA uses v_mfma ops).
+**Performance**: 0.3863ms → 0.7718ms (99.8% slower)
+**NCU SOL (% of Peak)**: Combined: 91.9%, Compute: 91.9%, Memory: 17.8%
+
+#### Attempt 1 (Worker 0) [✗ NO IMPROVEMENT 78.6% slower]
+**Prescription Applied**: `compute` tier
+**Root Cause**: Heavy non-tensor math path (softmax exp/max/sum + VALU) dominates and tensor/matrix pipelines are unused.
+**Fix Applied**: Restructure attention to use MFMA/tensor-core-friendly block GEMM paths for QK and PV (and keep softmax in reduced precision where acceptable).
+**Performance**: 0.3863ms → 0.6900ms (78.6% slower)
+**NCU SOL (% of Peak)**: Combined: 88.5%, Compute: 88.5%, Memory: 20.0%
+
+
+SELF-REFLECTION ANALYSIS:
+#### Round 1 Reflection [Ineffective]
+**Diagnosis**: Heavy non-tensor vector/scalar math dominates (dot + softmax exp/reduction) and tensor cores are not used.
+**Fix Applied**: Rewrite to use MFMA/tensor-core paths for BF16 matmul portions (QK and PV), and keep softmax in FP32 only where needed.
+**Expected**: If compute was truly the limiting factor and matmul dominated, enabling MFMA/tensor-core execution should have reduced kernel time and improved effective compute throughput while keeping correctness.
+**Actual**: Kernel time regressed from 0.3863ms to 0.7794ms (-101.7% improvement, i.e., ~2.0x slower), despite verification passing. NCU still shows high compute SOL (90.3%) and low memory SOL (16.9%). (-101.7%)
+**Analysis**: The result contradicts the expected benefit of a successful compute-path optimization. The original root cause emphasized non-tensor vector/scalar math (dot + softmax exp/reduction) as dominant. The fix targeted BF16 matmul paths (QK/PV), which likely were not the true bottleneck share, so acceleration there could not offset added overhead (data movement/reformatting, type conversions, launch/scheduling effects, or reduced occupancy). NCU after the change still indicates compute-dominated behavior, but performance worsened, meaning compute pressure was not reduced in a useful way. This suggests either misattribution of hotspot contribution (softmax/scalar reduction still dominant) or an inefficient tensor-core implementation for this problem shape.
+**Lessons**:
+  - Do hotspot attribution before rewriting: confirm percentage of time in QK/PV matmul vs softmax/reduction/scalar ops.
+  - A compute-bound label alone is insufficient; optimize the dominant compute instructions, not just any compute region.
+  - Tensor-core/MFMA paths can regress when shapes, tiling, or conversion overheads are unfavorable.
+  - Track secondary effects (occupancy, register pressure, instruction mix, conversion ops) when introducing mixed-precision paths.
+
+#### Round 1 Reflection [Ineffective]
+**Diagnosis**: Attention math density (QK matmul + softmax + PV matmul) dominates runtime relative to bytes moved.
+**Fix Applied**: Reduce FLOPs per output by using lower-precision/faster math paths where acceptable (e.g., relaxed softmax precision or approximate attention variants) and retune BLOCK_N/BLOCK_M for fewer total dot/exp operations.
+**Expected**: If compute was the true bottleneck, reducing FLOPs via lower-precision/approximate math and better block sizing should have reduced kernel time and possibly lowered compute SOL pressure.
+**Actual**: Kernel time regressed significantly from 0.3863ms to 0.7827ms (-102.6% improvement), despite passing verification. (-102.6%)
+**Analysis**: The diagnosis appears directionally correct because NCU SOL shows high compute utilization (90.3%) and low memory pressure (17.6%), consistent with a compute-bound kernel. However, the applied changes did not translate into speedup. This suggests the new math path and/or retuned BLOCK_N/BLOCK_M increased effective cost (e.g., worse tensor-core usage, reduced occupancy, higher instruction overhead, poorer tiling efficiency, or slower softmax implementation despite nominally fewer FLOPs). Since config changes were listed as none, the intended retuning may not have been realized in a beneficial way at runtime. Net result: compute bottleneck remained, and throughput got worse.
+**Lessons**:
+  - A correct bottleneck diagnosis is not sufficient; implementation details (kernel mapping, tensor-core alignment, occupancy) determine whether theoretical FLOP reductions produce real speedups.
+  - Approximate/lower-precision paths must be validated for hardware efficiency, not just arithmetic count, because they can introduce extra conversions or non-fused instructions.
+  - Track whether tuning knobs actually changed effective launch/config behavior; intended retuning with no concrete config delta is a red flag.
+
+#### Round 1 Reflection [Ineffective]
+**Diagnosis**: High non-tensor FP/VALU instruction pressure in attention math (QK, softmax, PV) saturates compute pipelines.
+**Fix Applied**: Reduce FLOPs per output by using algorithmic attention optimizations (e.g., split-K/sequence tiling with fewer recomputations, approximate/sparse attention where acceptable).
+**Expected**: If compute was the true bottleneck, reducing attention FLOPs should have lowered runtime and reduced compute saturation (or improved throughput at similar saturation).
+**Actual**: Runtime regressed from 0.3863ms to 0.4580ms (-18.6%), while compute remained very high (NCU SOL compute 89.5%) and memory was still comparatively low (31.6%). (-18.6%)
+**Analysis**: The profile still indicates a compute-dominated kernel, so the high-level bottleneck diagnosis appears directionally correct. However, the applied algorithmic change did not translate into net speedup. Likely causes are added overhead (extra control flow, tiling/synchronization, poorer kernel efficiency/occupancy, or non-beneficial sparsity/approximation costs) that outweighed any FLOP reduction. Since performance worsened and compute pressure remained high, the fix did not relieve the practical limiting factor in this implementation.
+**Lessons**:
+  - A correct bottleneck diagnosis is not sufficient; implementation overhead can negate theoretical FLOP savings.
+  - Validate algorithmic attention variants with kernel-level efficiency metrics (occupancy, instruction mix, launch overhead, tensor core utilization), not just expected FLOP reduction.
+  - For short/medium sequence or specific shapes, approximate/sparse/split strategies may underperform due to setup and control overhead.
+
+#### Round 1 Reflection [Ineffective]
+**Diagnosis**: Non-tensor-core execution path for bf16 matmul/attention math limits peak achievable FLOPs on CDNA3.
+**Fix Applied**: Rewrite/tune the Triton kernel to force MFMA/matrix-core lowering for QK and PV dot products (e.g., block shapes and datatypes aligned to MFMA-supported bf16 tiles, verify generated ISA uses v_mfma ops).
+**Expected**: If non-tensor-core bf16 math was the compute bottleneck, forcing MFMA lowering should reduce kernel time and potentially increase achieved compute throughput while keeping correctness.
+**Actual**: Kernel time regressed from 0.3863ms to 0.7718ms (about 2x slower), with verification still passing; compute SOL remained high at 91.9% and memory SOL low at 17.8%. (-99.8%)
+**Analysis**: The bottleneck diagnosis (compute-bound) is consistent with SOL: compute utilization is very high and memory is not limiting. However, the specific fix was ineffective because performance worsened substantially instead of improving. This suggests that forcing MFMA likely introduced secondary costs (e.g., worse tiling/occupancy, higher register pressure, synchronization overhead, reduced wave efficiency, or less favorable instruction mix) that outweighed any tensor-core benefit. Since compute SOL is already high, simply switching to MFMA without a globally better kernel schedule can degrade runtime.
+**Lessons**:
+  - A correct bottleneck diagnosis does not guarantee a beneficial fix; implementation details (tile shape, occupancy, register use) can dominate outcome.
+  - For compute-bound kernels, validate not only MFMA presence but also occupancy, wave stalls, and instruction efficiency before accepting a change.
+  - Performance regressions with unchanged correctness indicate the new path is functionally valid but microarchitecturally suboptimal.
+
+#### Round 1 Reflection [Ineffective]
+**Diagnosis**: Heavy non-tensor math path (softmax exp/max/sum + VALU) dominates and tensor/matrix pipelines are unused.
+**Fix Applied**: Restructure attention to use MFMA/tensor-core-friendly block GEMM paths for QK and PV (and keep softmax in reduced precision where acceptable).
+**Expected**: If compute was truly the limiter and tensor cores were underused, moving QK/PV to MFMA-style GEMM should reduce runtime and either lower compute pressure or increase useful compute throughput.
+**Actual**: Runtime regressed from 0.3863 ms to 0.6900 ms (-78.6% improvement), while Compute SOL remained high at 88.5% (Memory SOL 20.0%), and correctness still passed. (-78.6%)
+**Analysis**: The diagnosis that the kernel is compute-bound appears directionally correct because Compute SOL is very high and Memory SOL is relatively low. However, the applied fix did not address the dominant expensive path effectively enough. The root cause cited includes softmax max/exp/sum + VALU overhead; converting only QK/PV to MFMA-friendly blocks can increase overhead (tiling/reformatting, synchronization, launch structure, reduced occupancy, or extra data movement) without reducing softmax/elementwise cost. Since performance got much worse and compute is still saturated, the optimization likely shifted work into a heavier implementation or exposed new inefficiencies rather than improving end-to-end critical path.
+**Lessons**:
+  - A correct high-level bottleneck diagnosis (compute-bound) is not sufficient; optimize the dominant compute sub-operators (softmax/reduction/exp path) rather than only adjacent GEMMs.
+  - End-to-end attention performance depends on fusion and overhead balance; faster matmul kernels can still lose if they add transformation/scheduling costs or leave non-matmul compute untouched.
+  - Use operator-level profiling before/after each change to confirm which stage actually improved and whether its share of total time is large enough to matter.
+
+
+Guidance for this round:
+- AVOID: Applying large architectural rewrites (tensor-core conversion) without first validating that the targeted subgraph is the top-time contributor.; Assuming high compute SOL automatically means matmul is the right optimization target.; Applying approximate math changes and tile retuning together in one step without isolating their individual impact.; Assuming fewer FLOPs automatically means faster runtime in attention kernels.; Making optimization claims without confirming concrete kernel config/occupancy/tensor-core path changes.; Applying complex algorithmic attention changes without confirming they reduce executed instructions and improve achieved throughput for the target shape.; Assuming FLOP-count reduction alone guarantees lower latency in already highly optimized GPU kernels.; Forcing matrix-core/MFMA paths as a standalone change without co-tuning block sizes, warps/waves, and pipeline depth.; Assuming high compute SOL automatically means current math path is inefficient enough that MFMA will help.; Applying broad architectural rewrites (MFMA/block GEMM) without verifying that the rewritten sections dominate total kernel time.; Assuming tensor-core utilization alone will improve attention when scalar/reduction softmax math is the main hotspot.; Changing compute paths without adjusting launch/blocking configs to preserve occupancy and minimize overhead.- PRIORITIZE: Profile-driven decomposition: quantify time and instruction share for softmax exp/reduction vs matmul before choosing fixes.; Optimize softmax/reduction path (fused reductions, warp-level primitives, numerically safe but cheaper FP32 scope, fewer passes over data).; Test shape-aware MFMA tiling and minimize BF16<->FP32 conversion/reformat overhead before full rollout.; Use incremental A/B microbenchmarks per subkernel (QK, softmax, PV) to verify each change improves end-to-end time.; Run ablations: test precision-path change alone, then block-size change alone, to identify which component caused regression.; Prioritize tile shapes that maximize tensor-core utilization and occupancy for QK and PV GEMMs; verify with instruction mix and achieved occupancy metrics.; Use fused/online softmax and minimize type conversions and exp/log overhead; profile instruction-level hotspots before further algorithmic approximations.; Add guardrail metrics per round (achieved TFLOPs, tensor-core active, occupancy, register spill) to ensure compute optimizations improve actual execution efficiency.; Target micro-optimizations that reduce non-tensor FP/VALU pressure directly (fused softmax, vectorized ops, fewer transcendental ops, better instruction scheduling).; Increase tensor core share and reduce scalar/vector math in QK/softmax/PV paths via fused kernels or FlashAttention-style implementations tuned for current sequence/head dimensions.; Run A/B profiling with detailed counters (inst_fp32, warp stall reasons, occupancy, eligible warps/cycle) before and after each change to ensure compute bottleneck is actually being relieved.; Jointly tune MFMA-compatible tile sizes with occupancy/register-pressure constraints and software pipelining stages.; Profile ISA and scheduler metrics together (mfma usage, VGPR count, wave occupancy, stall reasons) and gate changes on end-to-end runtime.; Run small ablation sweeps: baseline tiles vs MFMA tiles vs mixed-precision accumulation choices to find a net-positive configuration.; Target softmax path directly: fused online softmax, warp-level/block-level reductions, approximate exp where acceptable, and reduced-precision accumulation strategy validation.; Increase fusion across QK -> softmax -> PV to reduce intermediate writes/reads and kernel boundaries.; Run stage-wise microbenchmarks and roofline/NCU counters per subkernel, then prioritize optimizations by time share and achieved occupancy/instruction mix.
+
+## PERFORMANCE TARGET
+- PyTorch Eager baseline: 0.2918 ms
+- Current best kernel: 0.3863 ms
+- Target: Improve by at least 10% (< 0.3477 ms)
+- Maintain numerical correctness (atol=1e-4 or rtol=1e-4)
+- Preserve public API (same inputs/outputs, shapes, dtypes)
+
+## REQUIREMENTS
+1. Apply the recommended fixes above to address the COMPUTE bottleneck
+2. The implementation must be a complete, valid Python file
+3. Main function must be named 'kernel_function' wrapping the Triton kernel
+4. Keep the wrapper free of PyTorch compute primitives
+
+## OUTPUT FORMAT
+Output complete optimized kernel code in ```python blocks.
+Include only: imports, Triton kernel (@triton.jit), wrapper function (kernel_function).
+No testing code, benchmarks, or explanatory comments.
+
+Generate the complete optimized kernel implementation:

@@ -1,0 +1,17 @@
+{
+  "gpu_count": "1",
+  "backend": "Triton-official-matmul",
+  "dtype": "BF16",
+  "M": "1024",
+  "N": "1024",
+  "K": "1024",
+  "warmup": "2037",
+  "iters": "10185",
+  "graph_iters": "1",
+  "l2_flush_mb": "256",
+  "timer": "cuda_event_fallback",
+  "timing_ms": "0.027284",
+  "tflops": "78.708585",
+  "status": "ok",
+  "note": "python callable benchmark; max_abs_err=0.500000; max_rel_err=0.103286; atol=1.0; rtol=0.02; shared_input_seed=20260307; target_warmup_ms=200.0; target_repeat_ms=1000.0; resolved_warmup_iters=2037; resolved_repeat_iters=10185; probe_ms=0.098185"
+}

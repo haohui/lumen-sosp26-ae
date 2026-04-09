@@ -1,0 +1,71 @@
+Loading script /workspace/kernel_benchmark/scripts/mitm_trace_export.py
+Web server listening at http://127.0.0.1:18081/
+Proxy server listening at 127.0.0.1:18080
+No web browser found. Please open a browser and point it to http://127.0.0.1:18081/
+127.0.0.1:43644: client connect
+127.0.0.1:43644: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:42426: client connect
+127.0.0.1:42426: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:49062: client connect
+127.0.0.1:49062: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:45716: client connect
+127.0.0.1:45716: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:53638: client connect
+127.0.0.1:53638: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:43644: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:49062: client disconnect
+127.0.0.1:45716: client disconnect
+127.0.0.1:53638: client disconnect
+127.0.0.1:49062: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:45716: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:53638: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:45794: client connect
+127.0.0.1:45794: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:39010: client connect
+127.0.0.1:39010: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:42426: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:60476: client connect
+127.0.0.1:60476: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:41600: client connect
+127.0.0.1:41600: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:43580: client connect
+127.0.0.1:43580: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:39010: client disconnect
+127.0.0.1:60476: client disconnect
+127.0.0.1:41600: client disconnect
+127.0.0.1:39010: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:60476: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:41600: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:45794: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:37564: client connect
+127.0.0.1:37564: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:43644: Closing connection due to inactivity: Client(127.0.0.1:43644, state=open, alpn=http/1.1)
+127.0.0.1:43644: client disconnect
+127.0.0.1:32808: client connect
+127.0.0.1:32808: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:47648: client connect
+127.0.0.1:47648: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:43580: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:42426: Closing connection due to inactivity: Client(127.0.0.1:42426, state=open, alpn=http/1.1)
+127.0.0.1:42426: client disconnect
+127.0.0.1:40428: client connect
+127.0.0.1:40428: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:45794: Closing connection due to inactivity: Client(127.0.0.1:45794, state=open, alpn=http/1.1)
+127.0.0.1:45794: client disconnect
+127.0.0.1:37564: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:37564: client disconnect
+127.0.0.1:32808: client disconnect
+127.0.0.1:47648: client disconnect
+127.0.0.1:40428: client disconnect
+127.0.0.1:32808: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:47648: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:40428: server disconnect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:58652: client connect
+127.0.0.1:58652: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:48774: client connect
+127.0.0.1:48774: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:48774: client disconnect
+127.0.0.1:48774: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:43580: client disconnect
+127.0.0.1:58652: client disconnect
+127.0.0.1:58652: server disconnect api.openai.com:443 (172.66.0.243:443)

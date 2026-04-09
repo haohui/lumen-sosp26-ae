@@ -1,0 +1,7 @@
+ASM backend artifacts for AITER DeepSeek blockscale MoE
+Sources copied from:
+- /data01/home/daifeng/aiter/csrc/* (module_moe_asm sources)
+- /data01/home/daifeng/aiter/aiter/ops/moe_op.py
+Binaries:
+- module_moe_asm.so (jit)
+- fmoe_bf16_blockscaleFp8_g1u1_vs_silu_1tg_ps_32x256.co (asm kernel code object)

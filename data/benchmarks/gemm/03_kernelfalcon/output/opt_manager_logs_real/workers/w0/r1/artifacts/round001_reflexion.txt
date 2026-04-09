@@ -1,0 +1,21 @@
+{
+  "was_diagnosis_correct": true,
+  "was_fix_effective": false,
+  "expected_outcome": "If the kernel was truly compute-limited by lack of MFMA/tensor-core use, enabling matrix-instruction paths should have reduced runtime and increased useful compute throughput (higher compute SOL and/or lower compute stall impact).",
+  "actual_outcome": "Runtime regressed from 0.0215 ms to 0.0227 ms (-5.4%) despite the tensor-core-oriented configuration; verification still passed.",
+  "reasoning": "The diagnosis is directionally plausible because compute SOL is high (69.5%) versus memory SOL (28.8%), which is consistent with a compute-leaning bottleneck. However, the specific fix was not effective for this shape/config: performance got worse. That implies added overheads (tile shape mismatch, occupancy/latency trade-offs from num_warps=8 and num_stages=2, BLOCK_M/N/K choices, waves_per_eu interaction, or underutilized MFMA issue width) outweighed any matrix-core benefit. Since the key success metric (latency) regressed, the optimization did not deliver expected gains even if the bottleneck classification was broadly correct.",
+  "lessons": [
+    "A correct high-level bottleneck diagnosis does not guarantee that the first hardware-feature enablement (MFMA path) will improve performance; launch/tile parameters must match problem shape and hardware scheduling sweet spots.",
+    "Always validate tensor-core enablement with end-to-end timing and utilization counters; compute-heavy kernels can still regress if occupancy, register pressure, or wave scheduling worsens.",
+    "Treat MFMA adoption as a tuning space (BLOCK sizes, warps, stages, waves_per_eu), not a single on/off optimization."
+  ],
+  "avoid_patterns": [
+    "Assuming matrix-core/tensor-core enablement is automatically faster without retuning tile and pipeline parameters for the exact workload.",
+    "Changing many interacting knobs at once without isolating which parameter caused regression."
+  ],
+  "try_patterns": [
+    "Run a focused parameter sweep around MFMA-friendly configs (e.g., vary BLOCK_K, num_warps, num_stages, waves_per_eu) while keeping other knobs fixed to isolate sensitivity.",
+    "Test alternative tile shapes better aligned to actual M/N/K dimensions and edge-fragment behavior to reduce underfilled tiles.",
+    "Compare against a strong VALU baseline and keep whichever path wins per shape/dtype rather than forcing MFMA globally."
+  ]
+}

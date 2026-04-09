@@ -1,0 +1,237 @@
+{
+  "1024": {
+    "cache_dir": "6BJLY2ZK56THGLWI4MH2BNHY4T3CNX7EY5D37LXBPFGW4NFKW47Q",
+    "hash": "f052bc6b2aefa6732ec8e30fa0b4f8e4f626dfe4c747bfaee1794d6e34aab73f",
+    "selected_config": {
+      "BLOCK_SIZE_M": 64,
+      "BLOCK_SIZE_N": 64,
+      "BLOCK_SIZE_K": 32,
+      "GROUP_SIZE_M": 1,
+      "REMAP_XCD": 1,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 8,
+      "num_warps": 4,
+      "num_stages": 2,
+      "waves_per_eu": 8
+    },
+    "best_config_meta": {
+      "num_warps": 4,
+      "num_stages": 2,
+      "num_ctas": 1,
+      "maxnreg": 0,
+      "kwargs": {
+        "BLOCK_SIZE_M": 64,
+        "BLOCK_SIZE_N": 64,
+        "BLOCK_SIZE_K": 32,
+        "GROUP_SIZE_M": 1,
+        "waves_per_eu": 8,
+        "REMAP_XCD": 1,
+        "NUM_XCDS": 8,
+        "STAGGER_K": 8
+      },
+      "remap_xcd": true,
+      "num_xcds": 8,
+      "stagger_k": 8,
+      "waves_per_eu": 8
+    },
+    "key_repr": "[('*bf16', 'D'), ('*bf16', 'D'), ('*bf16', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 1), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 64), ('constexpr', 64), ('constexpr', 32), ('constexpr', 1), ('constexpr', 1), ('constexpr', 8), ('constexpr', 8), ('constexpr', '')]{'waves_per_eu': 8, 'num_warps': 4, 'num_ctas': 1, 'num_stages': 2, 'debug': False}",
+    "files": [
+      "mnk_1024x1024x1024_kernel.amdgcn",
+      "mnk_1024x1024x1024_kernel.hsaco",
+      "mnk_1024x1024x1024_kernel.json",
+      "mnk_1024x1024x1024_kernel.llir",
+      "mnk_1024x1024x1024_kernel.source",
+      "mnk_1024x1024x1024_kernel.ttgir",
+      "mnk_1024x1024x1024_kernel.ttir",
+      "mnk_1024x1024x1024_kernel_group.json"
+    ]
+  },
+  "2048": {
+    "cache_dir": "7NVHO5RFLZXYAVLZSP6HF74EDLVX3OI7YOA25CI4G2BY3NZCMWCQ",
+    "hash": "fb6a7776255e6f80557993fc72ff841aeb7db91fc381ae891c36838db7226585",
+    "selected_config": {
+      "BLOCK_SIZE_M": 64,
+      "BLOCK_SIZE_N": 128,
+      "BLOCK_SIZE_K": 32,
+      "GROUP_SIZE_M": 8,
+      "REMAP_XCD": 1,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 1,
+      "num_warps": 4,
+      "num_stages": 2,
+      "waves_per_eu": 3
+    },
+    "best_config_meta": {
+      "num_warps": 4,
+      "num_stages": 2,
+      "num_ctas": 1,
+      "maxnreg": 0,
+      "kwargs": {
+        "BLOCK_SIZE_M": 64,
+        "BLOCK_SIZE_N": 128,
+        "BLOCK_SIZE_K": 32,
+        "GROUP_SIZE_M": 8,
+        "waves_per_eu": 3,
+        "REMAP_XCD": 1,
+        "NUM_XCDS": 8,
+        "STAGGER_K": 1
+      },
+      "remap_xcd": true,
+      "num_xcds": 8,
+      "stagger_k": 1,
+      "waves_per_eu": 3
+    },
+    "key_repr": "[('*bf16', 'D'), ('*bf16', 'D'), ('*bf16', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 1), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 64), ('constexpr', 128), ('constexpr', 32), ('constexpr', 8), ('constexpr', 1), ('constexpr', 8), ('constexpr', 1), ('constexpr', '')]{'waves_per_eu': 3, 'num_warps': 4, 'num_ctas': 1, 'num_stages': 2, 'debug': False}",
+    "files": [
+      "mnk_2048x2048x2048_kernel.amdgcn",
+      "mnk_2048x2048x2048_kernel.hsaco",
+      "mnk_2048x2048x2048_kernel.json",
+      "mnk_2048x2048x2048_kernel.llir",
+      "mnk_2048x2048x2048_kernel.source",
+      "mnk_2048x2048x2048_kernel.ttgir",
+      "mnk_2048x2048x2048_kernel.ttir",
+      "mnk_2048x2048x2048_kernel_group.json"
+    ]
+  },
+  "4096": {
+    "cache_dir": "YDIUOQSSPBY6AFD3ITTYTRAXAQH746V3FW5TF2XEMOPL3AZOSXIA",
+    "hash": "c0d14742527871e0147b44e789c417040ffe7abb2dbb32eae4639ebd832e95d0",
+    "selected_config": {
+      "BLOCK_SIZE_M": 256,
+      "BLOCK_SIZE_N": 256,
+      "BLOCK_SIZE_K": 16,
+      "GROUP_SIZE_M": 4,
+      "REMAP_XCD": 1,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 8,
+      "num_warps": 8,
+      "num_stages": 2,
+      "waves_per_eu": 2
+    },
+    "best_config_meta": {
+      "num_warps": 8,
+      "num_stages": 2,
+      "num_ctas": 1,
+      "maxnreg": 0,
+      "kwargs": {
+        "BLOCK_SIZE_M": 256,
+        "BLOCK_SIZE_N": 256,
+        "BLOCK_SIZE_K": 16,
+        "GROUP_SIZE_M": 4,
+        "waves_per_eu": 2,
+        "REMAP_XCD": 1,
+        "NUM_XCDS": 8,
+        "STAGGER_K": 8
+      },
+      "remap_xcd": true,
+      "num_xcds": 8,
+      "stagger_k": 8,
+      "waves_per_eu": 2
+    },
+    "key_repr": "[('*bf16', 'D'), ('*bf16', 'D'), ('*bf16', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 1), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 256), ('constexpr', 256), ('constexpr', 16), ('constexpr', 4), ('constexpr', 1), ('constexpr', 8), ('constexpr', 8), ('constexpr', '')]{'waves_per_eu': 2, 'num_warps': 8, 'num_ctas': 1, 'num_stages': 2, 'debug': False}",
+    "files": [
+      "mnk_4096x4096x4096_kernel.amdgcn",
+      "mnk_4096x4096x4096_kernel.hsaco",
+      "mnk_4096x4096x4096_kernel.json",
+      "mnk_4096x4096x4096_kernel.llir",
+      "mnk_4096x4096x4096_kernel.source",
+      "mnk_4096x4096x4096_kernel.ttgir",
+      "mnk_4096x4096x4096_kernel.ttir",
+      "mnk_4096x4096x4096_kernel_group.json"
+    ]
+  },
+  "8192": {
+    "cache_dir": "S6UD3JPXS5WQKOJYCPN3C577ZPFIYCVLHKV7KIXWSEW7A4YMMRXQ",
+    "hash": "97a83da5f7976d05393813dbb177ffcbca8c0aab3aabf522f6912df0730c646f",
+    "selected_config": {
+      "BLOCK_SIZE_M": 128,
+      "BLOCK_SIZE_N": 128,
+      "BLOCK_SIZE_K": 32,
+      "GROUP_SIZE_M": 1,
+      "REMAP_XCD": 0,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 1,
+      "num_warps": 8,
+      "num_stages": 2,
+      "waves_per_eu": 2
+    },
+    "best_config_meta": {
+      "num_warps": 8,
+      "num_stages": 2,
+      "num_ctas": 1,
+      "maxnreg": 0,
+      "kwargs": {
+        "BLOCK_SIZE_M": 128,
+        "BLOCK_SIZE_N": 128,
+        "BLOCK_SIZE_K": 32,
+        "GROUP_SIZE_M": 1,
+        "waves_per_eu": 2,
+        "REMAP_XCD": 0,
+        "NUM_XCDS": 8,
+        "STAGGER_K": 1
+      },
+      "remap_xcd": false,
+      "num_xcds": 8,
+      "stagger_k": 1,
+      "waves_per_eu": 2
+    },
+    "key_repr": "[('*bf16', 'D'), ('*bf16', 'D'), ('*bf16', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 1), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 128), ('constexpr', 128), ('constexpr', 32), ('constexpr', 1), ('constexpr', 0), ('constexpr', 8), ('constexpr', 1), ('constexpr', '')]{'waves_per_eu': 2, 'num_warps': 8, 'num_ctas': 1, 'num_stages': 2, 'debug': False}",
+    "files": [
+      "mnk_8192x8192x8192_kernel.amdgcn",
+      "mnk_8192x8192x8192_kernel.hsaco",
+      "mnk_8192x8192x8192_kernel.json",
+      "mnk_8192x8192x8192_kernel.llir",
+      "mnk_8192x8192x8192_kernel.source",
+      "mnk_8192x8192x8192_kernel.ttgir",
+      "mnk_8192x8192x8192_kernel.ttir",
+      "mnk_8192x8192x8192_kernel_group.json"
+    ]
+  },
+  "16384": {
+    "cache_dir": "S6UD3JPXS5WQKOJYCPN3C577ZPFIYCVLHKV7KIXWSEW7A4YMMRXQ",
+    "hash": "97a83da5f7976d05393813dbb177ffcbca8c0aab3aabf522f6912df0730c646f",
+    "selected_config": {
+      "BLOCK_SIZE_M": 128,
+      "BLOCK_SIZE_N": 128,
+      "BLOCK_SIZE_K": 32,
+      "GROUP_SIZE_M": 1,
+      "REMAP_XCD": 0,
+      "NUM_XCDS": 8,
+      "STAGGER_K": 1,
+      "num_warps": 8,
+      "num_stages": 2,
+      "waves_per_eu": 2
+    },
+    "best_config_meta": {
+      "num_warps": 8,
+      "num_stages": 2,
+      "num_ctas": 1,
+      "maxnreg": 0,
+      "kwargs": {
+        "BLOCK_SIZE_M": 128,
+        "BLOCK_SIZE_N": 128,
+        "BLOCK_SIZE_K": 32,
+        "GROUP_SIZE_M": 1,
+        "waves_per_eu": 2,
+        "REMAP_XCD": 0,
+        "NUM_XCDS": 8,
+        "STAGGER_K": 1
+      },
+      "remap_xcd": false,
+      "num_xcds": 8,
+      "stagger_k": 1,
+      "waves_per_eu": 2
+    },
+    "key_repr": "[('*bf16', 'D'), ('*bf16', 'D'), ('*bf16', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 1), ('i32', 'D'), ('i32', 'D'), ('constexpr', 1), ('constexpr', 128), ('constexpr', 128), ('constexpr', 32), ('constexpr', 1), ('constexpr', 0), ('constexpr', 8), ('constexpr', 1), ('constexpr', '')]{'waves_per_eu': 2, 'num_warps': 8, 'num_ctas': 1, 'num_stages': 2, 'debug': False}",
+    "files": [
+      "mnk_16384x16384x16384_kernel.amdgcn",
+      "mnk_16384x16384x16384_kernel.hsaco",
+      "mnk_16384x16384x16384_kernel.json",
+      "mnk_16384x16384x16384_kernel.llir",
+      "mnk_16384x16384x16384_kernel.source",
+      "mnk_16384x16384x16384_kernel.ttgir",
+      "mnk_16384x16384x16384_kernel.ttir",
+      "mnk_16384x16384x16384_kernel_group.json"
+    ]
+  }
+}

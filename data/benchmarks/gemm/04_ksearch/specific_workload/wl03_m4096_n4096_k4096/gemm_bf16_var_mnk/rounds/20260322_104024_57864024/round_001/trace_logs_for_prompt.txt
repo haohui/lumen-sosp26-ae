@@ -1,0 +1,48 @@
+Status: COMPILE_ERROR
+Timestamp: 2026-03-22T10:45:31.522816
+
+Execution Log:
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.h -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.h [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.cu -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip [ok]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/main.cpp -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/main.cpp [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.h -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.h [skipped, no changes]
+[92mSuccessfully preprocessed all matching files.[0m
+Total number of unsupported CUDA function calls: 0
+
+
+Total number of replaced kernel launches: 1
+[1/3] /opt/rocm/bin/hipcc  -DWITH_HIP -DTORCH_EXTENSION_NAME=torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31 -DTORCH_API_INCLUDE_EXTENSION_H -I/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31 -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 --offload-arch=gfx942 -fno-gpu-rdc -c /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip -o kernel.cuda.o 
+FAILED: [code=1] kernel.cuda.o 
+/opt/rocm/bin/hipcc  -DWITH_HIP -DTORCH_EXTENSION_NAME=torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31 -DTORCH_API_INCLUDE_EXTENSION_H -I/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31 -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 --offload-arch=gfx942 -fno-gpu-rdc -c /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip -o kernel.cuda.o 
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip:34:61: error: cannot initialize a parameter of type '__attribute__((__vector_size__(4 * sizeof(short)))) short' (vector of 4 'short' values) with an lvalue of type 'int32x4_t' (vector of 4 'int' values)
+   34 |   float32x4_t d = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a, b, c, 0, 0, 0);
+      |                                                             ^
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip:83:21: error: use of undeclared identifier '__float2bfloat16'
+   83 |         As[r][kk] = __float2bfloat16(0.0f);
+      |                     ^~~~~~~~~~~~~~~~
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip:95:21: error: use of undeclared identifier '__float2bfloat16'
+   95 |         Bs[r][kk] = __float2bfloat16(0.0f);
+      |                     ^~~~~~~~~~~~~~~~
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip:108:21: error: use of undeclared identifier '__bfloat162float'
+  108 |         a_frag[i] = __bfloat162float(As[row_base_local + i][kk]);
+      |                     ^~~~~~~~~~~~~~~~
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip:112:21: error: use of undeclared identifier '__bfloat162float'
+  112 |         b_frag[j] = __bfloat162float(Bs[col_base_local + j][kk]);
+      |                     ^~~~~~~~~~~~~~~~
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip:135:26: error: use of undeclared identifier '__float2bfloat16'
+  135 |         C[gr * N + gc] = __float2bfloat16(acc[i][j]);
+      |                          ^~~~~~~~~~~~~~~~
+6 errors generated when compiling for gfx942.
+failed to execute:/opt/rocm-7.2.0/lib/llvm/bin/clang++  --offload-arch=gfx942 -O3  -DWITH_HIP -DTORCH_EXTENSION_NAME=torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31 -DTORCH_API_INCLUDE_EXTENSION_H -I/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31 -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -fno-gpu-rdc -c -x hip /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/kernel.hip -o "kernel.cuda.o"
+[2/3] c++ -MMD -MF main.o.d -DTORCH_EXTENSION_NAME=torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31 -DTORCH_API_INCLUDE_EXTENSION_H -I/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31 -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -c /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r1_high_43bb31/main.cpp -o main.o -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC
+ninja: build stopped: subcommand failed.
+BuildError: No registered builder can build solution 'gpt-5.3-codex_gemm_bf16_var_mnk_hip_optimized_r1_high'
+
+Traceback:
+Traceback (most recent call last):
+  File "/opt/venv/lib/python3.12/site-packages/flashinfer_bench/bench/runner/persistent_runner.py", line 709, in _persistent_worker_main
+    runnable_sol = registry.build(definition, solution)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/flashinfer_bench/compile/registry.py", line 168, in build
+    raise BuildError(f"No registered builder can build solution '{solution.name}'")
+flashinfer_bench.compile.builder.BuildError: No registered builder can build solution 'gpt-5.3-codex_gemm_bf16_var_mnk_hip_optimized_r1_high'

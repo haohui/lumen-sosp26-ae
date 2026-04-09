@@ -1,0 +1,21 @@
+SUBMIT_KERNEL=kernel.py
+BACKUP_KERNEL=best_kernel.py
+KERNEL_CONTENT_IDENTICAL=True
+
+WORKLOAD=bf16 KV=1 head_dim=128 num_q_heads=8 batch_size=16 causal=True seq=[1024,2048,4096,8192,16384]
+TOL=1e-2
+STREAM_FIX=at::cuda::getCurrentCUDAStream().stream() + kernel launch on current stream
+
+LATEST_GRAPH_BENCH_JSON=output/benchmark_attention_unified_graph_bestkernel_only_latest.json
+LATEST_GRAPH_BENCH_SOURCE=output/benchmark_attention_unified_graph_bestkernel_only_rerun_fastcfg_20260324_144805.json
+LATEST_GRAPH_BENCH_CONFIG=warmup_ms=200 repeat_ms=1000 timer_trials=5 graph_iters=1 min_replays=1 cpu_cores=0-15
+LATEST_GRAPH_BENCH_MEDIAN_MS_1024=7.206837293836806
+LATEST_GRAPH_BENCH_MEDIAN_MS_2048=28.689691716974433
+LATEST_GRAPH_BENCH_MEDIAN_MS_4096=110.00550537109375
+LATEST_GRAPH_BENCH_MEDIAN_MS_8192=434.363525390625
+LATEST_GRAPH_BENCH_MEDIAN_MS_16384=1769.9285888671875
+LATEST_GRAPH_BENCH_SUSPICIOUS=False (all 5 seq)
+
+LATEST_CORRECTNESS_DIR=output/correctness_nograph_latest
+LATEST_CORRECTNESS_SOURCE=output/correctness_nograph_rerun_20260324_145041
+LATEST_CORRECTNESS_MAX_ABS_ERR=0.015625 (all 5 seq)

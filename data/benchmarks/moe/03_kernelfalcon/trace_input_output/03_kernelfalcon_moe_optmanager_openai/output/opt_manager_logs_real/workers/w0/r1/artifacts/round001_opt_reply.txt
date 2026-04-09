@@ -1,0 +1,214 @@
+```python
+import torch
+import triton
+import triton.language as tl
+
+_Q_BLOCK_N = 128
+_Q_BLOCK_K = 128
+
+
+@triton.jit
+def _fused_moe_kernel(
+    input_q_ptr,
+    w1_q_ptr,
+    w2_q_ptr,
+    topk_w_ptr,
+    topk_ids_ptr,
+    input_scale_ptr,
+    fc1_scale_ptr,
+    fc2_scale_ptr,
+    out_ptr,
+    stride_in_t, stride_in_d,
+    stride_w1_e, stride_w1_r, stride_w1_c,
+    stride_w2_e, stride_w2_r, stride_w2_c,
+    stride_tw_t, stride_tw_k,
+    stride_tid_t, stride_tid_k,
+    stride_is_t, stride_is_b,
+    stride_fc1_e, stride_fc1_s,
+    stride_fc2_e, stride_fc2_s,
+    stride_out_t, stride_out_d,
+    num_experts,
+    MODEL_DIM: tl.constexpr,
+    INTER_DIM: tl.constexpr,
+    TOPK: tl.constexpr,
+    MODEL_K_BLOCKS: tl.constexpr,
+    INTER_K_BLOCKS: tl.constexpr,
+    BLOCK_OUT: tl.constexpr,
+    BLOCK_J: tl.constexpr,
+    GROUP_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    token_id = tl.program_id(0)
+    n_group = tl.program_id(1)
+
+    offs_bo = tl.arange(0, BLOCK_OUT)
+    n_base = n_group * (GROUP_N * BLOCK_OUT)
+    offs_n0 = n_base + offs_bo
+    offs_n1 = offs_n0 + BLOCK_OUT
+    mask_n0 = offs_n0 < MODEL_DIM
+    mask_n1 = offs_n1 < MODEL_DIM
+
+    rb20 = offs_n0 // BLOCK_N
+    rb21 = offs_n1 // BLOCK_N
+
+    in_t_ptr = input_q_ptr + token_id * stride_in_t
+    tw_t_ptr = topk_w_ptr + token_id * stride_tw_t
+    tid_t_ptr = topk_ids_ptr + token_id * stride_tid_t
+    is_t_ptr = input_scale_ptr + token_id * stride_is_t
+    out_t_ptr = out_ptr + token_id * stride_out_t
+
+    acc0 = tl.zeros((BLOCK_OUT,), dtype=tl.float32)
+    acc1 = tl.zeros((BLOCK_OUT,), dtype=tl.float32)
+
+    for slot in range(TOPK):
+        expert = tl.load(tid_t_ptr + slot * stride_tid_k).to(tl.int32)
+        route_w = tl.load(tw_t_ptr + slot * stride_tw_k).to(tl.float32)
+
+        valid = (expert >= 0) & (expert < num_experts)
+        route_w = tl.where(valid, route_w, 0.0)
+        expert = tl.where(expert < 0, 0, expert)
+        expert = tl.where(expert >= num_experts, num_experts - 1, expert)
+
+        w1_e_ptr = w1_q_ptr + expert * stride_w1_e
+        w2_e_ptr = w2_q_ptr + expert * stride_w2_e
+        fc1_e_ptr = fc1_scale_ptr + expert * stride_fc1_e
+        fc2_e_ptr = fc2_scale_ptr + expert * stride_fc2_e
+
+        for j0 in range(0, INTER_DIM, BLOCK_J):
+            offs_j = j0 + tl.arange(0, BLOCK_J)
+            mask_j = offs_j < INTER_DIM
+
+            gate = tl.zeros((BLOCK_J,), dtype=tl.float32)
+            up = tl.zeros((BLOCK_J,), dtype=tl.float32)
+
+            gate_rb = offs_j // BLOCK_N
+            up_rows = offs_j + INTER_DIM
+            up_rb = up_rows // BLOCK_N
+            base_g = gate_rb * MODEL_K_BLOCKS
+            base_u = up_rb * MODEL_K_BLOCKS
+
+            for k0 in range(0, MODEL_DIM, BLOCK_K):
+                offs_k = k0 + tl.arange(0, BLOCK_K)
+                mask_k = offs_k < MODEL_DIM
+                kb = k0 // BLOCK_K
+
+                x_q = tl.load(in_t_ptr + offs_k * stride_in_d, mask=mask_k, other=0.0).to(tl.float32)
+                x_s = tl.load(is_t_ptr + kb * stride_is_b).to(tl.float32)
+                x = x_q * x_s
+
+                w1g_ptrs = w1_e_ptr + offs_j[:, None] * stride_w1_r + offs_k[None, :] * stride_w1_c
+                w1g_q = tl.load(w1g_ptrs, mask=mask_j[:, None] & mask_k[None, :], other=0.0).to(tl.float32)
+                s_g = tl.load(fc1_e_ptr + (base_g + kb) * stride_fc1_s, mask=mask_j, other=0.0).to(tl.float32)
+                gate += tl.sum((w1g_q * s_g[:, None]) * x[None, :], axis=1)
+
+                w1u_ptrs = w1_e_ptr + up_rows[:, None] * stride_w1_r + offs_k[None, :] * stride_w1_c
+                w1u_q = tl.load(w1u_ptrs, mask=mask_j[:, None] & mask_k[None, :], other=0.0).to(tl.float32)
+                s_u = tl.load(fc1_e_ptr + (base_u + kb) * stride_fc1_s, mask=mask_j, other=0.0).to(tl.float32)
+                up += tl.sum((w1u_q * s_u[:, None]) * x[None, :], axis=1)
+
+            sig = 1.0 / (1.0 + tl.exp(-gate))
+            act = gate * sig * up
+
+            cb2 = offs_j // BLOCK_K
+
+            w2_ptrs0 = w2_e_ptr + offs_n0[:, None] * stride_w2_r + offs_j[None, :] * stride_w2_c
+            w2_q0 = tl.load(w2_ptrs0, mask=mask_n0[:, None] & mask_j[None, :], other=0.0).to(tl.float32)
+            sidx20 = rb20[:, None] * INTER_K_BLOCKS + cb2[None, :]
+            s20 = tl.load(fc2_e_ptr + sidx20 * stride_fc2_s, mask=mask_n0[:, None] & mask_j[None, :], other=0.0).to(tl.float32)
+            acc0 += route_w * tl.sum((w2_q0 * s20) * act[None, :], axis=1)
+
+            w2_ptrs1 = w2_e_ptr + offs_n1[:, None] * stride_w2_r + offs_j[None, :] * stride_w2_c
+            w2_q1 = tl.load(w2_ptrs1, mask=mask_n1[:, None] & mask_j[None, :], other=0.0).to(tl.float32)
+            sidx21 = rb21[:, None] * INTER_K_BLOCKS + cb2[None, :]
+            s21 = tl.load(fc2_e_ptr + sidx21 * stride_fc2_s, mask=mask_n1[:, None] & mask_j[None, :], other=0.0).to(tl.float32)
+            acc1 += route_w * tl.sum((w2_q1 * s21) * act[None, :], axis=1)
+
+    tl.store(out_t_ptr + offs_n0 * stride_out_d, acc0.to(out_ptr.dtype.element_ty), mask=mask_n0)
+    tl.store(out_t_ptr + offs_n1 * stride_out_d, acc1.to(out_ptr.dtype.element_ty), mask=mask_n1)
+
+
+def kernel_function(
+    input_q: torch.Tensor,
+    w1_q: torch.Tensor,
+    w2_q: torch.Tensor,
+    topk_weights: torch.Tensor,
+    topk_ids: torch.Tensor,
+    input_scale: torch.Tensor,
+    fc1_scale: torch.Tensor,
+    fc2_scale: torch.Tensor,
+) -> torch.Tensor:
+    assert input_q.ndim == 2
+    assert w1_q.ndim == 3 and w2_q.ndim == 3
+    assert topk_weights.ndim == 2 and topk_ids.ndim == 2
+    assert input_scale.ndim == 2 and fc1_scale.ndim == 2 and fc2_scale.ndim == 2
+    assert topk_ids.dtype in (torch.int32, torch.int64)
+
+    tokens, model_dim = input_q.shape
+    experts = w1_q.shape[0]
+    inter2 = w1_q.shape[1]
+    assert inter2 % 2 == 0
+    inter_dim = inter2 // 2
+
+    assert w1_q.shape[2] == model_dim
+    assert w2_q.shape[0] == experts and w2_q.shape[1] == model_dim and w2_q.shape[2] == inter_dim
+
+    assert topk_weights.shape[0] == tokens and topk_ids.shape[0] == tokens
+    topk = topk_ids.shape[1]
+    assert topk_weights.shape[1] == topk
+
+    assert model_dim % _Q_BLOCK_K == 0
+    assert inter_dim % _Q_BLOCK_K == 0
+    assert (2 * inter_dim) % _Q_BLOCK_N == 0
+
+    assert input_scale.shape == (tokens, model_dim // _Q_BLOCK_K)
+    expected_fc1 = ((2 * inter_dim) // _Q_BLOCK_N) * (model_dim // _Q_BLOCK_K)
+    expected_fc2 = (model_dim // _Q_BLOCK_N) * (inter_dim // _Q_BLOCK_K)
+    assert fc1_scale.shape == (experts, expected_fc1)
+    assert fc2_scale.shape == (experts, expected_fc2)
+
+    out = torch.empty((tokens, model_dim), device=input_q.device, dtype=torch.bfloat16)
+    if tokens == 0:
+        return out
+
+    BLOCK_OUT = 64
+    BLOCK_J = 32
+    GROUP_N = 2
+
+    grid = (tokens, triton.cdiv(model_dim, BLOCK_OUT * GROUP_N))
+
+    _fused_moe_kernel[grid](
+        input_q,
+        w1_q,
+        w2_q,
+        topk_weights,
+        topk_ids,
+        input_scale,
+        fc1_scale,
+        fc2_scale,
+        out,
+        input_q.stride(0), input_q.stride(1),
+        w1_q.stride(0), w1_q.stride(1), w1_q.stride(2),
+        w2_q.stride(0), w2_q.stride(1), w2_q.stride(2),
+        topk_weights.stride(0), topk_weights.stride(1),
+        topk_ids.stride(0), topk_ids.stride(1),
+        input_scale.stride(0), input_scale.stride(1),
+        fc1_scale.stride(0), fc1_scale.stride(1),
+        fc2_scale.stride(0), fc2_scale.stride(1),
+        out.stride(0), out.stride(1),
+        experts,
+        MODEL_DIM=model_dim,
+        INTER_DIM=inter_dim,
+        TOPK=topk,
+        MODEL_K_BLOCKS=model_dim // _Q_BLOCK_K,
+        INTER_K_BLOCKS=inter_dim // _Q_BLOCK_K,
+        BLOCK_OUT=BLOCK_OUT,
+        BLOCK_J=BLOCK_J,
+        GROUP_N=GROUP_N,
+        BLOCK_K=_Q_BLOCK_K,
+        BLOCK_N=_Q_BLOCK_N,
+        num_warps=8,
+        num_stages=4,
+    )
+    return out
+```

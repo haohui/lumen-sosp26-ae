@@ -1,0 +1,19 @@
+{
+  "round_num": 2,
+  "saved_at_utc": "2026-03-22T09:48:25Z",
+  "status": "COMPILE_ERROR",
+  "score": -1.0,
+  "prompt_chars": 26207,
+  "raw_response_chars": 8888,
+  "trace_logs_chars": 8127,
+  "world_model_chars": 12872,
+  "extra": {
+    "wm_enabled": true,
+    "action_node_id": "family_throughput_large",
+    "attempt_idx_in_cycle": 2,
+    "cycle_start_round": 1,
+    "parent_is_root": true,
+    "all_passed": false,
+    "score": -1.0
+  }
+}

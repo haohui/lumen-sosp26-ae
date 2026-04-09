@@ -1,0 +1,14 @@
+{
+  "log_dir": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/kernelfalcon_optmgr_gemm_api53high_20260312_071659_retry1/03_kernelfalcon_gemm2_optmanager/machine",
+  "proxy_url": "http://127.0.0.1:18080",
+  "trace_uid": 0,
+  "firewall_enabled": 0,
+  "pcap_path": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/kernelfalcon_optmgr_gemm_api53high_20260312_071659_retry1/03_kernelfalcon_gemm2_optmanager/machine/machine_traffic.pcap",
+  "tcpdump_log": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/kernelfalcon_optmgr_gemm_api53high_20260312_071659_retry1/03_kernelfalcon_gemm2_optmanager/machine/tcpdump.log",
+  "firewall_log": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/kernelfalcon_optmgr_gemm_api53high_20260312_071659_retry1/03_kernelfalcon_gemm2_optmanager/machine/firewall.log",
+  "stdout_log": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/kernelfalcon_optmgr_gemm_api53high_20260312_071659_retry1/03_kernelfalcon_gemm2_optmanager/machine/run.stdout.log",
+  "stderr_log": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/kernelfalcon_optmgr_gemm_api53high_20260312_071659_retry1/03_kernelfalcon_gemm2_optmanager/machine/run.stderr.log",
+  "proxy_env": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/kernelfalcon_optmgr_gemm_api53high_20260312_071659_retry1/03_kernelfalcon_gemm2_optmanager/machine/proxy_env.sh",
+  "pcap_packets": 470811,
+  "command_exit_code": 0
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+export HTTP_PROXY="http://127.0.0.1:19482"
+export HTTPS_PROXY="http://127.0.0.1:19482"
+export ALL_PROXY="http://127.0.0.1:19482"
+export http_proxy="http://127.0.0.1:19482"
+export https_proxy="http://127.0.0.1:19482"
+export all_proxy="http://127.0.0.1:19482"
+export NO_PROXY="127.0.0.1,localhost,::1"
+export no_proxy="127.0.0.1,localhost,::1"
+export SSL_CERT_FILE="/data01/home/daifeng/.mitmproxy/mitmproxy-ca-cert.pem"
+export REQUESTS_CA_BUNDLE="/data01/home/daifeng/.mitmproxy/mitmproxy-ca-cert.pem"
+export CURL_CA_BUNDLE="/data01/home/daifeng/.mitmproxy/mitmproxy-ca-cert.pem"
+export NODE_EXTRA_CA_CERTS="/data01/home/daifeng/.mitmproxy/mitmproxy-ca-cert.pem"

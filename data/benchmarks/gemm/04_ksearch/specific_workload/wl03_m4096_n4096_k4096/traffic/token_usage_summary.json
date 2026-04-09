@@ -1,0 +1,31 @@
+{
+  "jsonl_path": "/workspace/kernel_benchmark/.ksearch-trace-logs/gemm_ksearch_20260322_085922/traffic.jsonl",
+  "events_total": 4,
+  "responses_total": 3,
+  "responses_with_usage": 3,
+  "usage_totals": {
+    "input_tokens": 9323.0,
+    "input_tokens_details.cached_tokens": 0.0,
+    "output_tokens": 24403.0,
+    "output_tokens_details.reasoning_tokens": 17140.0,
+    "total_tokens": 33726.0
+  },
+  "usage_by_model": {
+    "gpt-5.3-codex": {
+      "input_tokens": 9323.0,
+      "input_tokens_details.cached_tokens": 0.0,
+      "output_tokens": 24403.0,
+      "output_tokens_details.reasoning_tokens": 17140.0,
+      "total_tokens": 33726.0
+    }
+  },
+  "usage_by_host": {
+    "api.openai.com": {
+      "input_tokens": 9323.0,
+      "input_tokens_details.cached_tokens": 0.0,
+      "output_tokens": 24403.0,
+      "output_tokens_details.reasoning_tokens": 17140.0,
+      "total_tokens": 33726.0
+    }
+  }
+}

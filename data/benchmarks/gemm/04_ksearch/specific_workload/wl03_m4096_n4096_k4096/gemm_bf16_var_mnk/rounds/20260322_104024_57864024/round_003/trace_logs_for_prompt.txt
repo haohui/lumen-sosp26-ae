@@ -1,0 +1,15 @@
+Status: INCORRECT_NUMERICAL
+Timestamp: 2026-03-22T10:51:46.710776
+
+Execution Log:
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.h -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.h [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.cu -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.hip [ok]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/main.cpp -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/main.cpp [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.h -> /root/.
+...<trace logs truncated for prompt>...
+he/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -c /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/main.cpp -o main.o -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC
+[3/3] c++ kernel.cuda.o main.o -shared -L/opt/venv/lib/python3.12/site-packages/torch/lib -lc10 -lc10_hip -ltorch_cpu -ltorch_hip -ltorch -ltorch_python -L/opt/rocm-7.2.0/lib -lamdhip64 -o torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f.so
+Builder TorchBuilder built gpt-5.3-codex_gemm_bf16_var_mnk_hip_optimized_r3_high
+
+Max relative error: 33354576.0
+Max absolute error: 496.0

@@ -1,0 +1,21 @@
+Status: COMPILE_ERROR
+Timestamp: 2026-03-14T16:19:59.446609
+
+Execution Log:
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high_557c91/kernel.h -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high_557c91/kernel.h [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high_557c91/kernel.cu -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high_557c91/kernel.hip [ok]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high_557c91/main.cpp -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high_557c91/main_hip.cpp [ok]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_dense_qkv_prefill_causa
+...<trace logs truncated for prompt>...
+che/torch/torch_gpt_5_3_codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high_557c91/kernel.hip -o kernel.cuda.o 
+ninja: build stopped: subcommand failed.
+Build error: BuildError: No registered builder can build solution 'gpt-5.3-codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high'
+
+Traceback:
+Traceback (most recent call last):
+  File "/opt/venv/lib/python3.12/site-packages/flashinfer_bench/bench/runner/isolated_runner.py", line 249, in _solution_worker_main
+    runnable_sol: Runnable = registry.build(definition, solution)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/flashinfer_bench/compile/registry.py", line 168, in build
+    raise BuildError(f"No registered builder can build solution '{solution.name}'")
+flashinfer_bench.compile.builder.BuildError: No registered builder can build solution 'gpt-5.3-codex_dense_qkv_prefill_causal_h8_kv1or8_d128_cuda_optimized_r3_high'

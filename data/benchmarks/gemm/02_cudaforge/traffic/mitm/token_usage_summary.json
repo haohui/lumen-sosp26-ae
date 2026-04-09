@@ -1,0 +1,31 @@
+{
+  "jsonl_path": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/gemm_formal_api53high_20260312_054654/02_cudaforge_gemm1_openai/mitm/traffic.jsonl",
+  "events_total": 17,
+  "responses_total": 16,
+  "responses_with_usage": 16,
+  "usage_totals": {
+    "input_tokens": 38579.0,
+    "input_tokens_details.cached_tokens": 0.0,
+    "output_tokens": 52839.0,
+    "output_tokens_details.reasoning_tokens": 36039.0,
+    "total_tokens": 91418.0
+  },
+  "usage_by_model": {
+    "gpt-5.3-codex": {
+      "input_tokens": 38579.0,
+      "input_tokens_details.cached_tokens": 0.0,
+      "output_tokens": 52839.0,
+      "output_tokens_details.reasoning_tokens": 36039.0,
+      "total_tokens": 91418.0
+    }
+  },
+  "usage_by_host": {
+    "api.openai.com": {
+      "input_tokens": 38579.0,
+      "input_tokens_details.cached_tokens": 0.0,
+      "output_tokens": 52839.0,
+      "output_tokens_details.reasoning_tokens": 36039.0,
+      "total_tokens": 91418.0
+    }
+  }
+}

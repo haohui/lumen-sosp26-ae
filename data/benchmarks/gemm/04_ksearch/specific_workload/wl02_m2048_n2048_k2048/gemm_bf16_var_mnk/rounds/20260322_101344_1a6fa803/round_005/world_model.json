@@ -1,0 +1,212 @@
+{
+  "computed_signals": {
+    "round_index": 0,
+    "trace": {
+      "latency_ms": null,
+      "mean_vs_baseline_factor": null,
+      "reference_latency_ms": null,
+      "speedup_factor": null,
+      "status": "world_model_initialized_no_measurements"
+    }
+  },
+  "decision_tree": {
+    "active_leaf_id": "fam_balanced_output_stationary",
+    "nodes": [
+      {
+        "action": {
+          "description": "Initialize the search space and enumerate first-iteration alternatives for gemm_bf16_var_mnk on MI300X.",
+          "difficulty_1_to_5": 1,
+          "expected_vs_baseline_factor": null,
+          "rationale": "A grounded initial model is needed before coding so we pick one high-value path per iteration.",
+          "score_0_to_1": 0.18,
+          "title": "Initialize world model"
+        },
+        "choice": null,
+        "confidence_0_to_1": 0.56,
+        "decision": null,
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "MI300X (CDNA3) favors bf16 matrix math with tile shapes aligned to hardware-friendly multiples; wave-level mapping and LDS footprint are key constraints.",
+            "notes": "Root node only frames options; no direct compute gain yet.",
+            "rating_0_to_10": 5.0,
+            "risk": "Model may mis-rank regimes before real shape histograms are known."
+          },
+          "memory_bandwidth": {
+            "notes": "Identifies that A/B global traffic and reuse via LDS/register tiling dominate behavior.",
+            "rating_0_to_10": 5.0,
+            "risk": "Without concrete layouts/strides, coalescing assumptions may be wrong."
+          },
+          "register_pressure": {
+            "notes": "Highlights accumulator footprint as a first-order constraint for occupancy.",
+            "rating_0_to_10": 5.0,
+            "risk": "Actual VGPR usage depends on final tile and unroll choices."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "root",
+        "node_type": "root",
+        "notes": "1) Problem classification:\n- Dense matrix-multiply kernel: C[M,N] = A[M,K] x B[N,K]^T with reduction over K; outputs are dense, independent per (m,n) except shared K-reduction inputs.\n- All axes M/N/K are runtime-variable; no fixed small axis guaranteed.\n2) Canonical math & dependencies:\n- Canonical form: C[m,n] = sum_{k=0..K-1} A[m,k] * B[n,k].\n- Parallelism: (m,n) tiles are independent; reduction dimension K can be tiled/partitioned.\n- Reordering: K-tiled streaming accumulation in FP32 then cast/store BF16 is the standard stable path.\n3) Data layout & access patterns:\n- A shape [M,K] bf16, B shape [N,K] bf16 (used as transposed operand logically), C shape [M,N] bf16.\n- If row-major contiguous in last dim, both A[m,:] and B[n,:] are contiguous along K, enabling coalesced K-slice loads.\n- Dominant traffic: read A and B repeatedly across tiles; write C once. Reuse opportunity is block-level (LDS) and thread-level (register accumulators).\n4) Bottleneck hypotheses by regime:\n- Regime A (small M and/or N): launch/scheduling and low occupancy dominate.\n- Regime B (large M,N with moderate K): memory movement and tile reuse efficiency dominate.\n- Regime C (very large K, modest M*N): compute throughput and reduction strategy dominate; may benefit from K partitioning.\n- Regime D (extreme skinny shapes): mapping imbalance/coalescing losses dominate.\n5) Kernel design space (knobs):\n- Tile sizes (M,N,K), wave/workgroup mapping, K partitioning policy, accumulator type (FP32), edge handling, vector width/alignment assumptions, specialized dispatch thresholds for skinny shapes.\n6) High-level kernel skeleton:\n- Phase 1: map output tile to workgroup/waves.\n- Phase 2: loop over K tiles: global->LDS/register staging, synchronize, perform MACs into register accumulators.\n- Phase 3: optional reduction merge (if K-partitioned), cast FP32->BF16, store C with boundary guards.\n7) Candidate kernel families (pruned):\n- Family A: Balanced output-tiled dense GEMM (general path). Strength: broad coverage; weakness: less optimal on extreme aspect ratios; limiter: register/LDS balance.\n- Family B: K-heavy reduction-partitioned GEMM. Strength: helps very large K with better parallel fill; weakness: merge overhead/workspace; limiter: extra memory traffic.\n- Family C: Skinny-dimension specialized GEMM. Strength: better occupancy/coalescing for M<<N or N<<M; weakness: dispatch complexity and narrower applicability; limiter: mapping granularity.\n\nReference Implementation (excerpt):\nimport torch\n\ndef run(A, B):\n    C = torch.matmul(A, B.T)\n    return C",
+        "overall_rating_0_to_10": 5.9,
+        "parent_id": null,
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "initialized"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a single general blocked GEMM kernel path with FP32 accumulation and BF16 output, including boundary handling for variable M/N/K.",
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.2,
+          "rationale": "Best first step for broad coverage and likely strongest average performance over unknown shape distribution.",
+          "score_0_to_1": 0.82,
+          "title": "Prototype balanced output-tile GEMM path"
+        },
+        "choice": "Balanced output-stationary dense GEMM",
+        "confidence_0_to_1": 0.67,
+        "decision": "Choose first implementation family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Target tile shapes aligned with MI300X-friendly bf16 matrix math granularity; keep LDS usage within per-block budget to preserve occupancy.",
+            "notes": "Good compute utilization on mid/large dense shapes with predictable reuse.",
+            "rating_0_to_10": 8.0,
+            "risk": "If tile choices are mismatched, matrix units may be underfed."
+          },
+          "memory_bandwidth": {
+            "notes": "Shared staging of A/B K-slices increases reuse and reduces redundant global reads versus naive per-element computation.",
+            "rating_0_to_10": 7.0,
+            "risk": "Edge tiles and misalignment can reduce coalescing and effective bandwidth."
+          },
+          "register_pressure": {
+            "notes": "FP32 accumulators per-thread are substantial but manageable with moderate tile sizes.",
+            "rating_0_to_10": 6.0,
+            "risk": "Too-large per-thread output fragments can collapse occupancy."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "fam_balanced_output_stationary",
+        "node_type": "decision",
+        "notes": "Intended regime: general-purpose path for most M/N/K. Strength: robust baseline; weakness: not best for extreme skinny or extreme K-heavy cases. Primary limiter: occupancy vs accumulator footprint trade-off.\nSELF_CHECK: Mutually exclusive with sibling first-prototype options this round because only one initial kernel family can be implemented and validated in a single iteration budget.",
+        "overall_rating_0_to_10": 8.2,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a K-partitioned variant for very large-K workloads, with a partial-sum merge stage to improve parallel fill when M*N is limited.",
+          "difficulty_1_to_5": 4,
+          "expected_vs_baseline_factor": 1.15,
+          "rationale": "Can outperform balanced tiling when K is huge and output tile count is too small to occupy hardware efficiently.",
+          "score_0_to_1": 0.71,
+          "title": "Prototype K-heavy reduction-partitioned GEMM path"
+        },
+        "choice": "K-heavy reduction-partitioned GEMM",
+        "confidence_0_to_1": 0.52,
+        "decision": "Choose first implementation family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Improves CU utilization for low M*N by exposing extra parallelism along K, but requires an efficient merge path compatible with MI300X memory hierarchy.",
+            "notes": "Potentially strong in K-dominant regime where baseline under-occupies.",
+            "rating_0_to_10": 7.0,
+            "risk": "Reduction merge overhead can erase gains on balanced shapes."
+          },
+          "memory_bandwidth": {
+            "notes": "Additional partial output traffic increases bandwidth demand compared with single-pass accumulation.",
+            "rating_0_to_10": 5.0,
+            "risk": "Workspace writes/reads may become the bottleneck."
+          },
+          "register_pressure": {
+            "notes": "Per-thread accumulator pressure can be moderated, but merge kernel/state adds complexity.",
+            "rating_0_to_10": 5.0,
+            "risk": "Two-stage flow can shift pressure from registers to memory and synchronization."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "fam_k_heavy_partitioned",
+        "node_type": "decision",
+        "notes": "Intended regime: very large K with modest M*N. Strength: better parallel fill; weakness: extra reduction stage and potential workspace cost. Primary limiter: merge bandwidth/synchronization overhead.\nSELF_CHECK: Cannot be combined with other sibling choices as the single first prototype because it requires distinct execution flow and validation focus (two-stage accumulation/merge) in this iteration.",
+        "overall_rating_0_to_10": 7.1,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a specialized mapping for extreme aspect-ratio problems (M<<N or N<<M) to improve occupancy and coalesced memory behavior.",
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.25,
+          "rationale": "Aspect-ratio outliers often suffer most from generic mappings; early specialization can remove major tail-latency cases.",
+          "score_0_to_1": 0.75,
+          "title": "Prototype skinny-dimension specialized GEMM path"
+        },
+        "choice": "Skinny-dimension specialized GEMM",
+        "confidence_0_to_1": 0.58,
+        "decision": "Choose first implementation family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Needs mapping that preserves wave utilization on MI300X despite few tiles along one output axis.",
+            "notes": "Can significantly improve utilization for extreme aspect ratios, limited benefit otherwise.",
+            "rating_0_to_10": 6.0,
+            "risk": "General shapes may regress if dispatch thresholds are wrong."
+          },
+          "memory_bandwidth": {
+            "notes": "Improved coalescing and reduced idle lanes in skinny regimes can raise effective bandwidth.",
+            "rating_0_to_10": 8.0,
+            "risk": "Non-skinny cases may not gain enough to justify complexity."
+          },
+          "register_pressure": {
+            "notes": "Typically moderate accumulator footprint if fragment shapes are tuned for one long axis.",
+            "rating_0_to_10": 6.0,
+            "risk": "Asymmetric tiling may still inflate per-thread state on one dimension."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "fam_skinny_specialized",
+        "node_type": "decision",
+        "notes": "Intended regime: M<<N or N<<M. Strength: tail-case acceleration; weakness: narrower applicability and dispatch tuning burden. Primary limiter: sensitivity to runtime shape distribution.\nSELF_CHECK: Alternative to sibling first prototypes because this iteration can only prioritize one family for implementation and benchmarking; adding it now would split effort and confound attribution.",
+        "overall_rating_0_to_10": 7.5,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      }
+    ],
+    "root_id": "root"
+  },
+  "kernel_summary": "gemm_bf16_var_mnk is a dense GEMM with runtime-variable M/N/K computing C[m,n]=sum_k A[m,k]*B[n,k] where B is supplied as [N,K] and used transposed; it is reduction-heavy over K with independent output elements, making tile-based reuse of A/B critical. On MI300X, mid/large balanced shapes are likely compute-throughput limited if matrix units are well fed, while small or skinny shapes tend toward occupancy/latency inefficiency and moderate-K large-surface shapes can be bandwidth-limited. Key constraints are bf16 I/O with stable accumulation policy, edge handling for arbitrary dimensions, and HIP integration constraints requiring host launch wrappers (no direct launch syntax or hipLaunchKernelGGL in main.cpp).",
+  "open_questions": [
+    "What are the actual runtime distributions of M, N, and K (including frequency of skinny and tiny cases)?",
+    "Are A, B, and C guaranteed contiguous in their last dimension, or can arbitrary strides appear?",
+    "Is accumulation required to match PyTorch numerics closely (FP32 accumulate, deterministic behavior), or is relaxed math acceptable?",
+    "What alignment guarantees exist for A/B/C pointers (e.g., 16B/32B), and can vectorized accesses be assumed safely?",
+    "Is temporary workspace allowed for reduction-partitioned (K-split) paths, and if so, what size limits apply?",
+    "How important is single-kernel latency versus throughput under concurrent streams on MI300X?",
+    "Are there strict epilogue requirements beyond plain store (e.g., scaling, bias, activation) that would alter register/LDS budgeting?"
+  ]
+}

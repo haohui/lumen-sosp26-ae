@@ -1,0 +1,16 @@
+Loading script /workspace/kernel_benchmark/scripts/mitm_trace_export.py
+Proxy server listening at 127.0.0.1:18080
+127.0.0.1:56128: client connect
+127.0.0.1:56128: server connect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:56128: POST https://api.openai.com/v1/responses
+              << 200 OK 5.2k
+127.0.0.1:56128: POST https://api.openai.com/v1/responses
+              << 200 OK 2.8k
+127.0.0.1:56128: client disconnect
+127.0.0.1:38758: client connect
+127.0.0.1:56128: server disconnect api.openai.com:443 (162.159.140.245:443)
+127.0.0.1:38758: server connect api.openai.com:443 (172.66.0.243:443)
+127.0.0.1:38758: POST https://api.openai.com/v1/responses
+              << 200 OK 2.8k
+127.0.0.1:38758: client disconnect
+127.0.0.1:38758: server disconnect api.openai.com:443 (172.66.0.243:443)

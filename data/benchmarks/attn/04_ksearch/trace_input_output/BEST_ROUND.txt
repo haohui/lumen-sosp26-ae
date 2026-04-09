@@ -1,0 +1,2 @@
+selected_best_round=round8
+reason=matches r8_solution_patched_kv1_bs16.json (nohack custom kernel)

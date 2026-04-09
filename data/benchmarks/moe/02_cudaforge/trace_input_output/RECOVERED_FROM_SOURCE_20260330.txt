@@ -1,0 +1,4 @@
+Recovered per-round trace IO snapshots from CudaForge run directories:
+- fused:   run_moe_openai_moe_codex53_high_fused_20260327_101258/.../moe_reference_pytorch
+- nofused: run_moe_openai_moe_codex53_high_nofused_nofused_20260327_120531/.../moe_reference_pytorch
+Recovery time: 2026-03-30 UTC

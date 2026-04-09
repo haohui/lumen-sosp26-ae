@@ -1,0 +1,5 @@
+KERNELFALCON_RUN=/data01/home/daifeng/kernel_benchmark/kernelflacon/workspace/KernelAgent/opt_worker_runs/attention97_beam_r10_20260323_032654
+KERNELFALCON_WORKERS=/data01/home/daifeng/kernel_benchmark/kernelflacon/workspace/KernelAgent/opt_worker_runs/attention97_beam_r10_20260323_032654/opt_manager_logs_real/workers/w0
+KERNELFALCON_TRAFFIC=/data01/home/daifeng/kernel_benchmark/opt_kernel/attention-redo/http_traffic/attn2_optworker_beam_r10_mitm_20260323_032654/01_optworker_beam_r10
+PROBLEM_REFERENCE=/data01/home/daifeng/kernel_benchmark/kb_eval_pipeline/KernelBench/level1/97_ScaledDotProductAttention.py
+WORKLOAD=bf16 KV=1 head_dim=128 num_q_heads=8 batch_size=16 causal=True seq=[1024,2048,4096,8192,16384]

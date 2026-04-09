@@ -1,0 +1,19 @@
+{
+  "generated_utc": "2026-03-28T02:54:47Z",
+  "latest_run_tag": "openai_moe_ksearch04_r20_{fused,nofused}_20260327_220149",
+  "best_kernels": {
+    "fused": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/best_kernels/fused/best_kernel.py",
+    "nofused": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/best_kernels/nofused/best_kernel.py"
+  },
+  "provenance": {
+    "fused_solution": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/best_kernels/fused/source_solution.json",
+    "fused_eval_report": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/best_kernels/fused/source_eval_report.json",
+    "nofused_solution": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/best_kernels/nofused/source_solution.json",
+    "nofused_eval_report": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/best_kernels/nofused/source_eval_report.json"
+  },
+  "benchmarks": {
+    "ksearch_event_only": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/reports/bench_ksearch_eventonly_warm1s_r20_20260328_024645.json",
+    "merged_table_csv": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/reports/bench_moe_with_ksearch_eventonly_warm1s_r20_20260328_merged.csv",
+    "merged_table_md": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/04_ksearch/reports/bench_moe_with_ksearch_eventonly_warm1s_r20_20260328_merged.md"
+  }
+}

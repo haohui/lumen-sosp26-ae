@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Roofline marks compute bottleneck with compute SOL 60.8% vs memory SOL 30.7%; SM throughput is 60.85% of peak while DRAM/TCC utilization is 30.68%, so arithmetic pipelines are the first limiter rather than bandwidth.",
+    "root_causes": [
+      {
+        "cause": "No matrix-core/tensor-core path is used, so matmul runs on VALU/scalar pipelines with lower effective math throughput.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "Tensor/matrix units are completely idle during GEMM."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Retune kernel to use MFMA/tensor-op compatible tiling and datatypes (prefer fp16/bf16 accumulation path that maps to matrix instructions) so Triton emits matrix-core instructions.",
+            "rationale": "Activating matrix units can significantly raise compute throughput for matmul versus pure VALU execution."
+          }
+        ]
+      },
+      {
+        "cause": "Instruction mix indicates heavy non-tensor arithmetic/control overhead relative to peak math issue rate.",
+        "evidence": [
+          {
+            "metric": "rocm__SQ_ACTIVE_INST_VALU",
+            "value": 1467392.0,
+            "interpretation": "Most work is on VALU with additional scalar/misc instructions, indicating high instruction overhead per tile and limiting peak FLOP utilization."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Autotune for larger compute tiles and deeper pipelining (e.g., favor larger BLOCK_K/BLOCK_M/BLOCK_N and stages that reduce loop/control overhead per FLOP).",
+            "rationale": "Increasing work per iteration improves arithmetic intensity and lowers instruction overhead, helping SM throughput move closer to peak."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Retune kernel to use MFMA/tensor-op compatible tiling and datatypes (prefer fp16/bf16 accumulation path that maps to matrix instructions) so Triton emits matrix-core instructions.",
+        "rationale": "Activating matrix units can significantly raise compute throughput for matmul versus pure VALU execution."
+      },
+      {
+        "fix": "Autotune for larger compute tiles and deeper pipelining (e.g., favor larger BLOCK_K/BLOCK_M/BLOCK_N and stages that reduce loop/control overhead per FLOP).",
+        "rationale": "Increasing work per iteration improves arithmetic intensity and lowers instruction overhead, helping SM throughput move closer to peak."
+      }
+    ]
+  }
+]

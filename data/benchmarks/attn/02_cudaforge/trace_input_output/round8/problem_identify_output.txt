@@ -1,0 +1,7 @@
+```json
+{
+  "critical_issue": "Kernel assumes single 64-lane wavefront; reductions break on wave32, yielding partial QK dot products.",
+  "why_it_matters": "Incorrect logits corrupt softmax weights for many tokens/heads, causing large output mismatches versus PyTorch SDPA.",
+  "minimal_fix_hint": "Force wavesize(64) or add cross-warp reduction logic when warpSize is 32."
+}
+```

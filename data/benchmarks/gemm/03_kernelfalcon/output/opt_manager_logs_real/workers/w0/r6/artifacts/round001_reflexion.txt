@@ -1,0 +1,21 @@
+{
+  "was_diagnosis_correct": false,
+  "was_fix_effective": false,
+  "expected_outcome": "If compute throughput was the true limiter and MFMA was not being used, enabling MFMA/tensor-core-style codegen should have reduced kernel time and increased effective compute utilization.",
+  "actual_outcome": "Kernel time regressed from 0.0214 ms to 0.0256 ms (-19.7%), despite targeting MFMA-friendly Triton settings; verification still passed.",
+  "reasoning": "The observed slowdown is opposite of the expected result for a successful compute-path fix. NCU SOL reports Compute 69% vs Memory 34%, which still suggests compute is more stressed than memory, but the change did not improve performance in that domain. This indicates either (a) the original root cause was incomplete/incorrect (not simply 'no MFMA path'), or (b) the retuned launch/tile parameters (BLOCK_K 32, BLOCK_N 64, removal of matrix_instr_nonkdim and waves_per_eu constraints) hurt occupancy, instruction mix, or scheduling enough to outweigh any MFMA benefit. In short, the hypothesis 'force MFMA => faster' was not validated by runtime.",
+  "lessons": [
+    "Do not assume MFMA enablement alone guarantees speedup; validate full kernel efficiency (occupancy, register pressure, wave scheduling, and tile reuse).",
+    "When changing multiple knobs at once, regressions are hard to attribute; isolate changes (e.g., MFMA enablement first, then tile-size sweeps).",
+    "Use ISA + profiler correlation: confirm MFMA presence and check whether achieved FLOPs, wave occupancy, and stall reasons improved."
+  ],
+  "avoid_patterns": [
+    "Large bundled config changes that simultaneously alter instruction path and blocking strategy.",
+    "Treating a high compute SOL percentage as sufficient proof that tensor-core forcing will help."
+  ],
+  "try_patterns": [
+    "A/B test minimal deltas: keep prior-good tiling and only toggle MFMA-related codegen options.",
+    "Run structured autotuning around BLOCK_M/N/K, num_warps/waves_per_eu, and stages specifically for CDNA3 MFMA shapes.",
+    "Profile for limiting sub-metrics (e.g., occupancy, VALU/MFMA utilization, register spills, latency stalls) before and after each micro-change."
+  ]
+}

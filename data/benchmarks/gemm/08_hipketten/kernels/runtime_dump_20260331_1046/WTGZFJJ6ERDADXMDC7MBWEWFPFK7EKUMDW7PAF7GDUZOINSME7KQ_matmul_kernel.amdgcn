@@ -1,0 +1,1358 @@
+	.amdgcn_target "amdgcn-amd-amdhsa--gfx942"
+	.amdhsa_code_object_version 5
+	.text
+	.globl	matmul_kernel                   ; -- Begin function matmul_kernel
+	.p2align	8
+	.type	matmul_kernel,@function
+matmul_kernel:                          ; @matmul_kernel
+.Lfunc_begin0:
+	.cfi_sections .debug_frame
+	.cfi_startproc
+; %bb.41:
+	.file	1 "/workspace/kernel_benchmark/opt_kernel/gemm-openai/10_hipketten/source" "hipkittens_triton_gemm_v01_remap_xcd_matmul.py"
+	.loc	1 120 0 prologue_end            ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:120:0
+	s_load_dwordx2 s[2:3], s[0:1], 0x0
+	s_load_dwordx8 s[4:11], s[0:1], 0x8
+	s_load_dwordx4 s[12:15], s[0:1], 0x28
+	s_waitcnt lgkmcnt(0)
+	s_branch .LBB0_0
+	.loc	1 0 0 is_stmt 0                 ; :0:0
+.Ltmp0:
+	.p2align	8
+; %bb.42:
+.LBB0_0:
+.Ltmp1:
+	.file	2 "/opt/venv/lib/python3.12/site-packages/triton/language" "standard.py"
+	.loc	2 41 22 is_stmt 1               ; standard.py:41:22 @[ hipkittens_triton_gemm_v01_remap_xcd_matmul.py:144:27 ]
+	s_add_i32 s0, s9, 0x7f
+	.loc	2 41 28 is_stmt 0               ; standard.py:41:28 @[ hipkittens_triton_gemm_v01_remap_xcd_matmul.py:144:27 ]
+	s_ashr_i32 s1, s0, 31
+	s_lshr_b32 s1, s1, 25
+	s_add_i32 s0, s0, s1
+	s_ashr_i32 s14, s0, 7
+.Ltmp2:
+	.loc	1 148 38 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:148:38
+	s_lshl_b32 s0, s14, 3
+	.loc	1 149 22                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:149:22
+	s_abs_i32 s1, s0
+	v_cvt_f32_u32_e32 v1, s1
+	s_sub_i32 s19, 0, s1
+.Ltmp3:
+	.loc	2 41 22                         ; standard.py:41:22 @[ hipkittens_triton_gemm_v01_remap_xcd_matmul.py:143:27 ]
+	s_add_i32 s15, s8, 63
+.Ltmp4:
+	.loc	1 149 22                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:149:22
+	s_abs_i32 s18, s16
+	v_rcp_iflag_f32_e32 v1, v1
+.Ltmp5:
+	.loc	2 41 28                         ; standard.py:41:28 @[ hipkittens_triton_gemm_v01_remap_xcd_matmul.py:143:27 ]
+	s_ashr_i32 s17, s15, 31
+	s_lshr_b32 s17, s17, 26
+	s_add_i32 s15, s15, s17
+.Ltmp6:
+	.loc	1 149 22                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:149:22
+	v_mul_f32_e32 v1, 0x4f7ffffe, v1
+	v_cvt_u32_f32_e32 v1, v1
+	s_xor_b32 s17, s16, s0
+.Ltmp7:
+	.loc	2 41 28                         ; standard.py:41:28 @[ hipkittens_triton_gemm_v01_remap_xcd_matmul.py:143:27 ]
+	s_ashr_i32 s15, s15, 6
+.Ltmp8:
+	.loc	1 149 22                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:149:22
+	s_ashr_i32 s17, s17, 31
+	v_readfirstlane_b32 s20, v1
+	s_mul_i32 s19, s19, s20
+	s_mul_hi_u32 s19, s20, s19
+	s_add_i32 s20, s20, s19
+	s_mul_hi_u32 s19, s18, s20
+	s_mul_i32 s20, s19, s1
+	s_sub_i32 s18, s18, s20
+	s_add_i32 s20, s19, 1
+	s_sub_i32 s21, s18, s1
+	s_cmp_ge_u32 s18, s1
+	s_cselect_b32 s19, s20, s19
+	s_cselect_b32 s18, s21, s18
+	s_add_i32 s20, s19, 1
+	s_cmp_ge_u32 s18, s1
+	s_cselect_b32 s1, s20, s19
+	s_xor_b32 s1, s1, s17
+	s_sub_i32 s1, s1, s17
+	.loc	1 150 29                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:150:29
+	s_lshl_b32 s17, s1, 3
+	.loc	1 151 35                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:151:35
+	s_sub_i32 s15, s15, s17
+	.loc	1 151 48 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:151:48
+	s_min_i32 s15, s15, 8
+	.loc	1 153 40 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:153:40
+	s_abs_i32 s18, s15
+	v_cvt_f32_u32_e32 v1, s18
+	s_sub_i32 s19, 0, s18
+	.loc	1 152 34                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:152:34
+	s_mul_i32 s1, s1, s0
+	s_sub_i32 s0, s16, s1
+	.loc	1 153 40                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:153:40
+	v_rcp_iflag_f32_e32 v1, v1
+	s_abs_i32 s16, s0
+	s_xor_b32 s1, s0, s15
+	s_ashr_i32 s1, s1, 31
+	v_mul_f32_e32 v1, 0x4f7ffffe, v1
+	v_cvt_u32_f32_e32 v1, v1
+	.loc	1 155 51                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:51
+	v_lshrrev_b32_e32 v2, 2, v0
+	v_mov_b32_e32 v8, 0
+	v_mov_b32_e32 v9, 0
+	.loc	1 153 40                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:153:40
+	v_readfirstlane_b32 s20, v1
+	s_mul_i32 s19, s19, s20
+	s_mul_hi_u32 s19, s20, s19
+	s_add_i32 s20, s20, s19
+	s_mul_hi_u32 s19, s16, s20
+	s_mul_i32 s20, s19, s18
+	s_sub_i32 s16, s16, s20
+	s_add_i32 s20, s19, 1
+	s_sub_i32 s21, s16, s18
+	s_cmp_ge_u32 s16, s18
+	s_cselect_b32 s19, s20, s19
+	s_cselect_b32 s16, s21, s16
+	s_add_i32 s20, s19, 1
+	s_cmp_ge_u32 s16, s18
+	s_cselect_b32 s16, s20, s19
+	s_xor_b32 s16, s16, s1
+	s_sub_i32 s16, s16, s1
+	.loc	1 152 54                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:152:54
+	s_mul_i32 s1, s16, s15
+	.loc	1 155 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:68
+	s_abs_i32 s15, s8
+	v_cvt_f32_u32_e32 v1, s15
+	.loc	1 152 54                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:152:54
+	s_sub_i32 s0, s0, s1
+	.loc	1 152 27 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:152:27
+	s_add_i32 s17, s0, s17
+	.loc	1 155 23 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:23
+	s_lshl_b32 s18, s17, 6
+	.loc	1 155 68 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:68
+	v_rcp_iflag_f32_e32 v1, v1
+	s_sub_i32 s1, 0, s15
+	.loc	1 155 38                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:38
+	v_or_b32_e32 v3, s18, v2
+	.loc	1 155 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:68
+	s_bfe_i32 s0, s17, 0x10019
+	v_mul_f32_e32 v1, 0x4f7ffffe, v1
+	v_cvt_u32_f32_e32 v1, v1
+	v_add_u32_e32 v3, s0, v3
+	v_xor_b32_e32 v3, s0, v3
+	.loc	1 156 68 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	s_abs_i32 s24, s9
+	.loc	1 155 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:68
+	v_mul_lo_u32 v4, s1, v1
+	v_mul_hi_u32 v4, v1, v4
+	v_add_u32_e32 v1, v1, v4
+	v_mul_hi_u32 v1, v3, v1
+	v_mul_lo_u32 v1, v1, s15
+	v_sub_u32_e32 v1, v3, v1
+	v_subrev_u32_e32 v3, s15, v1
+	v_cmp_le_u32_e32 vcc, s15, v1
+	.loc	1 156 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	v_cvt_f32_u32_e32 v4, s24
+	.loc	1 156 23 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:23
+	s_lshl_b32 s19, s16, 7
+	.loc	1 155 68 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:68
+	v_cndmask_b32_e32 v1, v1, v3, vcc
+	v_subrev_u32_e32 v3, s15, v1
+	v_cmp_le_u32_e32 vcc, s15, v1
+	.loc	1 156 38                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:38
+	v_or_b32_e32 v2, s19, v2
+	.loc	1 156 68 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	s_bfe_i32 s25, s16, 0x10018
+	.loc	1 155 68 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:68
+	v_cndmask_b32_e32 v1, v1, v3, vcc
+	v_xor_b32_e32 v1, s0, v1
+	v_subrev_u32_e32 v5, s0, v1
+	.loc	1 156 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	v_rcp_iflag_f32_e32 v1, v4
+	s_sub_i32 s0, 0, s24
+	v_add_u32_e32 v6, s25, v2
+	v_xor_b32_e32 v4, s25, v6
+	v_mul_f32_e32 v1, 0x4f7ffffe, v1
+	v_cvt_u32_f32_e32 v1, v1
+.Ltmp9:
+	.loc	2 41 22                         ; standard.py:41:22 @[ hipkittens_triton_gemm_v01_remap_xcd_matmul.py:159:29 ]
+	s_add_i32 s23, s10, 31
+.Ltmp10:
+	.loc	1 178 49                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:178:49
+	v_mul_lo_u32 v75, v5, s11
+	.loc	1 156 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	v_mul_lo_u32 v2, s0, v1
+	v_mul_hi_u32 v2, v1, v2
+	v_add_u32_e32 v7, v1, v2
+	v_mad_u64_u32 v[2:3], s[0:1], v4, v7, 0
+.Ltmp11:
+	.loc	2 41 28                         ; standard.py:41:28 @[ hipkittens_triton_gemm_v01_remap_xcd_matmul.py:159:29 ]
+	s_ashr_i32 s0, s23, 31
+	s_lshr_b32 s0, s0, 27
+	s_add_i32 s0, s23, s0
+	s_ashr_i32 s22, s0, 5
+.Ltmp12:
+	.loc	1 172 29                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:172:29
+	s_mul_i32 s0, s17, s14
+	.loc	1 172 41 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:172:41
+	s_add_i32 s0, s0, s16
+	.loc	1 173 36 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:173:36
+	s_lshr_b32 s1, s0, 31
+	s_add_i32 s1, s0, s1
+	s_and_b32 s1, s1, -2
+	s_sub_i32 s21, s0, s1
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_cmp_gt_i32 s23, 31
+	s_cselect_b64 s[0:1], -1, 0
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	s_abs_i32 s20, s22
+	v_cvt_f32_u32_e32 v2, s20
+	.loc	1 156 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	v_add_u32_e32 v1, 64, v6
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	s_sub_i32 s11, 0, s20
+	.loc	1 156 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	v_xor_b32_e32 v1, s25, v1
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	v_rcp_iflag_f32_e32 v2, v2
+	.loc	1 156 68                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	v_mad_u64_u32 v[10:11], s[14:15], v1, v7, 0
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	s_abs_i32 s15, s21
+	v_mul_f32_e32 v2, 0x4f7ffffe, v2
+	v_cvt_u32_f32_e32 v2, v2
+	s_ashr_i32 s14, s21, 31
+	.loc	1 157 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:157:26
+	v_lshlrev_b32_e32 v6, 3, v0
+	v_and_b32_e32 v74, 24, v6
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	v_readfirstlane_b32 s16, v2
+	s_mul_i32 s11, s11, s16
+	s_mul_hi_u32 s11, s16, s11
+	s_add_i32 s11, s16, s11
+	s_mul_hi_u32 s16, s15, s11
+	s_mul_i32 s16, s16, s20
+	s_sub_i32 s15, s15, s16
+	s_sub_i32 s16, s15, s20
+	s_cmp_ge_u32 s15, s20
+	s_cselect_b32 s15, s16, s15
+	s_sub_i32 s16, s15, s20
+	s_cmp_ge_u32 s15, s20
+	s_cselect_b32 s15, s16, s15
+	s_xor_b32 s15, s15, s14
+	s_sub_i32 s14, s15, s14
+	.loc	1 177 35                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:177:35
+	v_lshl_or_b32 v14, s14, 5, v74
+	.loc	1 180 60                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:60
+	v_cmp_gt_i32_e32 vcc, s10, v14
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_and_b64 s[14:15], s[0:1], vcc
+	v_mov_b32_e32 v2, 0
+	v_mov_b32_e32 v6, 0
+	v_mov_b32_e32 v7, 0
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_and_saveexec_b64 s[16:17], s[14:15]
+	s_cbranch_execz .LBB0_2
+; %bb.1:
+	.loc	1 0 24 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	v_add_u32_e32 v6, v14, v75
+	v_ashrrev_i32_e32 v7, 31, v6
+	v_lshl_add_u64 v[6:7], v[6:7], 1, s[2:3]
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	global_load_dwordx4 v[6:9], v[6:7], off
+.LBB0_2:
+	.loc	1 0 24                          ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	s_or_b64 exec, exec, s[16:17]
+	.loc	1 156 68 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	v_mul_lo_u32 v3, v3, s24
+	v_sub_u32_e32 v3, v4, v3
+	v_subrev_u32_e32 v4, s24, v3
+	v_cmp_le_u32_e32 vcc, s24, v3
+	v_mov_b32_e32 v5, 0
+	s_nop 0
+	v_cndmask_b32_e32 v3, v3, v4, vcc
+	v_subrev_u32_e32 v4, s24, v3
+	v_cmp_le_u32_e32 vcc, s24, v3
+	s_nop 1
+	v_cndmask_b32_e32 v3, v3, v4, vcc
+	v_xor_b32_e32 v3, s25, v3
+	v_subrev_u32_e32 v3, s25, v3
+	.loc	1 179 84                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:84
+	v_mul_lo_u32 v76, v3, s12
+	v_mov_b32_e32 v3, 0
+	v_mov_b32_e32 v4, 0
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	s_and_saveexec_b64 s[16:17], s[14:15]
+	s_cbranch_execz .LBB0_4
+; %bb.3:
+	.loc	1 0 24 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	v_add_u32_e32 v2, v14, v76
+	v_ashrrev_i32_e32 v3, 31, v2
+	v_lshl_add_u64 v[2:3], v[2:3], 1, s[4:5]
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	global_load_dwordx4 v[2:5], v[2:3], off
+.LBB0_4:
+	.loc	1 0 24                          ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	s_or_b64 exec, exec, s[16:17]
+	.loc	1 156 68 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:68
+	v_mul_lo_u32 v10, v11, s24
+	v_sub_u32_e32 v1, v1, v10
+	v_subrev_u32_e32 v10, s24, v1
+	v_cmp_le_u32_e32 vcc, s24, v1
+	v_mov_b32_e32 v19, 0
+	v_mov_b32_e32 v11, 0
+	v_cndmask_b32_e32 v1, v1, v10, vcc
+	v_subrev_u32_e32 v10, s24, v1
+	v_cmp_le_u32_e32 vcc, s24, v1
+	v_mov_b32_e32 v12, 0
+	v_mov_b32_e32 v13, 0
+	v_cndmask_b32_e32 v1, v1, v10, vcc
+	v_xor_b32_e32 v1, s25, v1
+	v_subrev_u32_e32 v1, s25, v1
+	.loc	1 179 84                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:84
+	v_mul_lo_u32 v77, v1, s12
+	v_mov_b32_e32 v10, 0
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	s_and_saveexec_b64 s[16:17], s[14:15]
+	s_cbranch_execz .LBB0_6
+; %bb.5:
+	.loc	1 179 65                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:65
+	v_add_u32_e32 v10, v14, v77
+	.loc	1 179 30 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:30
+	v_ashrrev_i32_e32 v11, 31, v10
+	v_lshl_add_u64 v[10:11], v[10:11], 1, s[4:5]
+	.loc	1 181 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	global_load_dwordx4 v[10:13], v[10:11], off
+.LBB0_6:
+	.loc	1 0 24 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	s_or_b64 exec, exec, s[16:17]
+	.loc	1 180 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	v_lshlrev_b32_e32 v1, 4, v0
+	v_and_b32_e32 v14, 56, v0
+	v_xor_b32_e32 v1, v1, v14
+	v_add_u32_e32 v78, 0, v1
+	v_xor_b32_e32 v1, 8, v1
+	.loc	1 155 51                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:51
+	v_and_b32_e32 v68, 31, v0
+	.loc	1 156 51                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:51
+	v_and_b32_e32 v70, 32, v0
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	v_add_u32_e32 v79, 0, v1
+	.loc	1 156 51                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:51
+	v_and_b32_e32 v69, 0xc0, v0
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_waitcnt vmcnt(0)
+	ds_write_b64 v78, v[6:7] offset:8192
+	ds_write_b64 v79, v[8:9] offset:8192
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	ds_write2st64_b64 v78, v[2:3], v[10:11] offset1:8
+	ds_write2st64_b64 v79, v[4:5], v[12:13] offset1:8
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_cmp_lt_i32 s23, 64
+	v_lshlrev_b32_e32 v71, 6, v68
+	v_lshlrev_b32_e32 v73, 2, v0
+	v_lshrrev_b32_e32 v72, 2, v70
+	v_mov_b32_e32 v18, 0
+	v_mov_b32_e32 v17, 0
+	v_mov_b32_e32 v16, 0
+	v_mov_b32_e32 v23, 0
+	v_mov_b32_e32 v22, 0
+	v_mov_b32_e32 v21, 0
+	v_mov_b32_e32 v20, 0
+	v_mov_b32_e32 v27, 0
+	v_mov_b32_e32 v26, 0
+	v_mov_b32_e32 v25, 0
+	v_mov_b32_e32 v24, 0
+	v_mov_b32_e32 v31, 0
+	v_mov_b32_e32 v30, 0
+	v_mov_b32_e32 v29, 0
+	v_mov_b32_e32 v28, 0
+	v_mov_b32_e32 v3, 0
+	v_mov_b32_e32 v2, 0
+	v_mov_b32_e32 v1, 0
+	v_mov_b32_e32 v0, 0
+	v_mov_b32_e32 v7, 0
+	v_mov_b32_e32 v6, 0
+	v_mov_b32_e32 v5, 0
+	v_mov_b32_e32 v4, 0
+	v_mov_b32_e32 v11, 0
+	v_mov_b32_e32 v10, 0
+	v_mov_b32_e32 v9, 0
+	v_mov_b32_e32 v8, 0
+	v_mov_b32_e32 v15, 0
+	v_mov_b32_e32 v14, 0
+	v_mov_b32_e32 v13, 0
+	v_mov_b32_e32 v12, 0
+	s_cbranch_scc1 .LBB0_22
+; %bb.7:                                ; %.lr.ph
+	.loc	1 175 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:26
+	s_add_i32 s12, s21, 1
+	.loc	1 175 42 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	s_ashr_i32 s14, s12, 31
+	s_abs_i32 s12, s12
+	s_mul_hi_u32 s15, s12, s11
+	s_mul_i32 s15, s15, s20
+	s_sub_i32 s12, s12, s15
+	v_and_b32_e32 v4, 56, v73
+	s_sub_i32 s15, s12, s20
+	v_or_b32_e32 v0, v71, v4
+	s_cmp_ge_u32 s12, s20
+	v_xor_b32_e32 v0, v0, v72
+	s_cselect_b32 s12, s15, s12
+	v_xor_b32_e32 v5, 16, v0
+	v_xor_b32_e32 v6, 32, v0
+	v_xor_b32_e32 v7, 48, v0
+	s_sub_i32 s15, s12, s20
+	s_cmp_ge_u32 s12, s20
+	.loc	1 180 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	v_add_u32_e32 v80, 0, v0
+	v_add_u32_e32 v81, 0, v5
+	v_add_u32_e32 v82, 0, v6
+	v_add_u32_e32 v83, 0, v7
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	s_cselect_b32 s12, s15, s12
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_waitcnt lgkmcnt(0)
+	s_barrier
+	ds_read2st64_b64 v[0:3], v80 offset0:16 offset1:20
+	ds_read2st64_b64 v[36:39], v81 offset0:16 offset1:20
+	ds_read2st64_b64 v[40:43], v82 offset0:16 offset1:20
+	ds_read2st64_b64 v[44:47], v83 offset0:16 offset1:20
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	s_xor_b32 s12, s12, s14
+	s_sub_i32 s12, s12, s14
+	.loc	1 177 35                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:177:35
+	v_lshl_or_b32 v6, s12, 5, v74
+	.loc	1 180 60                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:60
+	v_cmp_gt_u32_e32 vcc, s10, v6
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_setprio 1
+	v_mov_b32_e32 v32, 0
+	v_mov_b32_e32 v48, 0
+	v_mov_b32_e32 v49, 0
+	v_mov_b32_e32 v50, 0
+	v_mov_b32_e32 v51, 0
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_and_saveexec_b64 s[14:15], vcc
+	s_cbranch_execz .LBB0_9
+; %bb.8:
+	.loc	1 0 24 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	v_add_u32_e32 v8, v6, v75
+	v_ashrrev_i32_e32 v9, 31, v8
+	v_lshl_add_u64 v[8:9], v[8:9], 1, s[2:3]
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	global_load_dwordx4 v[48:51], v[8:9], off
+.LBB0_9:
+	.loc	1 0 24                          ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	s_or_b64 exec, exec, s[14:15]
+	v_lshlrev_b32_e32 v5, 5, v69
+	v_xor_b32_e32 v4, v4, v72
+	v_or3_b32 v4, v4, v5, v71
+	v_xor_b32_e32 v5, 16, v4
+	v_xor_b32_e32 v7, 32, v4
+	v_xor_b32_e32 v8, 48, v4
+	; sched_barrier mask(0x00000000)
+	.loc	1 181 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	v_add_u32_e32 v84, 0, v4
+	v_add_u32_e32 v85, 0, v5
+	v_add_u32_e32 v86, 0, v7
+	v_add_u32_e32 v87, 0, v8
+	ds_read_b64 v[4:5], v84
+	ds_read_b64 v[60:61], v85
+	ds_read_b64 v[58:59], v86
+	ds_read_b64 v[56:57], v87
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_setprio 0
+	v_mov_b32_e32 v33, 0
+	v_mov_b32_e32 v34, 0
+	v_mov_b32_e32 v35, 0
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	s_and_saveexec_b64 s[14:15], vcc
+	s_cbranch_execz .LBB0_11
+; %bb.10:
+	.loc	1 179 65                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:65
+	v_add_u32_e32 v8, v6, v76
+	.loc	1 179 30 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:30
+	v_ashrrev_i32_e32 v9, 31, v8
+	v_lshl_add_u64 v[8:9], v[8:9], 1, s[4:5]
+	.loc	1 181 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	global_load_dwordx4 v[32:35], v[8:9], off
+.LBB0_11:
+	.loc	1 0 24 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	s_or_b64 exec, exec, s[14:15]
+	s_max_i32 s12, s22, 2
+	v_mov_b32_e32 v52, 0
+	v_mov_b32_e32 v53, 0
+	v_mov_b32_e32 v54, 0
+	v_mov_b32_e32 v55, 0
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	s_and_saveexec_b64 s[14:15], vcc
+	s_cbranch_execz .LBB0_13
+; %bb.12:
+	.loc	1 179 65 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:65
+	v_add_u32_e32 v6, v6, v77
+	.loc	1 179 30 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:30
+	v_ashrrev_i32_e32 v7, 31, v6
+	v_lshl_add_u64 v[6:7], v[6:7], 1, s[4:5]
+	.loc	1 181 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	global_load_dwordx4 v[52:55], v[6:7], off
+.LBB0_13:
+	.loc	1 0 24 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	s_or_b64 exec, exec, s[14:15]
+	.loc	1 182 39 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	s_waitcnt lgkmcnt(3)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[4:5], v[0:1], 0
+	; sched_barrier mask(0x00000001)
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_setprio 1
+	.loc	1 182 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[4:5], v[2:3], 0
+	s_waitcnt lgkmcnt(2)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[60:61], v[36:37], v[16:31]
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[60:61], v[38:39], v[0:15]
+	s_waitcnt lgkmcnt(1)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[58:59], v[40:41], v[16:31]
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[58:59], v[42:43], v[0:15]
+	s_waitcnt lgkmcnt(0)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[56:57], v[44:45], v[16:31]
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[56:57], v[46:47], v[0:15]
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_setprio 0
+	s_cmp_eq_u32 s12, 2
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_barrier
+	s_waitcnt vmcnt(0)
+	ds_write_b64 v78, v[48:49] offset:8192
+	ds_write_b64 v79, v[50:51] offset:8192
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	ds_write2st64_b64 v78, v[32:33], v[52:53] offset1:8
+	ds_write2st64_b64 v79, v[34:35], v[54:55] offset1:8
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_cbranch_scc1 .LBB0_22
+; %bb.14:                               ; %.peel.next
+	s_add_i32 s12, s12, -2
+	s_add_i32 s16, s21, 2
+	s_branch .LBB0_16
+.LBB0_15:                               ;   in Loop: Header=BB0_16 Depth=1
+	.loc	1 0 26 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:26
+	s_or_b64 exec, exec, s[14:15]
+	.loc	1 182 39 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	s_waitcnt lgkmcnt(3)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[66:67], v[52:53], v[16:31]
+	; sched_barrier mask(0x00000001)
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_setprio 1
+	.loc	1 182 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[66:67], v[54:55], v[0:15]
+	s_waitcnt lgkmcnt(2)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[64:65], v[48:49], v[16:31]
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[64:65], v[50:51], v[0:15]
+	s_waitcnt lgkmcnt(1)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[62:63], v[44:45], v[16:31]
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[62:63], v[46:47], v[0:15]
+	s_waitcnt lgkmcnt(0)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[60:61], v[40:41], v[16:31]
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[60:61], v[42:43], v[0:15]
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_setprio 0
+	s_add_i32 s12, s12, -1
+	s_add_i32 s16, s16, 1
+	s_cmp_lg_u32 s12, 0
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_barrier
+	s_waitcnt vmcnt(0)
+	ds_write_b64 v78, v[36:37] offset:8192
+	ds_write_b64 v79, v[38:39] offset:8192
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	ds_write2st64_b64 v78, v[32:33], v[56:57] offset1:8
+	ds_write2st64_b64 v79, v[34:35], v[58:59] offset1:8
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_cbranch_scc0 .LBB0_22
+.LBB0_16:                               ; =>This Inner Loop Header: Depth=1
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	s_abs_i32 s15, s16
+	s_mul_hi_u32 s17, s15, s11
+	s_mul_i32 s17, s17, s20
+	s_sub_i32 s15, s15, s17
+	s_ashr_i32 s14, s16, 31
+	s_sub_i32 s17, s15, s20
+	s_cmp_ge_u32 s15, s20
+	s_cselect_b32 s15, s17, s15
+	s_sub_i32 s17, s15, s20
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_waitcnt lgkmcnt(0)
+	s_barrier
+	ds_read2st64_b64 v[52:55], v80 offset0:16 offset1:20
+	ds_read2st64_b64 v[48:51], v81 offset0:16 offset1:20
+	ds_read2st64_b64 v[44:47], v82 offset0:16 offset1:20
+	ds_read2st64_b64 v[40:43], v83 offset0:16 offset1:20
+	.loc	1 175 42                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:175:42
+	s_cmp_ge_u32 s15, s20
+	s_cselect_b32 s15, s17, s15
+	s_xor_b32 s15, s15, s14
+	s_sub_i32 s14, s15, s14
+	.loc	1 177 35                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:177:35
+	v_lshl_or_b32 v88, s14, 5, v74
+	.loc	1 180 60                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:60
+	v_cmp_gt_i32_e32 vcc, s10, v88
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_setprio 1
+	v_mov_b32_e32 v32, 0
+	v_mov_b32_e32 v36, 0
+	v_mov_b32_e32 v37, 0
+	v_mov_b32_e32 v38, 0
+	v_mov_b32_e32 v39, 0
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_and_saveexec_b64 s[14:15], vcc
+	s_cbranch_execz .LBB0_18
+; %bb.17:                               ;   in Loop: Header=BB0_16 Depth=1
+	.loc	1 0 24 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	v_add_u32_e32 v34, v88, v75
+	v_ashrrev_i32_e32 v35, 31, v34
+	v_lshl_add_u64 v[34:35], v[34:35], 1, s[2:3]
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	global_load_dwordx4 v[36:39], v[34:35], off
+.LBB0_18:                               ;   in Loop: Header=BB0_16 Depth=1
+	.loc	1 0 24                          ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	s_or_b64 exec, exec, s[14:15]
+	; sched_barrier mask(0x00000000)
+	.loc	1 181 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	ds_read_b64 v[66:67], v84
+	ds_read_b64 v[64:65], v85
+	ds_read_b64 v[62:63], v86
+	ds_read_b64 v[60:61], v87
+	.loc	1 174 26                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:174:26
+	s_setprio 0
+	v_mov_b32_e32 v33, 0
+	v_mov_b32_e32 v34, 0
+	v_mov_b32_e32 v35, 0
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	s_and_saveexec_b64 s[14:15], vcc
+	s_cbranch_execz .LBB0_20
+; %bb.19:                               ;   in Loop: Header=BB0_16 Depth=1
+	.loc	1 179 65                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:65
+	v_add_u32_e32 v32, v88, v76
+	.loc	1 179 30 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:30
+	v_ashrrev_i32_e32 v33, 31, v32
+	v_lshl_add_u64 v[32:33], v[32:33], 1, s[4:5]
+	.loc	1 181 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	global_load_dwordx4 v[32:35], v[32:33], off
+.LBB0_20:                               ;   in Loop: Header=BB0_16 Depth=1
+	.loc	1 0 24 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:24
+	s_or_b64 exec, exec, s[14:15]
+	v_mov_b32_e32 v56, 0
+	v_mov_b32_e32 v57, 0
+	v_mov_b32_e32 v58, 0
+	v_mov_b32_e32 v59, 0
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	s_and_saveexec_b64 s[14:15], vcc
+	s_cbranch_execz .LBB0_15
+; %bb.21:                               ;   in Loop: Header=BB0_16 Depth=1
+	.loc	1 179 65 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:65
+	v_add_u32_e32 v56, v88, v77
+	.loc	1 179 30 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:179:30
+	v_ashrrev_i32_e32 v57, 31, v56
+	v_lshl_add_u64 v[56:57], v[56:57], 1, s[4:5]
+	.loc	1 181 24 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	global_load_dwordx4 v[56:59], v[56:57], off
+	s_branch .LBB0_15
+.LBB0_22:                               ; %._crit_edge
+	.loc	1 182 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	s_andn2_b64 vcc, exec, s[0:1]
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	s_waitcnt lgkmcnt(0)
+	s_barrier
+	.loc	1 182 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	s_cbranch_vccnz .LBB0_24
+; %bb.23:
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	v_and_b32_e32 v33, 56, v73
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	v_lshlrev_b32_e32 v32, 5, v69
+	v_xor_b32_e32 v34, v33, v72
+	v_or3_b32 v44, v34, v32, v71
+	v_add_u32_e32 v32, 0, v44
+	ds_read_b64 v[48:49], v32
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	v_or_b32_e32 v32, v71, v33
+	v_xor_b32_e32 v45, v32, v72
+	v_add_u32_e32 v32, 0, v45
+	ds_read2st64_b64 v[32:35], v32 offset0:16 offset1:20
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	v_xad_u32 v36, v44, 16, 0
+	v_xad_u32 v40, v44, 32, 0
+	v_xad_u32 v44, v44, 48, 0
+	.loc	1 182 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	s_waitcnt lgkmcnt(0)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[48:49], v[32:33], v[16:31]
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	ds_read_b64 v[32:33], v36
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	v_xad_u32 v36, v45, 16, 0
+	ds_read2st64_b64 v[36:39], v36 offset0:16 offset1:20
+	.loc	1 182 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[48:49], v[34:35], v[0:15]
+	s_waitcnt lgkmcnt(0)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[32:33], v[36:37], v[16:31]
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	ds_read_b64 v[36:37], v40
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	v_xad_u32 v40, v45, 32, 0
+	ds_read2st64_b64 v[40:43], v40 offset0:16 offset1:20
+	.loc	1 182 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[32:33], v[38:39], v[0:15]
+	s_waitcnt lgkmcnt(0)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[36:37], v[40:41], v[16:31]
+	.loc	1 181 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:181:24
+	ds_read_b64 v[40:41], v44
+	.loc	1 180 24                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:180:24
+	v_xad_u32 v44, v45, 48, 0
+	ds_read2st64_b64 v[44:47], v44 offset0:16 offset1:20
+	.loc	1 182 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:182:39
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[36:37], v[42:43], v[0:15]
+	s_waitcnt lgkmcnt(0)
+	v_mfma_f32_32x32x8_bf16 v[16:31], v[40:41], v[44:45], v[16:31]
+	v_mfma_f32_32x32x8_bf16 v[0:15], v[40:41], v[46:47], v[0:15]
+.LBB0_24:                               ; %._crit_edge._crit_edge
+	.loc	1 155 38                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:38
+	v_or_b32_e32 v38, s18, v68
+	.loc	1 156 51                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:51
+	v_lshrrev_b32_e32 v32, 1, v69
+	v_lshrrev_b32_e32 v33, 3, v70
+	.loc	1 189 33                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:189:33
+	v_mul_lo_u32 v34, v38, s13
+	.loc	1 156 38                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:38
+	v_or3_b32 v32, v33, v32, s19
+	.loc	1 189 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:189:21
+	v_ashrrev_i32_e32 v35, 31, v34
+	v_lshl_add_u64 v[36:37], v[34:35], 1, s[6:7]
+	.loc	1 189 52 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:189:52
+	v_ashrrev_i32_e32 v33, 31, v32
+	.loc	1 190 33 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:33
+	v_cmp_gt_i32_e64 s[10:11], s8, v38
+	.loc	1 190 58 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:58
+	v_cmp_gt_i32_e64 s[0:1], s9, v32
+	.loc	1 189 52 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:189:52
+	v_lshl_add_u64 v[36:37], v[32:33], 1, v[36:37]
+	.loc	1 190 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[4:5], s[10:11], s[0:1]
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[2:3], s[4:5]
+	s_cbranch_execz .LBB0_26
+; %bb.25:
+	v_bfe_u32 v35, v18, 16, 1
+	s_movk_i32 s4, 0x7fff
+	v_bfe_u32 v39, v19, 16, 1
+	v_add3_u32 v35, v18, v35, s4
+	v_cmp_o_f32_e32 vcc, v18, v18
+	v_mov_b32_e32 v18, 0x7fff
+	v_bfe_u32 v40, v16, 16, 1
+	v_add3_u32 v39, v19, v39, s4
+	v_cndmask_b32_sdwa v35, v18, v35, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v19, v19
+	v_bfe_u32 v41, v17, 16, 1
+	v_add3_u32 v40, v16, v40, s4
+	v_cndmask_b32_sdwa v19, v18, v39, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v16, v16
+	v_add3_u32 v41, v17, v41, s4
+	s_mov_b32 s4, 0x5040100
+	v_cndmask_b32_sdwa v16, v18, v40, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v17, v17
+	v_perm_b32 v19, v19, v35, s4
+	s_nop 0
+	v_cndmask_b32_sdwa v17, v18, v41, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_perm_b32 v18, v17, v16, s4
+	global_store_dwordx2 v[36:37], v[18:19], off
+.LBB0_26:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	s_or_b64 exec, exec, s[2:3]
+	.loc	1 156 38 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:38
+	v_or_b32_e32 v16, 8, v32
+	.loc	1 190 58                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:58
+	v_cmp_gt_i32_e64 s[2:3], s9, v16
+	.loc	1 190 39 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[14:15], s[2:3], s[10:11]
+	.loc	1 191 21 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[4:5], s[14:15]
+	s_cbranch_execz .LBB0_28
+; %bb.27:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	v_bfe_u32 v16, v22, 16, 1
+	s_movk_i32 s12, 0x7fff
+	v_bfe_u32 v17, v23, 16, 1
+	v_add3_u32 v16, v22, v16, s12
+	v_cmp_o_f32_e32 vcc, v22, v22
+	v_mov_b32_e32 v22, 0x7fff
+	v_bfe_u32 v18, v20, 16, 1
+	v_bfe_u32 v19, v21, 16, 1
+	v_add3_u32 v17, v23, v17, s12
+	v_cndmask_b32_sdwa v16, v22, v16, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v23, v23
+	v_add3_u32 v19, v21, v19, s12
+	v_add3_u32 v18, v20, v18, s12
+	v_cndmask_b32_sdwa v17, v22, v17, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	s_mov_b32 s12, 0x5040100
+	v_cmp_o_f32_e32 vcc, v20, v20
+	v_perm_b32 v17, v17, v16, s12
+	s_nop 0
+	v_cndmask_b32_sdwa v16, v22, v18, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v21, v21
+	s_nop 1
+	v_cndmask_b32_sdwa v18, v22, v19, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_perm_b32 v16, v18, v16, s12
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	global_store_dwordx2 v[36:37], v[16:17], off offset:16
+.LBB0_28:
+	.loc	1 0 21                          ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	s_or_b64 exec, exec, s[4:5]
+	.loc	1 156 38 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:38
+	v_or_b32_e32 v16, 16, v32
+	.loc	1 190 58                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:58
+	v_cmp_gt_i32_e64 s[4:5], s9, v16
+	.loc	1 190 39 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[16:17], s[4:5], s[10:11]
+	.loc	1 191 21 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[14:15], s[16:17]
+	s_cbranch_execz .LBB0_30
+; %bb.29:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	v_bfe_u32 v16, v26, 16, 1
+	s_movk_i32 s12, 0x7fff
+	v_bfe_u32 v17, v27, 16, 1
+	v_add3_u32 v16, v26, v16, s12
+	v_cmp_o_f32_e32 vcc, v26, v26
+	v_mov_b32_e32 v20, 0x7fff
+	v_bfe_u32 v18, v24, 16, 1
+	v_bfe_u32 v19, v25, 16, 1
+	v_add3_u32 v17, v27, v17, s12
+	v_cndmask_b32_sdwa v16, v20, v16, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v27, v27
+	v_add3_u32 v19, v25, v19, s12
+	v_add3_u32 v18, v24, v18, s12
+	v_cndmask_b32_sdwa v17, v20, v17, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	s_mov_b32 s12, 0x5040100
+	v_cmp_o_f32_e32 vcc, v24, v24
+	v_perm_b32 v17, v17, v16, s12
+	s_nop 0
+	v_cndmask_b32_sdwa v16, v20, v18, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v25, v25
+	s_nop 1
+	v_cndmask_b32_sdwa v18, v20, v19, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_perm_b32 v16, v18, v16, s12
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	global_store_dwordx2 v[36:37], v[16:17], off offset:32
+.LBB0_30:
+	.loc	1 0 21                          ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	s_or_b64 exec, exec, s[14:15]
+	.loc	1 156 38 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:156:38
+	v_or_b32_e32 v16, 24, v32
+	.loc	1 190 58                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:58
+	v_cmp_gt_i32_e64 s[14:15], s9, v16
+	.loc	1 190 39 is_stmt 0              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[16:17], s[14:15], s[10:11]
+	.loc	1 191 21 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[10:11], s[16:17]
+	s_cbranch_execz .LBB0_32
+; %bb.31:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	v_bfe_u32 v16, v30, 16, 1
+	s_movk_i32 s9, 0x7fff
+	v_bfe_u32 v17, v31, 16, 1
+	v_add3_u32 v16, v30, v16, s9
+	v_cmp_o_f32_e32 vcc, v30, v30
+	v_mov_b32_e32 v20, 0x7fff
+	v_bfe_u32 v18, v28, 16, 1
+	v_bfe_u32 v19, v29, 16, 1
+	v_add3_u32 v17, v31, v17, s9
+	v_cndmask_b32_sdwa v16, v20, v16, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v31, v31
+	v_add3_u32 v19, v29, v19, s9
+	v_add3_u32 v18, v28, v18, s9
+	v_cndmask_b32_sdwa v17, v20, v17, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	s_mov_b32 s9, 0x5040100
+	v_cmp_o_f32_e32 vcc, v28, v28
+	v_perm_b32 v17, v17, v16, s9
+	s_nop 0
+	v_cndmask_b32_sdwa v16, v20, v18, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v29, v29
+	s_nop 1
+	v_cndmask_b32_sdwa v18, v20, v19, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_perm_b32 v16, v18, v16, s9
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	global_store_dwordx2 v[36:37], v[16:17], off offset:48
+.LBB0_32:
+	.loc	1 0 21                          ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	s_or_b64 exec, exec, s[10:11]
+	.loc	1 189 33 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:189:33
+	v_lshl_add_u32 v16, s13, 5, v34
+	.loc	1 155 38                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:155:38
+	v_or_b32_e32 v18, 32, v38
+	.loc	1 189 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:189:21
+	v_ashrrev_i32_e32 v17, 31, v16
+	v_lshl_add_u64 v[16:17], v[16:17], 1, s[6:7]
+	.loc	1 190 33                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:33
+	v_cmp_gt_i32_e64 s[6:7], s8, v18
+	.loc	1 189 52                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:189:52
+	v_lshl_add_u64 v[16:17], v[32:33], 1, v[16:17]
+	.loc	1 190 39                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[8:9], s[6:7], s[0:1]
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[0:1], s[8:9]
+	s_cbranch_execnz .LBB0_37
+; %bb.33:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	s_or_b64 exec, exec, s[0:1]
+	.loc	1 190 39 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[2:3], s[6:7], s[2:3]
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[0:1], s[2:3]
+	s_cbranch_execnz .LBB0_38
+.LBB0_34:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	s_or_b64 exec, exec, s[0:1]
+	.loc	1 190 39 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[2:3], s[6:7], s[4:5]
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[0:1], s[2:3]
+	s_cbranch_execnz .LBB0_39
+.LBB0_35:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	s_or_b64 exec, exec, s[0:1]
+	.loc	1 190 39 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[0:1], s[6:7], s[14:15]
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[2:3], s[0:1]
+	s_cbranch_execnz .LBB0_40
+.LBB0_36:
+	.loc	1 191 4 is_stmt 0               ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:4
+	s_endpgm
+.LBB0_37:
+	.loc	1 0 4                           ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:4
+	v_bfe_u32 v18, v2, 16, 1
+	s_movk_i32 s8, 0x7fff
+	v_bfe_u32 v19, v3, 16, 1
+	v_add3_u32 v18, v2, v18, s8
+	v_cmp_o_f32_e32 vcc, v2, v2
+	v_mov_b32_e32 v2, 0x7fff
+	v_bfe_u32 v20, v0, 16, 1
+	v_add3_u32 v19, v3, v19, s8
+	v_cndmask_b32_sdwa v18, v2, v18, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v3, v3
+	v_bfe_u32 v21, v1, 16, 1
+	v_add3_u32 v20, v0, v20, s8
+	v_cndmask_b32_sdwa v3, v2, v19, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v0, v0
+	v_add3_u32 v21, v1, v21, s8
+	s_mov_b32 s8, 0x5040100
+	v_cndmask_b32_sdwa v0, v2, v20, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v1, v1
+	v_perm_b32 v3, v3, v18, s8
+	s_nop 0
+	v_cndmask_b32_sdwa v1, v2, v21, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_perm_b32 v2, v1, v0, s8
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	global_store_dwordx2 v[16:17], v[2:3], off
+	s_or_b64 exec, exec, s[0:1]
+	.loc	1 190 39 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[2:3], s[6:7], s[2:3]
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[0:1], s[2:3]
+	s_cbranch_execz .LBB0_34
+.LBB0_38:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	v_bfe_u32 v0, v6, 16, 1
+	s_movk_i32 s2, 0x7fff
+	v_bfe_u32 v1, v7, 16, 1
+	v_add3_u32 v0, v6, v0, s2
+	v_cmp_o_f32_e32 vcc, v6, v6
+	v_mov_b32_e32 v6, 0x7fff
+	v_bfe_u32 v2, v4, 16, 1
+	v_bfe_u32 v3, v5, 16, 1
+	v_add3_u32 v1, v7, v1, s2
+	v_cndmask_b32_sdwa v0, v6, v0, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v7, v7
+	v_add3_u32 v3, v5, v3, s2
+	v_add3_u32 v2, v4, v2, s2
+	v_cndmask_b32_sdwa v1, v6, v1, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	s_mov_b32 s2, 0x5040100
+	v_cmp_o_f32_e32 vcc, v4, v4
+	v_perm_b32 v1, v1, v0, s2
+	s_nop 0
+	v_cndmask_b32_sdwa v0, v6, v2, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v5, v5
+	s_nop 1
+	v_cndmask_b32_sdwa v2, v6, v3, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_perm_b32 v0, v2, v0, s2
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	global_store_dwordx2 v[16:17], v[0:1], off offset:16
+	s_or_b64 exec, exec, s[0:1]
+	.loc	1 190 39 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[2:3], s[6:7], s[4:5]
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[0:1], s[2:3]
+	s_cbranch_execz .LBB0_35
+.LBB0_39:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	v_bfe_u32 v0, v10, 16, 1
+	s_movk_i32 s2, 0x7fff
+	v_bfe_u32 v1, v11, 16, 1
+	v_add3_u32 v0, v10, v0, s2
+	v_cmp_o_f32_e32 vcc, v10, v10
+	v_mov_b32_e32 v4, 0x7fff
+	v_bfe_u32 v2, v8, 16, 1
+	v_bfe_u32 v3, v9, 16, 1
+	v_add3_u32 v1, v11, v1, s2
+	v_cndmask_b32_sdwa v0, v4, v0, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v11, v11
+	v_add3_u32 v3, v9, v3, s2
+	v_add3_u32 v2, v8, v2, s2
+	v_cndmask_b32_sdwa v1, v4, v1, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	s_mov_b32 s2, 0x5040100
+	v_cmp_o_f32_e32 vcc, v8, v8
+	v_perm_b32 v1, v1, v0, s2
+	s_nop 0
+	v_cndmask_b32_sdwa v0, v4, v2, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v9, v9
+	s_nop 1
+	v_cndmask_b32_sdwa v2, v4, v3, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_perm_b32 v0, v2, v0, s2
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	global_store_dwordx2 v[16:17], v[0:1], off offset:32
+	s_or_b64 exec, exec, s[0:1]
+	.loc	1 190 39 is_stmt 1              ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:190:39
+	s_and_b64 s[0:1], s[6:7], s[14:15]
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	s_and_saveexec_b64 s[2:3], s[0:1]
+	s_cbranch_execz .LBB0_36
+.LBB0_40:
+	.loc	1 0 21 is_stmt 0                ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:0:21
+	v_bfe_u32 v0, v14, 16, 1
+	s_movk_i32 s0, 0x7fff
+	v_bfe_u32 v1, v15, 16, 1
+	v_add3_u32 v0, v14, v0, s0
+	v_cmp_o_f32_e32 vcc, v14, v14
+	v_mov_b32_e32 v4, 0x7fff
+	v_bfe_u32 v2, v12, 16, 1
+	v_bfe_u32 v3, v13, 16, 1
+	v_add3_u32 v1, v15, v1, s0
+	v_cndmask_b32_sdwa v0, v4, v0, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v15, v15
+	v_add3_u32 v3, v13, v3, s0
+	v_add3_u32 v2, v12, v2, s0
+	v_cndmask_b32_sdwa v1, v4, v1, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	s_mov_b32 s0, 0x5040100
+	v_cmp_o_f32_e32 vcc, v12, v12
+	v_perm_b32 v1, v1, v0, s0
+	s_nop 0
+	v_cndmask_b32_sdwa v0, v4, v2, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_cmp_o_f32_e32 vcc, v13, v13
+	s_nop 1
+	v_cndmask_b32_sdwa v2, v4, v3, vcc dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:DWORD src1_sel:WORD_1
+	v_perm_b32 v0, v2, v0, s0
+	.loc	1 191 21                        ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:21
+	global_store_dwordx2 v[16:17], v[0:1], off offset:48
+	.loc	1 191 4                         ; hipkittens_triton_gemm_v01_remap_xcd_matmul.py:191:4
+	s_endpgm
+.Ltmp13:
+	.section	.rodata,"a",@progbits
+	.p2align	6, 0x0
+	.amdhsa_kernel matmul_kernel
+		.amdhsa_group_segment_fixed_size 0
+		.amdhsa_private_segment_fixed_size 0
+		.amdhsa_kernarg_size 64
+		.amdhsa_user_sgpr_count 16
+		.amdhsa_user_sgpr_dispatch_ptr 0
+		.amdhsa_user_sgpr_queue_ptr 0
+		.amdhsa_user_sgpr_kernarg_segment_ptr 1
+		.amdhsa_user_sgpr_dispatch_id 0
+		.amdhsa_user_sgpr_kernarg_preload_length 14
+		.amdhsa_user_sgpr_kernarg_preload_offset 0
+		.amdhsa_user_sgpr_private_segment_size 0
+		.amdhsa_uses_dynamic_stack 0
+		.amdhsa_enable_private_segment 0
+		.amdhsa_system_sgpr_workgroup_id_x 1
+		.amdhsa_system_sgpr_workgroup_id_y 0
+		.amdhsa_system_sgpr_workgroup_id_z 0
+		.amdhsa_system_sgpr_workgroup_info 0
+		.amdhsa_system_vgpr_workitem_id 0
+		.amdhsa_next_free_vgpr 89
+		.amdhsa_next_free_sgpr 26
+		.amdhsa_accum_offset 92
+		.amdhsa_reserve_vcc 1
+		.amdhsa_reserve_xnack_mask 1
+		.amdhsa_float_round_mode_32 0
+		.amdhsa_float_round_mode_16_64 0
+		.amdhsa_float_denorm_mode_32 3
+		.amdhsa_float_denorm_mode_16_64 3
+		.amdhsa_dx10_clamp 1
+		.amdhsa_ieee_mode 1
+		.amdhsa_fp16_overflow 0
+		.amdhsa_tg_split 0
+		.amdhsa_exception_fp_ieee_invalid_op 0
+		.amdhsa_exception_fp_denorm_src 0
+		.amdhsa_exception_fp_ieee_div_zero 0
+		.amdhsa_exception_fp_ieee_overflow 0
+		.amdhsa_exception_fp_ieee_underflow 0
+		.amdhsa_exception_fp_ieee_inexact 0
+		.amdhsa_exception_int_div_zero 0
+	.end_amdhsa_kernel
+	.text
+.Lfunc_end0:
+	.size	matmul_kernel, .Lfunc_end0-matmul_kernel
+	.cfi_endproc
+                                        ; -- End function
+	.set matmul_kernel.num_vgpr, 89
+	.set matmul_kernel.num_agpr, 0
+	.set matmul_kernel.numbered_sgpr, 26
+	.set matmul_kernel.private_seg_size, 0
+	.set matmul_kernel.uses_vcc, 1
+	.set matmul_kernel.uses_flat_scratch, 0
+	.set matmul_kernel.has_dyn_sized_stack, 0
+	.set matmul_kernel.has_recursion, 0
+	.set matmul_kernel.has_indirect_call, 0
+	.section	.AMDGPU.csdata,"",@progbits
+; Kernel info:
+; codeLenInByte = 4308
+; TotalNumSgprs: 32
+; NumVgprs: 89
+; NumAgprs: 0
+; TotalNumVgprs: 89
+; ScratchSize: 0
+; MemoryBound: 0
+; FloatMode: 240
+; IeeeMode: 1
+; LDSByteSize: 0 bytes/workgroup (compile time only)
+; SGPRBlocks: 3
+; VGPRBlocks: 11
+; NumSGPRsForWavesPerEU: 32
+; NumVGPRsForWavesPerEU: 89
+; AccumOffset: 92
+; Occupancy: 5
+; WaveLimiterHint : 0
+; COMPUTE_PGM_RSRC2:SCRATCH_EN: 0
+; COMPUTE_PGM_RSRC2:USER_SGPR: 16
+; COMPUTE_PGM_RSRC2:TRAP_HANDLER: 0
+; COMPUTE_PGM_RSRC2:TGID_X_EN: 1
+; COMPUTE_PGM_RSRC2:TGID_Y_EN: 0
+; COMPUTE_PGM_RSRC2:TGID_Z_EN: 0
+; COMPUTE_PGM_RSRC2:TIDIG_COMP_CNT: 0
+; COMPUTE_PGM_RSRC3_GFX90A:ACCUM_OFFSET: 22
+; COMPUTE_PGM_RSRC3_GFX90A:TG_SPLIT: 0
+	.text
+	.p2alignl 6, 3212836864
+	.fill 256, 4, 3212836864
+	.section	.AMDGPU.gpr_maximums,"",@progbits
+	.set amdgpu.max_num_vgpr, 0
+	.set amdgpu.max_num_agpr, 0
+	.set amdgpu.max_num_sgpr, 0
+	.text
+	.section	.debug_abbrev,"",@progbits
+	.byte	1                               ; Abbreviation Code
+	.byte	17                              ; DW_TAG_compile_unit
+	.byte	1                               ; DW_CHILDREN_yes
+	.byte	37                              ; DW_AT_producer
+	.byte	14                              ; DW_FORM_strp
+	.byte	19                              ; DW_AT_language
+	.byte	5                               ; DW_FORM_data2
+	.byte	3                               ; DW_AT_name
+	.byte	14                              ; DW_FORM_strp
+	.byte	16                              ; DW_AT_stmt_list
+	.byte	23                              ; DW_FORM_sec_offset
+	.byte	27                              ; DW_AT_comp_dir
+	.byte	14                              ; DW_FORM_strp
+	.byte	17                              ; DW_AT_low_pc
+	.byte	1                               ; DW_FORM_addr
+	.byte	18                              ; DW_AT_high_pc
+	.byte	6                               ; DW_FORM_data4
+	.byte	0                               ; EOM(1)
+	.byte	0                               ; EOM(2)
+	.byte	2                               ; Abbreviation Code
+	.byte	46                              ; DW_TAG_subprogram
+	.byte	0                               ; DW_CHILDREN_no
+	.byte	3                               ; DW_AT_name
+	.byte	14                              ; DW_FORM_strp
+	.byte	32                              ; DW_AT_inline
+	.byte	11                              ; DW_FORM_data1
+	.byte	0                               ; EOM(1)
+	.byte	0                               ; EOM(2)
+	.byte	3                               ; Abbreviation Code
+	.byte	46                              ; DW_TAG_subprogram
+	.byte	1                               ; DW_CHILDREN_yes
+	.byte	17                              ; DW_AT_low_pc
+	.byte	1                               ; DW_FORM_addr
+	.byte	18                              ; DW_AT_high_pc
+	.byte	6                               ; DW_FORM_data4
+	.byte	49                              ; DW_AT_abstract_origin
+	.byte	19                              ; DW_FORM_ref4
+	.byte	0                               ; EOM(1)
+	.byte	0                               ; EOM(2)
+	.byte	4                               ; Abbreviation Code
+	.byte	29                              ; DW_TAG_inlined_subroutine
+	.byte	0                               ; DW_CHILDREN_no
+	.byte	49                              ; DW_AT_abstract_origin
+	.byte	19                              ; DW_FORM_ref4
+	.byte	17                              ; DW_AT_low_pc
+	.byte	1                               ; DW_FORM_addr
+	.byte	18                              ; DW_AT_high_pc
+	.byte	6                               ; DW_FORM_data4
+	.byte	88                              ; DW_AT_call_file
+	.byte	11                              ; DW_FORM_data1
+	.byte	89                              ; DW_AT_call_line
+	.byte	11                              ; DW_FORM_data1
+	.byte	87                              ; DW_AT_call_column
+	.byte	11                              ; DW_FORM_data1
+	.byte	0                               ; EOM(1)
+	.byte	0                               ; EOM(2)
+	.byte	5                               ; Abbreviation Code
+	.byte	29                              ; DW_TAG_inlined_subroutine
+	.byte	0                               ; DW_CHILDREN_no
+	.byte	49                              ; DW_AT_abstract_origin
+	.byte	19                              ; DW_FORM_ref4
+	.byte	85                              ; DW_AT_ranges
+	.byte	23                              ; DW_FORM_sec_offset
+	.byte	88                              ; DW_AT_call_file
+	.byte	11                              ; DW_FORM_data1
+	.byte	89                              ; DW_AT_call_line
+	.byte	11                              ; DW_FORM_data1
+	.byte	87                              ; DW_AT_call_column
+	.byte	11                              ; DW_FORM_data1
+	.byte	0                               ; EOM(1)
+	.byte	0                               ; EOM(2)
+	.byte	0                               ; EOM(3)
+	.section	.debug_info,"",@progbits
+.Lcu_begin0:
+	.long	.Ldebug_info_end0-.Ldebug_info_start0 ; Length of Unit
+.Ldebug_info_start0:
+	.short	4                               ; DWARF version number
+	.long	.debug_abbrev                   ; Offset Into Abbrev. Section
+	.byte	8                               ; Address Size (in bytes)
+	.byte	1                               ; Abbrev [1] 0xb:0x64 DW_TAG_compile_unit
+	.long	.Linfo_string0                  ; DW_AT_producer
+	.short	2                               ; DW_AT_language
+	.long	.Linfo_string1                  ; DW_AT_name
+	.long	.Lline_table_start0             ; DW_AT_stmt_list
+	.long	.Linfo_string2                  ; DW_AT_comp_dir
+	.quad	.Lfunc_begin0                   ; DW_AT_low_pc
+	.long	.Lfunc_end0-.Lfunc_begin0       ; DW_AT_high_pc
+	.byte	2                               ; Abbrev [2] 0x2a:0x6 DW_TAG_subprogram
+	.long	.Linfo_string3                  ; DW_AT_name
+	.byte	1                               ; DW_AT_inline
+	.byte	3                               ; Abbrev [3] 0x30:0x3e DW_TAG_subprogram
+	.quad	.Lfunc_begin0                   ; DW_AT_low_pc
+	.long	.Lfunc_end0-.Lfunc_begin0       ; DW_AT_high_pc
+	.long	42                              ; DW_AT_abstract_origin
+	.byte	4                               ; Abbrev [4] 0x41:0x14 DW_TAG_inlined_subroutine
+	.long	42                              ; DW_AT_abstract_origin
+	.quad	.Ltmp1                          ; DW_AT_low_pc
+	.long	.Ltmp2-.Ltmp1                   ; DW_AT_high_pc
+	.byte	1                               ; DW_AT_call_file
+	.byte	144                             ; DW_AT_call_line
+	.byte	27                              ; DW_AT_call_column
+	.byte	5                               ; Abbrev [5] 0x55:0xc DW_TAG_inlined_subroutine
+	.long	42                              ; DW_AT_abstract_origin
+	.long	.Ldebug_ranges0                 ; DW_AT_ranges
+	.byte	1                               ; DW_AT_call_file
+	.byte	143                             ; DW_AT_call_line
+	.byte	27                              ; DW_AT_call_column
+	.byte	5                               ; Abbrev [5] 0x61:0xc DW_TAG_inlined_subroutine
+	.long	42                              ; DW_AT_abstract_origin
+	.long	.Ldebug_ranges1                 ; DW_AT_ranges
+	.byte	1                               ; DW_AT_call_file
+	.byte	159                             ; DW_AT_call_line
+	.byte	29                              ; DW_AT_call_column
+	.byte	0                               ; End Of Children Mark
+	.byte	0                               ; End Of Children Mark
+.Ldebug_info_end0:
+	.section	.debug_ranges,"",@progbits
+.Ldebug_ranges0:
+	.quad	.Ltmp3-.Lfunc_begin0
+	.quad	.Ltmp4-.Lfunc_begin0
+	.quad	.Ltmp5-.Lfunc_begin0
+	.quad	.Ltmp6-.Lfunc_begin0
+	.quad	.Ltmp7-.Lfunc_begin0
+	.quad	.Ltmp8-.Lfunc_begin0
+	.quad	0
+	.quad	0
+.Ldebug_ranges1:
+	.quad	.Ltmp9-.Lfunc_begin0
+	.quad	.Ltmp10-.Lfunc_begin0
+	.quad	.Ltmp11-.Lfunc_begin0
+	.quad	.Ltmp12-.Lfunc_begin0
+	.quad	0
+	.quad	0
+	.section	.debug_str,"MS",@progbits,1
+.Linfo_string0:
+	.asciz	"triton"                        ; string offset=0
+.Linfo_string1:
+	.asciz	"hipkittens_triton_gemm_v01_remap_xcd_matmul.py" ; string offset=7
+.Linfo_string2:
+	.asciz	"/workspace/kernel_benchmark/opt_kernel/gemm-openai/10_hipketten/source" ; string offset=54
+.Linfo_string3:
+	.asciz	"matmul_kernel"                 ; string offset=125
+	.section	".note.GNU-stack","",@progbits
+	.amdgpu_metadata
+---
+amdhsa.kernels:
+  - .agpr_count:     0
+    .args:
+      - .address_space:  global
+        .offset:         0
+        .size:           8
+        .value_kind:     global_buffer
+      - .address_space:  global
+        .offset:         8
+        .size:           8
+        .value_kind:     global_buffer
+      - .address_space:  global
+        .offset:         16
+        .size:           8
+        .value_kind:     global_buffer
+      - .offset:         24
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         28
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         32
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         36
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         40
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         44
+        .size:           4
+        .value_kind:     by_value
+      - .address_space:  global
+        .offset:         48
+        .size:           8
+        .value_kind:     global_buffer
+      - .address_space:  global
+        .offset:         56
+        .size:           8
+        .value_kind:     global_buffer
+    .group_segment_fixed_size: 0
+    .kernarg_segment_align: 8
+    .kernarg_segment_size: 64
+    .max_flat_workgroup_size: 256
+    .name:           matmul_kernel
+    .private_segment_fixed_size: 0
+    .sgpr_count:     32
+    .sgpr_spill_count: 0
+    .symbol:         matmul_kernel.kd
+    .uses_dynamic_stack: false
+    .vgpr_count:     89
+    .vgpr_spill_count: 0
+    .wavefront_size: 64
+amdhsa.target:   amdgcn-amd-amdhsa--gfx942
+amdhsa.version:
+  - 1
+  - 2
+...
+
+	.end_amdgpu_metadata
+	.section	.debug_line,"",@progbits
+.Lline_table_start0:

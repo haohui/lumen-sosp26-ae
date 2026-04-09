@@ -1,0 +1,19 @@
+{
+  "round_num": 1,
+  "saved_at_utc": "2026-04-01T01:45:32Z",
+  "status": "COMPILE_ERROR",
+  "score": -1.0,
+  "prompt_chars": 26844,
+  "raw_response_chars": 13736,
+  "trace_logs_chars": 6700,
+  "world_model_chars": 15614,
+  "extra": {
+    "wm_enabled": true,
+    "action_node_id": "alt_A_token_major",
+    "attempt_idx_in_cycle": 1,
+    "cycle_start_round": 1,
+    "parent_is_root": true,
+    "all_passed": false,
+    "score": -1.0
+  }
+}

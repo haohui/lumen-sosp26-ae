@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Compute SOL is 54.5% and memory SOL is 36.5%, both below 60%, with roofline explicitly marking underutilized and not at roofline. Despite full warp activity (100%), achieved throughput remains moderate, implying instruction mix/pipeline efficiency and memory access behavior are leaving significant headroom.",
+    "root_causes": [
+      {
+        "cause": "Instruction mix is VALU/Scalar-heavy without MFMA/tensor utilization, capping compute efficiency.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "No tensor/MFMA pipeline usage; kernel relies on non-tensor pipelines and reaches only moderate compute utilization."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Specialize matmul paths for fp16/bf16 to force MFMA/tensor-core lowering (use Triton configurations/intrinsics that map tl.dot to MFMA on gfx942).",
+            "rationale": "Using matrix engines increases per-cycle math throughput and typically raises compute SOL toward roofline."
+          }
+        ]
+      },
+      {
+        "cause": "Memory subsystem is only moderately utilized, suggesting suboptimal data movement/reuse rather than pure bandwidth saturation.",
+        "evidence": [
+          {
+            "metric": "dram__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 36.53379533398028,
+            "interpretation": "HBM bandwidth is far from peak, so performance is likely limited by access efficiency/latency and tiling choices, not raw bandwidth ceiling."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Retune tile shapes and pipeline depth for MI300X (prefer larger BLOCK_K/num_stages where occupancy permits, and favor tiles that improve contiguous/coalesced loads and LDS reuse).",
+            "rationale": "Better blocking and staging can improve cache/LDS reuse and hide latency, increasing both memory and compute utilization simultaneously."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Specialize matmul paths for fp16/bf16 to force MFMA/tensor-core lowering (use Triton configurations/intrinsics that map tl.dot to MFMA on gfx942).",
+        "rationale": "Using matrix engines increases per-cycle math throughput and typically raises compute SOL toward roofline."
+      },
+      {
+        "fix": "Retune tile shapes and pipeline depth for MI300X (prefer larger BLOCK_K/num_stages where occupancy permits, and favor tiles that improve contiguous/coalesced loads and LDS reuse).",
+        "rationale": "Better blocking and staging can improve cache/LDS reuse and hide latency, increasing both memory and compute utilization simultaneously."
+      }
+    ]
+  }
+]

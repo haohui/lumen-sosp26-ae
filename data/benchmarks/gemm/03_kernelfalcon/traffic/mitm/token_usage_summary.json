@@ -1,0 +1,31 @@
+{
+  "jsonl_path": "/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/kernelfalcon_optmgr_gemm_api53high_20260312_071659_retry1/03_kernelfalcon_gemm2_optmanager/mitm/traffic.jsonl",
+  "events_total": 39,
+  "responses_total": 38,
+  "responses_with_usage": 38,
+  "usage_totals": {
+    "input_tokens": 162439.0,
+    "input_tokens_details.cached_tokens": 40192.0,
+    "output_tokens": 140821.0,
+    "output_tokens_details.reasoning_tokens": 94460.0,
+    "total_tokens": 303260.0
+  },
+  "usage_by_model": {
+    "gpt-5.3-codex": {
+      "input_tokens": 162439.0,
+      "input_tokens_details.cached_tokens": 40192.0,
+      "output_tokens": 140821.0,
+      "output_tokens_details.reasoning_tokens": 94460.0,
+      "total_tokens": 303260.0
+    }
+  },
+  "usage_by_host": {
+    "api.openai.com": {
+      "input_tokens": 162439.0,
+      "input_tokens_details.cached_tokens": 40192.0,
+      "output_tokens": 140821.0,
+      "output_tokens_details.reasoning_tokens": 94460.0,
+      "total_tokens": 303260.0
+    }
+  }
+}

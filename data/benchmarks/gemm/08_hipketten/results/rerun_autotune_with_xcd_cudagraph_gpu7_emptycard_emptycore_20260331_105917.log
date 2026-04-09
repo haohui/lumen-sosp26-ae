@@ -1,0 +1,10 @@
+[config] HIP_VISIBLE_DEVICES=7
+[config] CPU_AFFINITY=1,2,3,5,6,7,8,9,10,11,12,13,14,15,16,17
+[done] M=N=K=1024
+[done] M=N=K=2048
+[done] M=N=K=4096
+[done] M=N=K=8192
+[done] M=N=K=16384
+/workspace/kernel_benchmark/opt_kernel/gemm-openai/10_hipketten/logs/gemm_baselines/2026-03-31/gemm_hipkittens_triton_v01_remap_xcd_autotune_with_xcd_cudagraph_gpu7_emptycard_emptycore_warm200ms_repeat1s.csv
+/workspace/kernel_benchmark/opt_kernel/gemm-openai/10_hipketten/logs/gemm_baselines/2026-03-31/gemm_hipkittens_triton_v01_remap_xcd_autotune_with_xcd_cudagraph_gpu7_emptycard_emptycore_warm200ms_repeat1s.md
+{"rows": 5}

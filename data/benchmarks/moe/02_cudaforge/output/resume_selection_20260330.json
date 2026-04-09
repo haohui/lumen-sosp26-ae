@@ -1,0 +1,9 @@
+{
+  "mode": "reuse_existing_completed_artifact",
+  "baseline": "02_cudaforge",
+  "group": "fused_nonquant",
+  "best_kernel": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/02_cudaforge/output/fused/best_kernel.py",
+  "prompt": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/02_cudaforge/output/fused/prompt.txt",
+  "traffic": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/02_cudaforge/traffic/fused/traffic.jsonl",
+  "note": "No re-run in this step; preserve previous completed artifact and trace."
+}

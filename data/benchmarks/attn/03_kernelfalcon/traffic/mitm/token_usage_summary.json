@@ -1,0 +1,31 @@
+{
+  "jsonl_path": "/workspace/kernel_benchmark/opt_kernel/attention-redo/http_traffic/attn2_optworker_beam_r10_mitm_20260323_032654/01_optworker_beam_r10/mitm/traffic.jsonl",
+  "events_total": 43,
+  "responses_total": 42,
+  "responses_with_usage": 42,
+  "usage_totals": {
+    "input_tokens": 174967.0,
+    "input_tokens_details.cached_tokens": 71936.0,
+    "output_tokens": 41256.0,
+    "output_tokens_details.reasoning_tokens": 0.0,
+    "total_tokens": 216223.0
+  },
+  "usage_by_model": {
+    "gpt-5.3-codex": {
+      "input_tokens": 174967.0,
+      "input_tokens_details.cached_tokens": 71936.0,
+      "output_tokens": 41256.0,
+      "output_tokens_details.reasoning_tokens": 0.0,
+      "total_tokens": 216223.0
+    }
+  },
+  "usage_by_host": {
+    "api.openai.com": {
+      "input_tokens": 174967.0,
+      "input_tokens_details.cached_tokens": 71936.0,
+      "output_tokens": 41256.0,
+      "output_tokens_details.reasoning_tokens": 0.0,
+      "total_tokens": 216223.0
+    }
+  }
+}

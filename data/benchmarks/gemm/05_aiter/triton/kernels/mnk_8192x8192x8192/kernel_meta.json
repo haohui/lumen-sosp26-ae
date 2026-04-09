@@ -1,0 +1,12 @@
+{
+  "cache_dir": "K6PFG5QT7SPDUITYEHFL3ACTYDUVPQIPQGKBD7CILHJOQXM5XKSA",
+  "kernel_json": "_gemm_a16_w16_kernel.json",
+  "name": "_gemm_a16_w16_kernel_BLOCK_SIZE_M_256_BLOCK_SIZE_N_256_BLOCK_SIZE_K_64_GROUP_SIZE_M_4_NUM_KSPLIT_1_SPLITK_BLOCK_SIZE_8192_EVEN_K_1_GRID_MN_1024_cache_modifier_NONE_activation_NONE_use_activation_0_ADD_BIAS_0_SKIP_REDUCE_0",
+  "hash": "579e537613fc9e3a227821cabd8053c0e957c10f819411fc4859d2e85d9dbaa4",
+  "num_warps": 8,
+  "num_stages": 2,
+  "shared": 65536,
+  "waves_per_eu": 2,
+  "triton_version": "3.5.1+rocm7.1.1.gita272dfa8",
+  "tt_func": "tt.func public @_gemm_a16_w16_kernel_BLOCK_SIZE_M_256_BLOCK_SIZE_N_256_BLOCK_SIZE_K_64_GROUP_SIZE_M_4_NUM_KSPLIT_1_SPLITK_BLOCK_SIZE_8192_EVEN_K_1_GRID_MN_1024_cache_modifier_NONE_activation_NONE_use_activation_0_ADD_BIAS_0_SKIP_REDUCE_0(%a_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"a_ptr\"(#loc)), %b_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"b_ptr\"(#loc)), %c_ptr: !tt.ptr<bf16> {tt.divisibility = 16 : i32} loc(\"c_ptr\"(#loc)), %M: i32 {tt.divisibility = 16 : i32} loc(\"M\"(#loc"
+}

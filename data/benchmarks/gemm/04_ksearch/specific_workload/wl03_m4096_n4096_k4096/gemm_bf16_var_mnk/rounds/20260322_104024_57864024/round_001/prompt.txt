@@ -1,0 +1,229 @@
+You are implementing a SPECIFIC NEXT ACTION starting from the specification.
+
+You are implementing a SPECIFIC NEXT ACTION on top of a known-good HIP C++ baseline for MI300X.
+
+Original Specification:
+Name: gemm_bf16_var_mnk
+Type: gemm
+
+Axes:
+  M: variable (rows of A and output)
+  N: variable (rows of B (before transpose) and cols of output)
+  K: variable (reduction dimension)
+
+Inputs:
+  A: [M, K] (DType.BFLOAT16) - lhs matrix
+  B: [N, K] (DType.BFLOAT16) - rhs matrix, transposed in matmul
+
+Outputs:
+  C: [M, N] (DType.BFLOAT16) - gemm output
+
+
+Reference Implementation:
+import torch
+
+def run(A, B):
+    C = torch.matmul(A, B.T)
+    return C
+
+Known-Good Base Implementation (start from this; do not include any other previous code):
+(no base code; start from spec)
+
+Chosen Next Action (apply this action):
+World Model: Chosen Next Action (from decision tree node)
+- node_id: n1_balanced_general
+- base_node_id: root
+- title: Prototype balanced general-purpose GEMM family (no split-K)
+- difficulty_1_to_5: 3
+- description: Implement a single-kernel general path that assigns 2D C tiles to blocks/waves, stages A/B K-slices, accumulates in FP32, and stores BF16.
+- expected_vs_baseline_factor: 1.60x
+- rationale: Most likely best first kernel for broad M/N/K coverage with strong data reuse and no extra reduction pass.
+
+Rules:
+- Implement ONLY the chosen action; keep everything else as close as possible to the base implementation.
+- Keep changes small and single-iteration implementable.
+- Preserve correctness and the same PyTorch binding / entry points.
+- Return only the full updated XML blocks (no explanations, no markdown).
+
+IMPORTANT: Generate code in XML format with exactly 3 files with these strict names:
+
+<header_file name="kernel.h">
+- All HIP kernel function declarations
+- Host function declarations
+- Any necessary struct/type definitions
+- Include guards and necessary headers
+</header_file>
+
+<cuda_file name="kernel.cu">
+- All __global__ kernel implementations
+- All __device__ helper functions
+- HIP-specific optimizations and memory patterns
+- Proper error checking and memory management
+</cuda_file>
+
+<cpp_file name="main.cpp">
+- Host function that launches kernels
+- Memory allocation and data transfer management
+- Device management and error handling
+- Entry point function named "run" that can be called to execute the implementation
+- Handle both args and kwargs properly
+- Move CPU data to GPU, execute kernels, and return results to CPU
+- MUST include PyTorch C++ extension bindings using PYBIND11_MODULE
+- The "run" function must be exposed to Python through the binding
+- Include proper tensor type conversion between PyTorch tensors and device pointers
+- Include all necessary PyTorch headers: #include <torch/extension.h>
+</cpp_file>
+
+Code Generation Guidelines:
+- Use modern HIP features appropriate for MI300X
+- Optimize memory coalescing and reduce bank conflicts
+- Utilize shared memory effectively for data reuse
+- Consider occupancy and register usage
+- Implement proper error checking with hipGetLastError()
+- Use appropriate grid and block dimensions for the problem size
+- Leverage constant memory for frequently accessed read-only data
+- Use PyTorch tensor API (torch::Tensor) for all tensor arguments in the "run" function
+- Convert PyTorch tensors to HIP pointers using .data_ptr<float>() or similar methods
+- Ensure proper HIP stream synchronization and error handling
+
+** You MUST use MFMA to utilize the matrix cores on MI300X! ** For each round, you can see your current best solution and the previous round's summary, therefore you can implement the kernel step by step. ROCm/HIP compatibility note (when targeting AMD/MI300X): do not include <ATen/BFloat16.h> (prefer <c10/util/BFloat16.h> or only <torch/extension.h>), avoid HIP/ROCm-only headers/APIs such as <ATen/cuda/...>, <c10/cuda/...>, cudaStream_t/cudaError_t/cudaGetLastError, and output plain source code only (no CDATA, no HTML/XML escaping like &lt; or &gt; inside code).
+
+Generate the updated implementation:
+
+World Model (persistent across rounds; use it to guide kernel design):
+{
+  "computed_signals": {
+    "round_index": 0,
+    "trace": {
+      "latency_ms": null,
+      "mean_vs_baseline_factor": null,
+      "reference_latency_ms": null,
+      "speedup_factor": null,
+      "status": "unmeasured_initial_model"
+    }
+  },
+  "decision_tree": {
+    "active_leaf_id": "n1_balanced_general",
+    "nodes": [
+      {
+        "action": {
+          "difficulty_1_to_5": 1,
+          "expected_vs_baseline_factor": 1.0,
+          "score_0_to_1": 0.58,
+          "title": "Initialize GEMM BF16 search tree"
+        },
+        "choice": null,
+        "confidence_0_to_1": 0.45,
+        "decision": null,
+        "node_id": "root",
+        "node_type": "root",
+        "overall_rating_0_to_10": 5.8,
+        "parent_id": null,
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "initialized"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.6,
+          "score_0_to_1": 0.74,
+          "title": "Prototype balanced general-purpose GEMM family (no split-K)"
+        },
+        "choice": "balanced_2d_tiles",
+        "confidence_0_to_1": 0.62,
+        "decision": "kernel_family",
+        "node_id": "n1_balanced_general",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 7.4,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.35,
+          "score_0_to_1": 0.69,
+          "title": "Prototype skinny-dimension specialized family"
+        },
+        "choice": "skinny_shape_specialized",
+        "confidence_0_to_1": 0.55,
+        "decision": "kernel_family",
+        "node_id": "n3_skinny_specialized",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 6.9,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 4,
+          "expected_vs_baseline_factor": 1.25,
+          "score_0_to_1": 0.66,
+          "title": "Prototype deep-K reduction family (split-K with finalize)"
+        },
+        "choice": "k_partitioned_reduction",
+        "confidence_0_to_1": 0.48,
+        "decision": "kernel_family",
+        "node_id": "n2_splitk_deepk",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 6.6,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      }
+    ],
+    "root_id": "root"
+  },
+  "kernel_summary": "gemm_bf16_var_mnk is a dense GEMM with transposed-right operand semantics (C[m,n]=sum_k A[m,k]*B[n,k]) over fully runtime-variable M/N/K, so it is a reduction-heavy, high-reuse kernel whose bottleneck shifts by shape regime: large balanced problems should be compute-limited on MI300X if BF16 matrix-core-friendly tiling is used, while tiny-K or skinny-M/N cases are likely bandwidth/launch/underutilization limited; key constraints are BF16 input/output with likely FP32 accumulation needs, handling non-multiple edge tiles efficiently, and integrating via HIP wrapper launches from main.cpp with actual kernel launches only in kernel.cu.",
+  "open_questions": [
+    "What is the real production shape distribution of (M,N,K), especially frequency of skinny or tiny-K cases?",
+    "Are A and B guaranteed contiguous row-major with known alignment (e.g., 16/32-byte), or can arbitrary leading strides appear?",
+    "What numerical contract is required versus PyTorch matmul: FP32 accumulation and exact rounding behavior before BF16 store?",
+    "Is extra workspace memory acceptable for split-K partial reductions, and what is the allowed memory overhead?",
+    "Do we optimize for single-call latency, steady-state throughput, or both under multi-stream concurrency?",
+    "Are K values commonly multiples of matrix-core-friendly quanta, or must we expect many remainder-heavy K tails?"
+  ]
+}
+
+[KSEARCH HIP HARD CONSTRAINTS]
+- main.cpp MUST NOT contain kernel launch syntax `<<< >>>`.
+- main.cpp MUST NOT call `hipLaunchKernelGGL`.
+- main.cpp must call host launch wrappers declared in kernel.h with this pattern:
+  `hipError_t ksearch_launch_<kernel>(dim3 grid, dim3 block, size_t shared_mem, hipStream_t stream, ...);`
+- kernel.cu must implement those wrappers and perform actual `<<< >>>` launches there.
+- Do NOT include private HIP headers under `hip/amd_detail/*`.
+- Use only public HIP headers like `<hip/hip_runtime.h>`, `<hip/hip_bfloat16.h>`, `<hip/hip_fp8.h>` when needed.

@@ -1,0 +1,4 @@
+Recovered per-round trace IO snapshots from 04_ksearch/output runs:
+- fused:   output/fused/openai_moe_ksearch04_r20_fused_20260327_220149
+- nofused: output/nofused/openai_moe_ksearch04_r20_nofused_20260327_220149
+Recovery time: 2026-03-30 UTC

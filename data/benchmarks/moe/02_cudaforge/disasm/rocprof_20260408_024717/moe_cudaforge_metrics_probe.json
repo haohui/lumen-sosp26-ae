@@ -1,0 +1,87 @@
+{
+  "config": {
+    "device": "cuda:0",
+    "hip_visible_devices": "7",
+    "cpu_affinity": [
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127
+    ],
+    "seq_lens": [
+      1024
+    ],
+    "dim": 7168,
+    "inter_dim": 2048,
+    "experts": 32,
+    "topk": 4,
+    "input_dtype": "fp8",
+    "seed": 20260319,
+    "warmup": 1,
+    "warmup_ms": 0.0,
+    "graph_iters": 1,
+    "repeat": 0,
+    "repeat_ms": 1.0,
+    "timer_trials": 1,
+    "min_replays": 1,
+    "max_replays": 1,
+    "pre_capture_iters": 3,
+    "disable_cudagraph": false,
+    "suspicious_ratio": 0.25,
+    "allow_suspicious_graph": false,
+    "baseline_kernels": [
+      "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/02_cudaforge/output/fused/best_kernel.py"
+    ],
+    "check_correctness": false,
+    "reference_kernel": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/01_kernelbench_moe_openai/best_kernel.py",
+    "correctness_atol": 0.5,
+    "correctness_rtol": 0.05
+  },
+  "environment": {
+    "hostname": "nimrodmi300",
+    "torch_version": "2.9.0+rocm6.4",
+    "torch_cuda_version": null,
+    "torch_hip_version": "6.4.43484-123eb5128",
+    "device_index": 0,
+    "device_name": "AMD Instinct MI300X",
+    "total_memory_gb": 191.984375,
+    "multi_processor_count": 304
+  },
+  "rows": [
+    {
+      "baseline": "baseline_1",
+      "kernel_path": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe-openai/02_cudaforge/output/fused/best_kernel.py",
+      "seq_len": 1024,
+      "dim": 7168,
+      "inter_dim": 2048,
+      "experts": 32,
+      "topk": 4,
+      "status": "ok",
+      "timing_mode": "cudagraph",
+      "median_ms": 1200.2237548828125,
+      "mean_ms": 1200.2237548828125,
+      "stdev_ms": 0.0,
+      "min_ms": 1200.2237548828125,
+      "max_ms": 1200.2237548828125,
+      "p10_ms": 1200.2237548828125,
+      "p90_ms": 1200.2237548828125,
+      "cv": 0.0,
+      "tflops_median": 0.30059166167663925,
+      "eager_probe_ms": 1212.6361328125,
+      "suspicious": false,
+      "suspicious_reason": null,
+      "num_replays": 2,
+      "graph_iters": 1,
+      "warmup_calls": 1,
+      "total_calls_per_sample": 2,
+      "trial_count": 1,
+      "samples_ms": [
+        1200.2237548828125
+      ]
+    }
+  ]
+}

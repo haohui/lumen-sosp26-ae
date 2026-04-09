@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Roofline and NCU agree this is not bandwidth- or compute-roof limited: sm throughput is 54.46% of peak while dram throughput is 35.58% of peak, both <60%. Tensor path is unused (0%), and despite full reported warp activity, achieved SOL indicates substantial headroom (45.5%), pointing to efficiency/tiling/pipeline limits rather than a hard hardware roof.",
+    "root_causes": [
+      {
+        "cause": "Non-tensor-core matmul path limits arithmetic throughput on MI300X.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "No matrix/tensor instructions are active, so MFMA/tensor hardware is not being exploited."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Use Triton configs and dtypes that lower to AMD MFMA/tensor instructions (e.g., FP16/BF16-focused matmul kernel path, verify generated ISA includes MFMA) and retune BLOCK_* accordingly.",
+            "rationale": "Enabling matrix engines typically raises compute utilization significantly for GEMM, moving the kernel closer to compute roof."
+          }
+        ]
+      },
+      {
+        "cause": "Kernel execution configuration likely leaves pipeline efficiency on the table despite high occupancy indicators.",
+        "evidence": [
+          {
+            "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 54.46127946127947,
+            "interpretation": "Only ~54% achieved compute throughput with 100% warp-active suggests instruction mix/scheduling/tiling inefficiency rather than lack of resident waves."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Expand autotuning to include deeper pipelining and tile-shape variants (e.g., num_stages 3-5, broader BLOCK_K/BLOCK_M/N and waves_per_eu sweeps) and prefer problem-shape-specific best configs.",
+            "rationale": "Better software pipelining and tile matching can reduce stalls and improve overlap/reuse, increasing both compute SOL and memory utilization."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Use Triton configs and dtypes that lower to AMD MFMA/tensor instructions (e.g., FP16/BF16-focused matmul kernel path, verify generated ISA includes MFMA) and retune BLOCK_* accordingly.",
+        "rationale": "Enabling matrix engines typically raises compute utilization significantly for GEMM, moving the kernel closer to compute roof."
+      },
+      {
+        "fix": "Expand autotuning to include deeper pipelining and tile-shape variants (e.g., num_stages 3-5, broader BLOCK_K/BLOCK_M/N and waves_per_eu sweeps) and prefer problem-shape-specific best configs.",
+        "rationale": "Better software pipelining and tile matching can reduce stalls and improve overlap/reuse, increasing both compute SOL and memory utilization."
+      }
+    ]
+  }
+]

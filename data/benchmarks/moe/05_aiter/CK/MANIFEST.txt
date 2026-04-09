@@ -1,0 +1,9 @@
+CK backend artifacts for AITER DeepSeek blockscale MoE
+Sources copied from:
+- /data01/home/daifeng/aiter/csrc/pybind/moe_ck_2stages_pybind.cu
+- /data01/home/daifeng/aiter/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.cu
+- Generated blobs under /data01/home/daifeng/aiter/aiter/jit/build/module_moe_ck2stages_*/blob
+Binaries:
+- module_moe_ck2stages_f8_f8_preshuffle_on_b16_silu_per_1x128_mulWeightStage2.so
+- module_moe_ck2stages_f8_f8_preshuffle_off_b16_silu_per_1x128_mulWeightStage2.so
+- module_moe_ck2stages_f8_f8_preshuffle_off_b16_silu_per_1x128_mulWeightStage1.so

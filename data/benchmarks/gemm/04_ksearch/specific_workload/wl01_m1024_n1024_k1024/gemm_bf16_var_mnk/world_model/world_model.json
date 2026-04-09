@@ -1,0 +1,308 @@
+{
+  "computed_signals": {
+    "round_index": 9,
+    "trace": {
+      "latency_ms": 0.01327891992032528,
+      "mean_vs_baseline_factor": null,
+      "reference_latency_ms": 0.013188022538963565,
+      "speedup_factor": 0.9931547609363482,
+      "status": "passed"
+    }
+  },
+  "decision_tree": {
+    "active_leaf_id": "refine_throughput_large_true_mfma",
+    "nodes": [
+      {
+        "action": {
+          "description": "Root analysis node; no direct code change.",
+          "difficulty_1_to_5": 1,
+          "expected_vs_baseline_factor": 1.0,
+          "rationale": "Establishes constraints and branch options before implementation.",
+          "score_0_to_1": 0.2,
+          "title": ""
+        },
+        "choice": null,
+        "confidence_0_to_1": 0.57,
+        "decision": null,
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "MI300X/CDNA3 favors GEMM tiles aligned to matrix-core-friendly shapes and wave64 execution; boundary-heavy tails hurt utilization.",
+            "notes": "GEMM has high theoretical arithmetic intensity; practical fit depends on tile mapping and occupancy.",
+            "rating_0_to_10": 8.0,
+            "risk": "Variable M/N/K can produce many edge tiles and poor CU utilization."
+          },
+          "memory_bandwidth": {
+            "notes": "A and B are both contiguous along K for this formulation, enabling coalesced streaming and reuse via tiling.",
+            "rating_0_to_10": 7.0,
+            "risk": "Without good blocking, kernel can become bandwidth-bound, especially for small K."
+          },
+          "register_pressure": {
+            "notes": "Accumulator fragments for C tiles can be large; balance required to avoid spills.",
+            "rating_0_to_10": 6.0,
+            "risk": "Over-aggressive tile sizes may reduce occupancy due to VGPR pressure."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "root",
+        "node_type": "root",
+        "notes": "- 1) Problem classification: Dense matrix-multiply-like kernel, C[M,N] = A[M,K] x B[N,K]^T with reduction over K; outputs independent across (m,n); all dims runtime-variable.\n- 2) Canonical math: C[m,n] = sum_{k=0..K-1} A[m,k]*B[n,k], then cast/store to bf16; reduction permits K-tiling/reordering; accumulation likely best in fp32 for numerical stability.\n- 3) Data layout/access: A row-major [M,K], B row-major [N,K] but logically transposed in matmul; both operands contiguous in K enabling efficient contiguous loads; C [M,N] write-once.\n- 4) Bottleneck regimes: (R1) large M,N,K -> compute/throughput limited if tiled well; (R2) small M or N with large K -> occupancy/launch + reduction parallelism issues; (R3) small K or tiny matrices -> memory/latency dominated and edge overhead significant.\n- 5) Knobs: tile sizes (M/N/K), wave-to-tile mapping, split-K on/off, staging depth (register/LDS), accumulation dtype, edge handling, runtime dispatch by shape.\n- 6) Skeleton: grid-tile over C, loop over K tiles, stage A/B slices, synchronize between stages, accumulate in registers, convert/store C; optional second phase for split-K reductions.\n- 7) Candidate families (pruned): throughput-first large-shape path, parallel-K path for skinny outputs with huge K, latency-first tiny-shape path. Integration constraints: host must use ksearch_launch_* wrappers in kernel.h (no <<<>>> or hipLaunchKernelGGL in main.cpp).\n\nReference Implementation (excerpt):\nimport torch\n\ndef run(A, B):\n    C = torch.matmul(A, B.T)\n    return C",
+        "overall_rating_0_to_10": 7.1,
+        "parent_id": null,
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "analysis_only"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a single-pass throughput-oriented tiled GEMM path for general large shapes with bf16 inputs and fp32 accumulation, returning bf16 C.",
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.0,
+          "rationale": "Most expected workload volume in GEMM typically benefits from a robust large-shape baseline; both A and B are contiguous in K.",
+          "score_0_to_1": 0.37,
+          "title": "Add throughput-first large-shape kernel path"
+        },
+        "choice": "throughput_large_shapes",
+        "confidence_0_to_1": 0.88,
+        "decision": "kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Best fit when tile shapes align with MI300X matrix-core-friendly dimensions and wave64 mapping.",
+            "notes": "Mainloop uses scalar fp32 FMA instead of true BF16 MFMA, leaving MI300X matrix units underutilized.",
+            "rating_0_to_10": 3.3,
+            "risk": "0.79"
+          },
+          "memory_bandwidth": {
+            "notes": "LDS tiling improves reuse versus naive global reads, but no aggressive vectorized transaction strategy is present.",
+            "rating_0_to_10": 6.1,
+            "risk": "0.42"
+          },
+          "register_pressure": {
+            "notes": "Per-thread TMxTN accumulators are moderate; pressure is not catastrophic but limits headroom for deeper pipelining.",
+            "rating_0_to_10": 5.2,
+            "risk": "0.36"
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "family_throughput_large",
+        "node_type": "decision",
+        "notes": "CURRENT:\n- does: Implements a throughput-oriented 64x64x16 LDS-tiled GEMM path for bf16 A/B with fp32 accumulation and bf16 output, including edge guards. It stages tiles in shared memory and computes per-thread 4x4 outputs with scalar FMAs.\n- bottleneck: compute + sync (hardware-fit bottleneck from scalar FMA mainloop; extra barriers/conversions add overhead).\nFOLLOW_THROUGH:\n- aligned_with_intent: yes\nUPDATE_BELIEF:\n- what changed after eval_result?: The path is functionally solid but measured 0.993x vs reference, so the expected large throughput gain did not materialize. This suggests that tile structure alone is not enough without true MFMA utilization.\n- next bet: Keep this as robust baseline ownership for large shapes, but immediately chain to a true BF16 MFMA mainloop with double-buffered K staging and vectorized global/LDS movement.\nPERF_GAP:\n- expected_vs_baseline_factor: 1.70\n- observed_speedup_factor: 0.993\n- hypothesized_reason: Scalar-FMA compute core plus synchronization/conversion overhead prevented MI300X matrix-core-class throughput.",
+        "overall_rating_0_to_10": 4.6,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "latency_ms": 0.01327891992032528,
+            "mean_vs_baseline_factor": null,
+            "metrics": {
+              "score": 0.9931547609363482,
+              "score_name": "mean_speedup_vs_ref"
+            },
+            "reference_latency_ms": 0.013188022538963565,
+            "speedup_factor": 0.9931547609363482,
+            "status": "passed"
+          },
+          "parent_solution_id": null,
+          "solution_id": "c8be58e13512ad1ba841828b367a0555a0571d60"
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a parallel-K (split reduction) path for cases where K is large but M*N is too small to saturate hardware with single-pass tiling.",
+          "difficulty_1_to_5": 4,
+          "expected_vs_baseline_factor": 1.28,
+          "rationale": "Adds parallelism along K to improve occupancy in skinny-output regimes where standard tiling underutilizes CUs.",
+          "score_0_to_1": 0.75,
+          "title": "Add parallel-K path for skinny-output, large-K shapes"
+        },
+        "choice": "parallel_k_skinny_outputs",
+        "confidence_0_to_1": 0.58,
+        "decision": "kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Can improve CU occupancy on MI300X when output tile count is low, but requires reduction phase.",
+            "notes": "Better CU utilization for K-dominant skinny-output shapes where baseline under-occupies.",
+            "rating_0_to_10": 7.0,
+            "risk": "medium"
+          },
+          "memory_bandwidth": {
+            "notes": "Split-K introduces extra partial-write/readback traffic and reduction overhead.",
+            "rating_0_to_10": 5.6,
+            "risk": "medium_high"
+          },
+          "register_pressure": {
+            "notes": "Additional accumulator fragments and reduction bookkeeping can trim occupancy.",
+            "rating_0_to_10": 5.3,
+            "risk": "medium"
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "family_parallel_k",
+        "node_type": "decision",
+        "notes": "Target regime: small/medium M*N with very large K. Primary limiter expected: reduction overhead vs added parallelism. Strength: rescues occupancy-starved shapes. Weakness: extra workspace and synchronization cost. SELF_CHECK: Alternative to sibling large-shape single-pass path because it changes execution model (two-stage accumulation), adding memory traffic not acceptable as default for all shapes.",
+        "overall_rating_0_to_10": 7.3,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a low-overhead tiny-shape path optimized for latency and edge-heavy matrices, minimizing setup cost and synchronization.",
+          "difficulty_1_to_5": 2,
+          "expected_vs_baseline_factor": 1.14,
+          "rationale": "For very small M/N/K, launch and control overhead dominates; simpler path can outperform throughput-optimized kernels.",
+          "score_0_to_1": 0.66,
+          "title": "Add latency-first tiny-shape kernel path"
+        },
+        "choice": "latency_tiny_shapes",
+        "confidence_0_to_1": 0.56,
+        "decision": "kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Improves responsiveness for tiny workloads but may underuse MI300X compute arrays.",
+            "notes": "Primary limiter is launch/control latency rather than arithmetic throughput.",
+            "rating_0_to_10": 4.8,
+            "risk": "medium"
+          },
+          "memory_bandwidth": {
+            "notes": "Tiny-shape kernels are not bandwidth-bound; compact loads are sufficient.",
+            "rating_0_to_10": 6.9,
+            "risk": "low"
+          },
+          "register_pressure": {
+            "notes": "Small tiles keep register footprint manageable and preserve occupancy.",
+            "rating_0_to_10": 7.2,
+            "risk": "low"
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "family_latency_small",
+        "node_type": "decision",
+        "notes": "Target regime: tiny/edge-dominated shapes. Primary limiter expected: launch/control latency rather than peak FLOPs. Strength: robust for small dynamic sizes. Weakness: poor asymptotic throughput. SELF_CHECK: Alternative to siblings because this branch intentionally trades peak throughput for lower overhead and should not be the same default path as large-shape or parallel-K strategies.",
+        "overall_rating_0_to_10": 6.9,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "",
+          "difficulty_1_to_5": 5,
+          "expected_vs_baseline_factor": 1.14,
+          "rationale": "",
+          "score_0_to_1": 0.68,
+          "title": "Adopt true BF16 MFMA mainloop with vectorized global/LDS staging and 2-stage K pipeline"
+        },
+        "choice": "true_mfma_mainloop_double_buffer",
+        "confidence_0_to_1": 0.62,
+        "decision": "kernel_refinement",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "",
+            "notes": "True BF16 MFMA directly matches MI300X strengths and is the clearest route to significant speedup.",
+            "rating_0_to_10": 8.8,
+            "risk": "0.43"
+          },
+          "memory_bandwidth": {
+            "notes": "Vectorized loads/stores and staged pipeline should reduce bandwidth stalls, but alignment/tail handling complexity is non-trivial.",
+            "rating_0_to_10": 7.0,
+            "risk": "0.55"
+          },
+          "register_pressure": {
+            "notes": "Double buffering + MFMA fragments will increase VGPR demand and may reduce occupancy if not tuned carefully.",
+            "rating_0_to_10": 4.7,
+            "risk": "0.74"
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "refine_throughput_large_true_mfma",
+        "node_type": "decision",
+        "notes": "CURRENT:\n- does: The currently attached parent implementation performs LDS tiling and scalar fp32 accumulation; MFMA appears only as a probe and is not used for real accumulation.\n- bottleneck: compute_intensity_and_hw_fit (matrix-core underuse), then sync overhead.\nFOLLOW_THROUGH:\n- aligned_with_intent: no\n- if_no: Expected intent was a true BF16 MFMA-driven mainloop with vectorized staging and a 2-stage K pipeline. Actual implementation kept scalar FMA compute and only included a non-functional MFMA probe path.\nUPDATE_BELIEF:\n- what changed after eval_result?: The near-parity result confirms that the missing MFMA path is the dominant gap, not just minor memory tuning. Confidence in this refinement as the next step remains good, but implementation risk is high.\n- next bet: Implement real MFMA accumulation (no probe-only path), add ping-pong LDS buffers across K tiles, and tune tile/wave mapping to control register pressure while preserving occupancy.",
+        "overall_rating_0_to_10": 6.6,
+        "parent_id": "family_throughput_large",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": "c8be58e13512ad1ba841828b367a0555a0571d60",
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Propose one small change that targets the primary bottleneck operation indicated by the latest eval (e.g., reduce sync, reduce redundant loads, or improve locality), without changing the overall mapping plan.",
+          "difficulty_1_to_5": 2,
+          "expected_vs_baseline_factor": null,
+          "rationale": "The parent design is working; this creates a clear single-iteration follow-up to improve it.",
+          "score_0_to_1": 0.35,
+          "title": "Next-step refinement: target the top bottleneck operation"
+        },
+        "choice": "Next-step refinement",
+        "confidence_0_to_1": 0.88,
+        "decision": "Continue",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Best fit when tile shapes align with MI300X matrix-core-friendly dimensions and wave64 mapping.",
+            "notes": "Mainloop uses scalar fp32 FMA instead of true BF16 MFMA, leaving MI300X matrix units underutilized.",
+            "rating_0_to_10": 3.3,
+            "risk": "0.79"
+          },
+          "memory_bandwidth": {
+            "notes": "LDS tiling improves reuse versus naive global reads, but no aggressive vectorized transaction strategy is present.",
+            "rating_0_to_10": 6.1,
+            "risk": "0.42"
+          },
+          "register_pressure": {
+            "notes": "Per-thread TMxTN accumulators are moderate; pressure is not catastrophic but limits headroom for deeper pipelining.",
+            "rating_0_to_10": 5.2,
+            "risk": "0.36"
+          }
+        },
+        "last_updated_round": 9,
+        "node_id": "node_gemm_bf16_var_mnk_r9_cont_1",
+        "node_type": "decision",
+        "notes": "AUTO_CONTINUATION: add a concrete next-step action under a solved node to keep the search moving.\nFocus on one operation or one tensor axis; refine based on the latest eval bottleneck signal.",
+        "overall_rating_0_to_10": 4.6,
+        "parent_id": "family_throughput_large",
+        "solution_ref": {
+          "eval": {
+            "status": ""
+          },
+          "parent_solution_id": "c8be58e13512ad1ba841828b367a0555a0571d60",
+          "solution_id": null
+        }
+      }
+    ],
+    "root_id": "root"
+  },
+  "kernel_summary": "gemm_bf16_var_mnk is a dense GEMM computing C[M,N] = A[M,K] * B[N,K]^T with a K reduction, bf16 inputs/outputs, and runtime-variable dimensions; because both A and B are contiguous along K in this formulation, the main performance lever is K-tiled reuse with register/LDS staging, while bottlenecks shift by regime: large balanced shapes should be compute-limited, skinny-output large-K cases can be occupancy-limited without parallel-K, and tiny/edge-heavy shapes are latency and boundary-overhead limited; correctness/perf constraints include likely fp32 accumulation semantics, tail handling for arbitrary M/N/K, and MI300X wave64/tile-shape hardware fit.",
+  "open_questions": [
+    "What is the real production shape distribution of (M, N, K), including frequency of tiny vs large and skinny vs balanced cases?",
+    "Is numerical behavior required to match torch.matmul bf16 exactly (fp32 accumulation + cast), or is reduced-precision accumulation acceptable?",
+    "Are A, B, and C guaranteed contiguous with standard row-major strides, or must arbitrary leading dimensions/strides be supported?",
+    "Is extra workspace allowed for a parallel-K reduction path, and if so, what memory budget is acceptable?",
+    "Do we need deterministic/reproducible results across runs/devices, which would constrain reduction ordering choices?",
+    "Is this kernel always standalone, or will it be followed by fusible epilogues (bias/activation/scaling) that should influence kernel design now?",
+    "What latency target matters at batch-size 1 / single-call scenarios versus steady-state throughput?"
+  ]
+}

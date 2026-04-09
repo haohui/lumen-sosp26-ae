@@ -1,0 +1,31 @@
+{
+  "jsonl_path": "/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b01_fused_noquant_nohack_20260331_142419/01_kernelbench_moe_openai/traffic.jsonl",
+  "events_total": 3,
+  "responses_total": 2,
+  "responses_with_usage": 1,
+  "usage_totals": {
+    "input_tokens": 4905.0,
+    "input_tokens_details.cached_tokens": 0.0,
+    "output_tokens": 16435.0,
+    "output_tokens_details.reasoning_tokens": 11948.0,
+    "total_tokens": 21340.0
+  },
+  "usage_by_model": {
+    "gpt-5.3-codex": {
+      "input_tokens": 4905.0,
+      "input_tokens_details.cached_tokens": 0.0,
+      "output_tokens": 16435.0,
+      "output_tokens_details.reasoning_tokens": 11948.0,
+      "total_tokens": 21340.0
+    }
+  },
+  "usage_by_host": {
+    "api.openai.com": {
+      "input_tokens": 4905.0,
+      "input_tokens_details.cached_tokens": 0.0,
+      "output_tokens": 16435.0,
+      "output_tokens_details.reasoning_tokens": 11948.0,
+      "total_tokens": 21340.0
+    }
+  }
+}

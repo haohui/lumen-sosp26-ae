@@ -1,0 +1,22 @@
+{
+  "was_diagnosis_correct": true,
+  "was_fix_effective": false,
+  "expected_outcome": "If compute throughput was limited by lack of MFMA/tensor-core usage, forcing MI300X-friendly MFMA-triggering Triton configs should reduce kernel time and increase compute SOL utilization.",
+  "actual_outcome": "Kernel time regressed from 0.0214 ms to 0.0230 ms (-7.6%), while compute SOL remained the dominant component (64.8%) and memory SOL was still secondary (31.2%).",
+  "reasoning": "The diagnosis (compute-side limitation) is plausible because compute SOL is much higher than memory SOL. However, the specific configuration changes did not improve performance, so the fix was ineffective. Increasing BLOCK_K and BLOCK_N and changing matrix/wave settings likely hurt occupancy, scheduling balance, register pressure, or instruction mix, offsetting any potential MFMA gains. Since runtime worsened despite verification passing, this tuning moved the kernel away from its local optimum rather than unlocking higher arithmetic throughput.",
+  "lessons": [
+    "A correct high-level bottleneck diagnosis does not guarantee that a specific knob change will help; MFMA-enabling must be validated with instruction-level and occupancy effects.",
+    "Block-size and wave tuning can easily trade off compute intensity against occupancy/register pressure; larger tiles are not automatically faster.",
+    "Use stepwise tuning (one variable at a time) to isolate which config change causes regression."
+  ],
+  "avoid_patterns": [
+    "Applying multiple major config changes at once (tile sizes + matrix instruction hint + waves_per_eu) without ablation.",
+    "Assuming MFMA-triggering shapes will always improve performance on compute-bound kernels."
+  ],
+  "try_patterns": [
+    "Run controlled ablations: test matrix_instr_nonkdim, BLOCK_K, BLOCK_N, and waves_per_eu independently, then combine only winning changes.",
+    "Confirm actual MFMA issuance and occupancy/register behavior with profiler counters before and after each change.",
+    "Search around smaller/local tile variants (e.g., keep one dimension fixed) and tune num_warps/num_stages for better pipeline balance.",
+    "Evaluate precision/layout variants that preserve MFMA while reducing register pressure and improving wave residency."
+  ]
+}

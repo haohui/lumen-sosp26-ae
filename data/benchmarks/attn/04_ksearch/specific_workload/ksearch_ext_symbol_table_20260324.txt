@@ -1,0 +1,744 @@
+
+/root/.cache/torch_extensions/py312_cpu/ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1/ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1.so:	file format elf64-x86-64
+
+SYMBOL TABLE:
+0000000000000000 l    df *ABS*	0000000000000000 crtbegin.c
+00000000000143d0 l     F .text	0000000000000038 __do_init
+0000000000034ed0 l     O .bss	0000000000000001 __do_init.__initialized
+000000000000fce0 l     O .eh_frame	0000000000000000 __EH_FRAME_LIST__
+0000000000034ed8 l     O .bss	0000000000000040 __do_init.__object
+0000000000014410 l     F .text	000000000000004a __do_fini
+0000000000034f18 l     O .bss	0000000000000001 __do_fini.__finalized
+0000000000032dc0 l     O .init_array	0000000000000008 __init
+0000000000032dc8 l     O .fini_array	0000000000000008 __fini
+00000000000344a0 l     O .data	0000000000000008 .hidden __dso_handle
+0000000000000000 l    df *ABS*	0000000000000000 main.cpp
+0000000000009068 l       .gcc_except_table	0000000000000000 GCC_except_table0
+000000000000907c l       .gcc_except_table	0000000000000000 GCC_except_table3
+0000000000009098 l       .gcc_except_table	0000000000000000 GCC_except_table4
+00000000000090a8 l       .gcc_except_table	0000000000000000 GCC_except_table5
+00000000000090b8 l       .gcc_except_table	0000000000000000 GCC_except_table6
+00000000000094ec l       .gcc_except_table	0000000000000000 GCC_except_table7
+0000000000009500 l       .gcc_except_table	0000000000000000 GCC_except_table8
+0000000000034f70 l     O .bss	0000000000000008 _ZGVZ65PyInit_ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1E13mod_def_slots
+00000000000344b0 l     O .data	0000000000000068 _ZZ65PyInit_ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1E3def
+0000000000034f20 l     O .bss	0000000000000050 _ZZ65PyInit_ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1E13mod_def_slots
+0000000000015bc0 l     F .text	00000000000002db _ZL72pybind11_exec_ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1P7_object
+00000000000092d0 l       .gcc_except_table	0000000000000000 GCC_except_table10
+0000000000009524 l       .gcc_except_table	0000000000000000 GCC_except_table11
+00000000000092e8 l       .gcc_except_table	0000000000000000 GCC_except_table12
+000000000000956c l       .gcc_except_table	0000000000000000 GCC_except_table15
+000000000000957c l       .gcc_except_table	0000000000000000 GCC_except_table17
+00000000000097c4 l       .gcc_except_table	0000000000000000 GCC_except_table18
+00000000000097f4 l       .gcc_except_table	0000000000000000 GCC_except_table21
+0000000000009804 l       .gcc_except_table	0000000000000000 GCC_except_table22
+0000000000009868 l       .gcc_except_table	0000000000000000 GCC_except_table23
+0000000000009880 l       .gcc_except_table	0000000000000000 GCC_except_table24
+0000000000009890 l       .gcc_except_table	0000000000000000 GCC_except_table26
+00000000000098a4 l       .gcc_except_table	0000000000000000 GCC_except_table27
+0000000000015ea0 l     F .text	0000000000000093 _ZN8pybind11L7type_idINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEEES6_v
+00000000000098c0 l       .gcc_except_table	0000000000000000 GCC_except_table28
+000000000000990c l       .gcc_except_table	0000000000000000 GCC_except_table30
+0000000000009930 l       .gcc_except_table	0000000000000000 GCC_except_table31
+000000000000938c l       .gcc_except_table	0000000000000000 GCC_except_table32
+0000000000009940 l       .gcc_except_table	0000000000000000 GCC_except_table34
+0000000000009970 l       .gcc_except_table	0000000000000000 GCC_except_table35
+000000000000999c l       .gcc_except_table	0000000000000000 GCC_except_table38
+00000000000099ac l       .gcc_except_table	0000000000000000 GCC_except_table41
+00000000000099bc l       .gcc_except_table	0000000000000000 GCC_except_table42
+0000000000009a14 l       .gcc_except_table	0000000000000000 GCC_except_table43
+0000000000009a34 l       .gcc_except_table	0000000000000000 GCC_except_table47
+0000000000009a50 l       .gcc_except_table	0000000000000000 GCC_except_table48
+0000000000009a6c l       .gcc_except_table	0000000000000000 GCC_except_table49
+0000000000009a80 l       .gcc_except_table	0000000000000000 GCC_except_table73
+0000000000009a9c l       .gcc_except_table	0000000000000000 GCC_except_table74
+0000000000009ab8 l       .gcc_except_table	0000000000000000 GCC_except_table75
+0000000000009acc l       .gcc_except_table	0000000000000000 GCC_except_table78
+0000000000009aec l       .gcc_except_table	0000000000000000 GCC_except_table80
+0000000000009b00 l       .gcc_except_table	0000000000000000 GCC_except_table81
+0000000000009b80 l       .gcc_except_table	0000000000000000 GCC_except_table82
+0000000000009b98 l       .gcc_except_table	0000000000000000 GCC_except_table83
+0000000000009bac l       .gcc_except_table	0000000000000000 GCC_except_table84
+0000000000009bc0 l       .gcc_except_table	0000000000000000 GCC_except_table85
+0000000000009bd0 l       .gcc_except_table	0000000000000000 GCC_except_table93
+0000000000009be0 l       .gcc_except_table	0000000000000000 GCC_except_table97
+0000000000009bfc l       .gcc_except_table	0000000000000000 GCC_except_table98
+0000000000009c10 l       .gcc_except_table	0000000000000000 GCC_except_table99
+0000000000009c2c l       .gcc_except_table	0000000000000000 GCC_except_table100
+0000000000009c44 l       .gcc_except_table	0000000000000000 GCC_except_table101
+0000000000009c60 l       .gcc_except_table	0000000000000000 GCC_except_table104
+0000000000009c84 l       .gcc_except_table	0000000000000000 GCC_except_table105
+0000000000009c98 l       .gcc_except_table	0000000000000000 GCC_except_table106
+0000000000009cd8 l       .gcc_except_table	0000000000000000 GCC_except_table107
+0000000000009d1c l       .gcc_except_table	0000000000000000 GCC_except_table108
+0000000000009d90 l       .gcc_except_table	0000000000000000 GCC_except_table109
+0000000000009e68 l       .gcc_except_table	0000000000000000 GCC_except_table110
+0000000000009eb0 l       .gcc_except_table	0000000000000000 GCC_except_table111
+0000000000009edc l       .gcc_except_table	0000000000000000 GCC_except_table113
+0000000000009f00 l       .gcc_except_table	0000000000000000 GCC_except_table114
+0000000000009f14 l       .gcc_except_table	0000000000000000 GCC_except_table115
+0000000000009f28 l       .gcc_except_table	0000000000000000 GCC_except_table116
+0000000000009f44 l       .gcc_except_table	0000000000000000 GCC_except_table117
+0000000000009f70 l       .gcc_except_table	0000000000000000 GCC_except_table118
+0000000000009f90 l       .gcc_except_table	0000000000000000 GCC_except_table128
+0000000000009ff8 l       .gcc_except_table	0000000000000000 GCC_except_table129
+000000000000a060 l       .gcc_except_table	0000000000000000 GCC_except_table130
+000000000000a1a0 l       .gcc_except_table	0000000000000000 GCC_except_table135
+000000000000a1b4 l       .gcc_except_table	0000000000000000 GCC_except_table140
+000000000000a1ec l       .gcc_except_table	0000000000000000 GCC_except_table141
+000000000000a210 l       .gcc_except_table	0000000000000000 GCC_except_table142
+000000000000a23c l       .gcc_except_table	0000000000000000 GCC_except_table143
+000000000000a2b4 l       .gcc_except_table	0000000000000000 GCC_except_table144
+000000000000f190 l     O .rodata	0000000000000063 _ZN8pybind116detail36function_record_PyTypeObject_methodsL16tp_qualname_implE
+000000000000f200 l     O .rodata	0000000000000051 _ZN8pybind116detail36function_record_PyTypeObject_methodsL17tp_plainname_implE
+000000000000a2e0 l       .gcc_except_table	0000000000000000 GCC_except_table149
+000000000000a508 l       .gcc_except_table	0000000000000000 GCC_except_table150
+000000000000a518 l       .gcc_except_table	0000000000000000 GCC_except_table151
+000000000000a538 l       .gcc_except_table	0000000000000000 GCC_except_table155
+000000000000a758 l       .gcc_except_table	0000000000000000 GCC_except_table156
+000000000000ac48 l       .gcc_except_table	0000000000000000 GCC_except_table157
+000000000000ac84 l       .gcc_except_table	0000000000000000 GCC_except_table158
+000000000000aca4 l       .gcc_except_table	0000000000000000 GCC_except_table159
+000000000000ad14 l       .gcc_except_table	0000000000000000 GCC_except_table163
+000000000000ad3c l       .gcc_except_table	0000000000000000 GCC_except_table164
+000000000000ad64 l       .gcc_except_table	0000000000000000 GCC_except_table167
+000000000000ada0 l       .gcc_except_table	0000000000000000 GCC_except_table169
+000000000000adbc l       .gcc_except_table	0000000000000000 GCC_except_table170
+000000000000adfc l       .gcc_except_table	0000000000000000 GCC_except_table171
+000000000000ae20 l       .gcc_except_table	0000000000000000 GCC_except_table172
+000000000000ae34 l       .gcc_except_table	0000000000000000 GCC_except_table173
+000000000000af0c l       .gcc_except_table	0000000000000000 GCC_except_table175
+000000000000af24 l       .gcc_except_table	0000000000000000 GCC_except_table176
+000000000000af38 l       .gcc_except_table	0000000000000000 GCC_except_table177
+000000000000af60 l       .gcc_except_table	0000000000000000 GCC_except_table178
+000000000000af78 l       .gcc_except_table	0000000000000000 GCC_except_table179
+000000000000af8c l       .gcc_except_table	0000000000000000 GCC_except_table182
+0000000000034518 l     O .data	0000000000000020 _ZN8pybind116detailL27function_record_PyType_SpecE
+000000000000afb4 l       .gcc_except_table	0000000000000000 GCC_except_table183
+000000000000afc8 l       .gcc_except_table	0000000000000000 GCC_except_table189
+0000000000015f40 l     F .text	000000000000044c _ZN8pybind116detail36function_record_PyTypeObject_methodsL14reduce_ex_implEP7_objectS3_S3_
+000000000000939c l       .gcc_except_table	0000000000000000 GCC_except_table190
+0000000000016390 l     F .text	000000000000007f _ZN8pybind11L7type_idINS_6objectEEENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEv
+000000000000afe0 l       .gcc_except_table	0000000000000000 GCC_except_table191
+000000000000b02c l       .gcc_except_table	0000000000000000 GCC_except_table192
+0000000000016410 l     F .text	00000000000000a1 _ZN8pybind11L7type_idINS_6detail8accessorINS1_17accessor_policies12generic_itemEEEEENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEv
+00000000000164c0 l     F .text	000000000000007d _ZN8pybind11L7type_idINS_5tupleEEENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEv
+000000000000b050 l       .gcc_except_table	0000000000000000 GCC_except_table193
+00000000000094a8 l       .gcc_except_table	0000000000000000 GCC_except_table194
+000000000000b0b4 l       .gcc_except_table	0000000000000000 GCC_except_table195
+00000000000094b8 l       .gcc_except_table	0000000000000000 GCC_except_table196
+00000000000094cc l       .gcc_except_table	0000000000000000 GCC_except_table197
+000000000000b104 l       .gcc_except_table	0000000000000000 GCC_except_table199
+000000000000b114 l       .gcc_except_table	0000000000000000 GCC_except_table200
+000000000000b13c l       .gcc_except_table	0000000000000000 GCC_except_table202
+000000000000b170 l       .gcc_except_table	0000000000000000 GCC_except_table203
+000000000000b194 l       .gcc_except_table	0000000000000000 GCC_except_table204
+000000000000b1b4 l       .gcc_except_table	0000000000000000 GCC_except_table206
+000000000000b1c8 l       .gcc_except_table	0000000000000000 GCC_except_table207
+000000000000b1d8 l       .gcc_except_table	0000000000000000 GCC_except_table209
+000000000000b204 l       .gcc_except_table	0000000000000000 GCC_except_table215
+000000000000b21c l       .gcc_except_table	0000000000000000 GCC_except_table216
+000000000000b234 l       .gcc_except_table	0000000000000000 GCC_except_table217
+000000000000b254 l       .gcc_except_table	0000000000000000 GCC_except_table218
+000000000000b264 l       .gcc_except_table	0000000000000000 GCC_except_table219
+000000000000b28c l       .gcc_except_table	0000000000000000 GCC_except_table220
+000000000000b2c4 l       .gcc_except_table	0000000000000000 GCC_except_table221
+0000000000016540 l     F .text	000000000000007f _ZN8pybind11L7type_idIRKNS_6handleEEENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEv
+000000000000b2ec l       .gcc_except_table	0000000000000000 GCC_except_table222
+00000000000094dc l       .gcc_except_table	0000000000000000 GCC_except_table223
+000000000000b338 l       .gcc_except_table	0000000000000000 GCC_except_table225
+000000000000b358 l       .gcc_except_table	0000000000000000 GCC_except_table226
+000000000000b36c l       .gcc_except_table	0000000000000000 GCC_except_table227
+000000000000b384 l       .gcc_except_table	0000000000000000 GCC_except_table228
+000000000000b3a4 l       .gcc_except_table	0000000000000000 GCC_except_table229
+000000000000b3bc l       .gcc_except_table	0000000000000000 GCC_except_table231
+000000000000b3cc l       .gcc_except_table	0000000000000000 GCC_except_table242
+000000000000b3f8 l       .gcc_except_table	0000000000000000 GCC_except_table247
+000000000000b40c l       .gcc_except_table	0000000000000000 GCC_except_table249
+000000000000b440 l       .gcc_except_table	0000000000000000 GCC_except_table252
+000000000000b4f4 l       .gcc_except_table	0000000000000000 GCC_except_table253
+000000000000b60c l       .gcc_except_table	0000000000000000 GCC_except_table254
+000000000000b63c l       .gcc_except_table	0000000000000000 GCC_except_table255
+000000000000b674 l       .gcc_except_table	0000000000000000 GCC_except_table256
+000000000000b6c4 l       .gcc_except_table	0000000000000000 GCC_except_table257
+000000000000b6e4 l       .gcc_except_table	0000000000000000 GCC_except_table258
+000000000000b704 l       .gcc_except_table	0000000000000000 GCC_except_table260
+000000000000b74c l       .gcc_except_table	0000000000000000 GCC_except_table262
+000000000000b774 l       .gcc_except_table	0000000000000000 GCC_except_table263
+000000000000b7a4 l       .gcc_except_table	0000000000000000 GCC_except_table264
+000000000000b7cc l       .gcc_except_table	0000000000000000 GCC_except_table267
+000000000000b830 l       .gcc_except_table	0000000000000000 GCC_except_table268
+0000000000034540 l     O .data	0000000000000070 _ZN8pybind116detailL28function_record_PyType_SlotsE
+00000000000345b0 l     O .data	0000000000000040 _ZN8pybind116detail36function_record_PyTypeObject_methodsL15tp_methods_implE
+00000000000165c0 l     F .text	0000000000000069 .hidden _ZNK8pybind1117error_already_set4whatEv
+0000000000016630 l     F .text	00000000000000a0 .hidden _ZN8pybind1118gil_scoped_acquireC2Ev
+00000000000166e0 l     F .text	000000000000017c .hidden _ZNK8pybind116detail25error_fetch_and_normalize12error_stringB5cxx11Ev
+0000000000016880 l     F .text	000000000000001e .hidden _ZN8pybind1118gil_scoped_acquireD2Ev
+00000000000166d0 l     F .text	000000000000000b .hidden __clang_call_terminate
+0000000000016b60 l     F .text	0000000000000183 .hidden _ZN8pybind116detail13get_internalsEv
+0000000000016e30 l     F .text	0000000000000071 .hidden _ZN8pybind1113pybind11_failEPKc
+0000000000016f40 l     F .text	0000000000001e4a .hidden _ZNK8pybind116detail25error_fetch_and_normalize22format_value_and_traceB5cxx11Ev
+0000000000016860 l     F .text	000000000000001e .hidden _ZN8pybind1111error_scopeD2Ev
+000000000001a7c0 l     F .text	0000000000000074 .hidden _ZN8pybind1118gil_scoped_acquire7dec_refEv
+0000000000034f7c l     O .bss	0000000000000004 .hidden _ZZN8pybind116detail25get_num_interpreters_seenEvE7counter
+0000000000034fa8 l     O .bss	0000000000000008 .hidden _ZGVZN8pybind116detail24get_internals_pp_managerEvE20internals_pp_manager
+0000000000034f80 l     O .bss	0000000000000028 .hidden _ZZN8pybind116detail24get_internals_pp_managerEvE20internals_pp_manager
+000000000001c880 l     F .text	0000000000000079 .hidden _ZN8pybind116detail20internals_pp_managerINS0_9internalsEEC2EPKcPFvPS2_E
+000000000001c900 l     F .text	000000000000002b .hidden _ZN8pybind116detail20internals_pp_managerINS0_9internalsEED2Ev
+000000000002f000 l     F .text	000000000000016e .hidden _ZN8pybind116detail20cached_create_moduleEP7_objectP11PyModuleDef
+000000000001c930 l     F .text	00000000000000fa .hidden _ZN8pybind116detail20internals_pp_managerINS0_9internalsEE6get_ppEv
+000000000001ca30 l     F .text	000000000000034c .hidden _ZN8pybind116detail9internalsC2Ev
+000000000001d910 l     F .text	00000000000004cf .hidden _ZN8pybind116detail9internalsD2Ev
+000000000001cd80 l     F .text	0000000000000229 .hidden _ZN8pybind116detail21make_object_base_typeEP11_typeobject
+000000000001d6d0 l     F .text	00000000000000ec .hidden _ZNKR8pybind116handle7inc_refEv
+0000000000028e90 l     F .text	00000000000000b7 .hidden _ZNK8pybind116detail8accessorINS0_17accessor_policies8str_attrEE9get_cacheEv
+0000000000019530 l     F .text	00000000000000e5 .hidden _ZNKR8pybind116handle7dec_refEv
+000000000002bbc0 l     F .text	0000000000000093 .hidden _ZN8pybind113strC2EONS_6objectE
+000000000002d910 l     F .text	000000000000029d .hidden _ZN8pybind116detail17get_cached_moduleERKNS_3strE
+000000000002e280 l     F .text	0000000000000187 .hidden _ZN8pybind117module_3defIPFN2at6TensorES3_S3_S3_dEJNS_3argES6_S6_S6_A59_cEEERS0_PKcOT_DpRKT0_
+000000000002dbb0 l     F .text	00000000000004b1 .hidden _ZN8pybind116detail22cache_completed_moduleERKNS_6objectE
+000000000002b980 l     F .text	0000000000000099 .hidden _ZN8pybind116detail25error_fetch_and_normalize7restoreEv
+000000000001d4a0 l     F .text	000000000000017d .hidden _ZN8pybind1110raise_fromEP7_objectPKc
+0000000000016cf0 l     F .text	0000000000000095 .hidden _ZN8pybind1117error_already_setD2Ev
+0000000000032dd0 l     O .data.rel.ro	0000000000000028 .hidden _ZTVN8pybind1117error_already_setE
+0000000000016d90 l     F .text	0000000000000097 .hidden _ZN8pybind1117error_already_setD0Ev
+0000000000018d90 l     F .text	0000000000000104 .hidden _ZN8pybind116detail12error_stringB5cxx11Ev
+0000000000019790 l     F .text	000000000000031d .hidden _ZN8pybind116detail9load_typeINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEvEERNS0_11type_casterIT_T0_EESC_RKNS_6handleE
+0000000000019100 l     F .text	00000000000002b6 .hidden _ZN8pybind116detail25error_fetch_and_normalizeC2EPKc
+00000000000193c0 l     F .text	0000000000000050 .hidden _ZN8pybind116detail25error_fetch_and_normalizeD2Ev
+0000000000019410 l     F .text	0000000000000071 .hidden _ZN8pybind1113pybind11_failERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+0000000000019620 l     F .text	0000000000000170 .hidden _ZNK8pybind116handle20throw_gilstate_errorERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+0000000000019ab0 l     F .text	00000000000001a2 .hidden _ZN8pybind116detail13string_casterINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEELb0EE4loadENS_6handleEb
+0000000000019c60 l     F .text	0000000000000071 .hidden _ZN8pybind113strC2ENS_6handleE
+000000000001a1c0 l     F .text	00000000000000a4 .hidden _ZN8pybind114castINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEEENSt9enable_ifIXaantsr6detail11is_pyobjectIT_EE5valuesr6detail20move_if_unreferencedIS8_EE5valueES8_E4typeEONS_6objectE
+0000000000032eb8 l     O .data.rel.ro	0000000000000030 .hidden _ZTVN8pybind1110cast_errorE
+0000000000032e10 l     O .data.rel.ro	0000000000000018 .hidden _ZTIN8pybind1110cast_errorE
+0000000000019d90 l     F .text	00000000000001ff .hidden _ZN8pybind116detail13string_casterINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEELb0EE8load_rawIcEEbNSt9enable_ifIXsr3std7is_sameIT_cEE5valueENS_6handleEE4typeE
+0000000000019f90 l     F .text	00000000000000cf .hidden _ZN8pybind1117error_already_setC2Ev
+0000000000032df8 l     O .data.rel.ro	0000000000000018 .hidden _ZTIN8pybind1117error_already_setE
+0000000000019ce0 l     F .text	00000000000000a4 .hidden _ZNO8pybind116object4castINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEEET_v
+000000000001a270 l     F .text	000000000000038e .hidden _ZN8pybind114moveINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEEENSt9enable_ifIXntsr6detail10move_neverIT_EE5valueES8_E4typeEONS_6objectE
+000000000001a600 l     F .text	000000000000017c .hidden _ZN8pybind116detail13clean_type_idERNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+0000000000032e40 l     O .data.rel.ro	0000000000000038 .hidden _ZTVSt19_Sp_counted_deleterIPN8pybind116detail25error_fetch_and_normalizeEPFvS3_ESaIvELN9__gnu_cxx12_Lock_policyE2EE
+000000000001a060 l     F .text	00000000000000c3 .hidden _ZN8pybind1117error_already_set23m_fetched_error_deleterEPNS_6detail25error_fetch_and_normalizeE
+000000000001a140 l     F .text	000000000000000a .hidden _ZNSt19_Sp_counted_deleterIPN8pybind116detail25error_fetch_and_normalizeEPFvS3_ESaIvELN9__gnu_cxx12_Lock_policyE2EED0Ev
+000000000001a150 l     F .text	0000000000000015 .hidden _ZNSt19_Sp_counted_deleterIPN8pybind116detail25error_fetch_and_normalizeEPFvS3_ESaIvELN9__gnu_cxx12_Lock_policyE2EE10_M_disposeEv
+000000000001a170 l     F .text	000000000000000a .hidden _ZNSt19_Sp_counted_deleterIPN8pybind116detail25error_fetch_and_normalizeEPFvS3_ESaIvELN9__gnu_cxx12_Lock_policyE2EE10_M_destroyEv
+000000000001a180 l     F .text	000000000000003d .hidden _ZNSt19_Sp_counted_deleterIPN8pybind116detail25error_fetch_and_normalizeEPFvS3_ESaIvELN9__gnu_cxx12_Lock_policyE2EE14_M_get_deleterERKSt9type_info
+000000000000efb4 l     O .rodata	0000000000000033 .hidden _ZTSPFvPN8pybind116detail25error_fetch_and_normalizeEE
+000000000001a780 l     F .text	0000000000000017 .hidden _ZN8pybind1110cast_errorD0Ev
+000000000001a7a0 l     F .text	000000000000001d .hidden _ZNK8pybind1110cast_error9set_errorEv
+000000000001cfb0 l     F .text	000000000000031e .hidden _ZN8pybind116detail20internals_pp_managerINS0_9internalsEE30get_or_create_pp_in_state_dictEv
+000000000001e2c0 l     F .text	00000000000001b5 .hidden _ZN8pybind116detail25make_static_property_typeEv
+000000000001e480 l     F .text	000000000000019e .hidden _ZN8pybind116detail22make_default_metaclassEv
+000000000001e620 l     F .text	0000000000000378 .hidden _ZN8pybind116detail19translate_exceptionENSt15__exception_ptr13exception_ptrE
+000000000001e0a0 l     F .text	0000000000000072 .hidden _ZNSt13unordered_setISt4pairIPK7_objectPKcEN8pybind116detail13override_hashESt8equal_toIS6_ESaIS6_EED2Ev
+000000000001e120 l     F .text	0000000000000072 .hidden _ZNSt18unordered_multimapIPKvPN8pybind116detail8instanceESt4hashIS1_ESt8equal_toIS1_ESaISt4pairIKS1_S5_EEED2Ev
+000000000001e1a0 l     F .text	000000000000009b .hidden _ZNSt13unordered_mapIP11_typeobjectSt6vectorIPN8pybind116detail9type_infoESaIS6_EESt4hashIS1_ESt8equal_toIS1_ESaISt4pairIKS1_S8_EEED2Ev
+000000000001e240 l     F .text	0000000000000072 .hidden _ZNSt13unordered_mapISt10type_indexPN8pybind116detail9type_infoESt4hashIS0_ESt8equal_toIS0_ESaISt4pairIKS0_S4_EEED2Ev
+000000000002cc20 l     F .text	0000000000000019 .hidden pybind11_object_new
+000000000002cc40 l     F .text	00000000000001c4 .hidden pybind11_object_init
+000000000002ce10 l     F .text	0000000000000053 .hidden pybind11_object_dealloc
+000000000001d880 l     F .text	0000000000000087 .hidden _ZN8pybind113strC2EPKc
+000000000001d2d0 l     F .text	00000000000000f0 .hidden _ZN8pybind116detail21get_python_state_dictEv
+000000000001d3c0 l     F .text	00000000000000d6 .hidden _ZN8pybind114dictC2EONS_6objectE
+000000000001d7c0 l     F .text	00000000000000bb .hidden _ZN8pybind116detail18dict_getitemstringEP7_objectPKc
+000000000001d620 l     F .text	0000000000000077 .hidden _ZN8pybind117capsuleC2EPKvPKcPFvP7_objectE
+000000000001d6a0 l     F .text	000000000000002b .hidden _ZN8pybind116detail8accessorINS0_17accessor_policies12generic_itemEED2Ev
+0000000000000000 l       .tbss	0000000000000008 .hidden _ZZN8pybind116handle15inc_ref_counterEmE7counter
+000000000001e9a0 l     F .text	0000000000000013 .hidden pybind11_static_get
+000000000001e9c0 l     F .text	000000000000001f .hidden pybind11_static_set
+000000000001e9e0 l     F .text	0000000000000044 .hidden pybind11_traverse
+000000000001ea30 l     F .text	0000000000000031 .hidden pybind11_clear
+0000000000034660 l     O .data	0000000000000050 .hidden _ZZN8pybind116detail25enable_dynamic_attributesEP15_heaptypeobjectE6getset
+000000000001ea70 l     F .text	0000000000000200 .hidden pybind11_meta_call
+000000000001ec70 l     F .text	000000000000008a .hidden pybind11_meta_setattro
+000000000001ed00 l     F .text	000000000000004e .hidden pybind11_meta_getattro
+000000000001ed50 l     F .text	0000000000000032 .hidden pybind11_meta_dealloc
+000000000002cbd0 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionINS_17error_already_setETnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+0000000000032e28 l     O .data.rel.ro	0000000000000018 .hidden _ZTIN8pybind1117builtin_exceptionE
+000000000002c880 l     F .text	00000000000000c7 .hidden _ZN8pybind116detail23handle_nested_exceptionISt16nested_exceptionTnNSt9enable_ifIXsr3std7is_sameIS2_NS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS5_RKNSt15__exception_ptr13exception_ptrE
+000000000002cb80 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionISt9bad_allocTnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+000000000002c840 l     F .text	0000000000000036 .hidden _ZN8pybind116detail9raise_errEP7_objectPKc
+000000000002cb30 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionISt12domain_errorTnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+000000000002cae0 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionISt16invalid_argumentTnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+000000000002ca90 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionISt12length_errorTnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+000000000002ca40 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionISt12out_of_rangeTnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+000000000002c9f0 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionISt11range_errorTnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+000000000002c9a0 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionISt14overflow_errorTnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+000000000002c950 l     F .text	0000000000000048 .hidden _ZN8pybind116detail23handle_nested_exceptionISt9exceptionTnNSt9enable_ifIXntsr3std7is_sameISt16nested_exceptionNS0_12remove_cvrefIT_E4typeEEE5valueEiE4typeELi0EEEbRKS6_RKNSt15__exception_ptr13exception_ptrE
+000000000001ee30 l     F .text	0000000000000189 .hidden _ZN8pybind116detail23all_type_info_get_cacheEP11_typeobject
+000000000002bdf0 l     F .text	00000000000002d9 .hidden _ZZ21pybind11_meta_deallocENKUlRN8pybind116detail9internalsEE_clES2_
+000000000001ed90 l     F .text	0000000000000098 .hidden _ZN8pybind116detail27get_fully_qualified_tp_nameB5cxx11EP11_typeobject
+000000000001f880 l     F .text	0000000000000100 .hidden _ZNSt10_HashtableIP11_typeobjectSt4pairIKS1_St6vectorIPN8pybind116detail9type_infoESaIS8_EEESaISB_ENSt8__detail10_Select1stESt8equal_toIS1_ESt4hashIS1_ENSD_18_Mod_range_hashingENSD_20_Default_ranged_hashENSD_20_Prime_rehash_policyENSD_17_Hashtable_traitsILb0ELb0ELb1EEEE21_M_insert_unique_nodeEmmPNSD_10_Hash_nodeISB_Lb0EEEm
+000000000001f100 l     F .text	0000000000000778 .hidden _ZN8pybind116detail22all_type_info_populateEP11_typeobjectRSt6vectorIPNS0_9type_infoESaIS5_EE
+000000000001efc0 l     F .text	00000000000000a3 .hidden _ZN8pybind1112cpp_functionC2IZNS_6detail23all_type_info_get_cacheEP11_typeobjectEUlNS_6handleEE_JEvEEOT_DpRKT0_
+000000000001f070 l     F .text	000000000000008a .hidden _ZN8pybind117weakrefC2ENS_6handleES1_
+000000000001f980 l     F .text	000000000000002f .hidden _ZNSt10_HashtableIP11_typeobjectSt4pairIKS1_St6vectorIPN8pybind116detail9type_infoESaIS8_EEESaISB_ENSt8__detail10_Select1stESt8equal_toIS1_ESt4hashIS1_ENSD_18_Mod_range_hashingENSD_20_Default_ranged_hashENSD_20_Prime_rehash_policyENSD_17_Hashtable_traitsILb0ELb0ELb1EEEE12_Scoped_nodeD2Ev
+000000000001fca0 l     F .text	000000000000003f .hidden _ZN8pybind1112cpp_function20make_function_recordEv
+0000000000021c40 l     F .text	0000000000000096 .hidden _ZZN8pybind1112cpp_function10initializeIZNS_6detail23all_type_info_get_cacheEP11_typeobjectEUlNS_6handleEE_vJS5_EJEEEvOT_PFT0_DpT1_EDpRKT2_ENUlRNS2_13function_callEE_8__invokeESJ_
+000000000000f172 l     O .rodata	0000000000000013 .hidden _ZZN8pybind1112cpp_function10initializeIZNS_6detail23all_type_info_get_cacheEP11_typeobjectEUlNS_6handleEE_vJS5_EJEEEvOT_PFT0_DpT1_EDpRKT2_E9signature
+000000000000f188 l     O .rodata	0000000000000008 .hidden _ZZN8pybind1112cpp_function10initializeIZNS_6detail23all_type_info_get_cacheEP11_typeobjectEUlNS_6handleEE_vJS5_EJEEEvOT_PFT0_DpT1_EDpRKT2_E5types
+000000000001fce0 l     F .text	0000000000001f28 .hidden _ZN8pybind1112cpp_function18initialize_genericEOSt10unique_ptrINS_6detail15function_recordENS0_33InitializingFunctionRecordDeleterEEPKcPKPKSt9type_infom
+0000000000029600 l     F .text	0000000000000214 .hidden _ZN8pybind1112cpp_function8destructEPNS_6detail15function_recordEb
+0000000000021c10 l     F .text	0000000000000024 .hidden _ZNSt10unique_ptrIN8pybind116detail15function_recordENS0_12cpp_function33InitializingFunctionRecordDeleterEED2Ev
+000000000001faf0 l     F .text	00000000000001a7 .hidden _ZNSt6vectorIPN8pybind116detail9type_infoESaIS3_EE6insertEN9__gnu_cxx17__normal_iteratorIPKS3_S5_EERS8_
+000000000001f9b0 l     F .text	0000000000000133 .hidden _ZNSt10_HashtableIP11_typeobjectSt4pairIKS1_St6vectorIPN8pybind116detail9type_infoESaIS8_EEESaISB_ENSt8__detail10_Select1stESt8equal_toIS1_ESt4hashIS1_ENSD_18_Mod_range_hashingENSD_20_Default_ranged_hashENSD_20_Prime_rehash_policyENSD_17_Hashtable_traitsILb0ELb0ELb1EEEE13_M_rehash_auxEmSt17integral_constantIbLb1EE
+0000000000022100 l     F .text	0000000000001d09 .hidden _ZN8pybind116detail27generate_function_signatureB5cxx11EPKcPNS0_15function_recordEPKPKSt9type_infoRmSA_
+0000000000029400 l     F .text	00000000000000b1 .hidden _ZNSt19__shrink_to_fit_auxISt6vectorIN8pybind116detail15argument_recordESaIS3_EELb1EE8_S_do_itERS5_
+00000000000294c0 l     F .text	00000000000000d2 .hidden _ZN8pybind116detail32get_function_record_PyTypeObjectEv
+0000000000023e10 l     F .text	0000000000003a95 .hidden _ZN8pybind1112cpp_function10dispatcherEP7_objectS2_S2_
+00000000000278b0 l     F .text	000000000000010a .hidden _ZN8pybind116detail16get_scope_moduleENS_6handleE
+00000000000346b0 l     O .data	0000000000000003 .hidden _ZZN8pybind117options12global_stateEvE8instance
+00000000000279c0 l     F .text	000000000000005f .hidden _ZN8pybind113strC2INS_6detail17accessor_policies8str_attrEEERKNS2_8accessorIT_EE
+0000000000027a20 l     F .text	00000000000001d6 .hidden _ZNK8pybind113strcvNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEEv
+0000000000027c00 l     F .text	0000000000000053 .hidden _ZN8pybind1112cpp_function12strdup_guardD2Ev
+0000000000021ce0 l     F .text	000000000000015a .hidden _ZZN8pybind116detail23all_type_info_get_cacheEP11_typeobjectENKUlNS_6handleEE_clES3_
+0000000000021e40 l     F .text	0000000000000220 .hidden _ZNSt10_HashtableIP11_typeobjectSt4pairIKS1_St6vectorIPN8pybind116detail9type_infoESaIS8_EEESaISB_ENSt8__detail10_Select1stESt8equal_toIS1_ESt4hashIS1_ENSD_18_Mod_range_hashingENSD_20_Default_ranged_hashENSD_20_Prime_rehash_policyENSD_17_Hashtable_traitsILb0ELb0ELb1EEEE8_M_eraseESt17integral_constantIbLb1EERS3_
+0000000000027dd0 l     F .text	00000000000003a2 .hidden _ZN8pybind116detail27replace_newlines_and_squashB5cxx11EPKc
+0000000000028180 l     F .text	00000000000001c9 .hidden _ZN8pybind116detail13get_type_infoERKSt10type_indexb
+000000000002a180 l     F .text	0000000000000031 .hidden _ZN8pybind116detail13get_type_infoEP11_typeobject
+000000000002a1c0 l     F .text	00000000000003c3 .hidden _ZN8pybind116detail8instance20get_value_and_holderEPKNS0_9type_infoEb
+000000000002a590 l     F .text	00000000000000e3 .hidden _ZN8pybind116detail13function_callC2ERKNS0_15function_recordENS_6handleE
+000000000002a680 l     F .text	00000000000000f0 .hidden _ZN8pybind116detail19loader_life_supportD2Ev
+000000000002b4f0 l     F .text	00000000000001bc .hidden _ZNSt6vectorIN8pybind116detail13function_callESaIS2_EE17_M_realloc_insertIJS2_EEEvN9__gnu_cxx17__normal_iteratorIPS2_S4_EEDpOT_
+000000000002b7c0 l     F .text	00000000000000ad .hidden _ZNSt12_Destroy_auxILb0EE9__destroyIPN8pybind116detail13function_callEEEvT_S6_
+000000000002ba20 l     F .text	00000000000000c4 .hidden _ZNK8pybind116detail8accessorINS0_17accessor_policies10tuple_itemEE9get_cacheEv
+000000000002a930 l     F .text	000000000000009f .hidden _ZNK8pybind113str6formatIJRKNS_6handleEEEES0_DpOT_
+000000000002a7c0 l     F .text	0000000000000079 .hidden _ZN8pybind116detail13function_callD2Ev
+000000000002a840 l     F .text	000000000000002f .hidden _ZNSt6vectorIN8pybind116detail13function_callESaIS2_EED2Ev
+000000000002a870 l     F .text	00000000000000b9 .hidden _ZN8pybind116detail24try_translate_exceptionsEv
+00000000000285f0 l     F .text	000000000000014e .hidden _ZN8pybind116detail30get_local_internals_pp_managerEv
+0000000000028740 l     F .text	00000000000000fa .hidden _ZN8pybind116detail20internals_pp_managerINS0_15local_internalsEE6get_ppEv
+0000000000028cc0 l     F .text	00000000000000d6 .hidden _ZNSt10_HashtableISt10type_indexSt4pairIKS0_PN8pybind116detail9type_infoEESaIS7_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENS9_18_Mod_range_hashingENS9_20_Default_ranged_hashENS9_20_Prime_rehash_policyENS9_17_Hashtable_traitsILb0ELb0ELb1EEEE4findERS2_
+0000000000028c10 l     F .text	00000000000000af .hidden _ZNSt15__uniq_ptr_implIN8pybind116detail15local_internalsESt14default_deleteIS2_EE5resetEPS2_
+0000000000034fd0 l     O .bss	0000000000000008 .hidden _ZGVZN8pybind116detail30get_local_internals_pp_managerEvE17this_module_idstrB5cxx11
+0000000000035000 l     O .bss	0000000000000008 .hidden _ZGVZN8pybind116detail30get_local_internals_pp_managerEvE26local_internals_pp_manager
+0000000000034fd8 l     O .bss	0000000000000028 .hidden _ZZN8pybind116detail30get_local_internals_pp_managerEvE26local_internals_pp_manager
+0000000000034fb0 l     O .bss	0000000000000020 .hidden _ZZN8pybind116detail30get_local_internals_pp_managerEvE17this_module_idstrB5cxx11
+0000000000028840 l     F .text	0000000000000079 .hidden _ZN8pybind116detail20internals_pp_managerINS0_15local_internalsEEC2EPKcPFvPS2_E
+00000000000288c0 l     F .text	000000000000002b .hidden _ZN8pybind116detail20internals_pp_managerINS0_15local_internalsEED2Ev
+00000000000288f0 l     F .text	000000000000031e .hidden _ZN8pybind116detail20internals_pp_managerINS0_15local_internalsEE30get_or_create_pp_in_state_dictEv
+0000000000028da0 l     F .text	00000000000000ea .hidden _ZNKSt10_HashtableISt10type_indexSt4pairIKS0_PN8pybind116detail9type_infoEESaIS7_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENS9_18_Mod_range_hashingENS9_20_Default_ranged_hashENS9_20_Prime_rehash_policyENS9_17_Hashtable_traitsILb0ELb0ELb1EEEE19_M_find_before_nodeEmRS2_m
+00000000000295a0 l     F .text	000000000000001c .hidden _ZN8pybind116detail36function_record_PyTypeObject_methods15tp_dealloc_implEP7_object
+00000000000295c0 l     F .text	000000000000000d .hidden _ZN8pybind116detail36function_record_PyTypeObject_methods12tp_init_implEP7_objectS3_S3_
+00000000000295d0 l     F .text	000000000000000d .hidden _ZN8pybind116detail36function_record_PyTypeObject_methods13tp_alloc_implEP11_typeobjectl
+00000000000295e0 l     F .text	000000000000000d .hidden _ZN8pybind116detail36function_record_PyTypeObject_methods11tp_new_implEP11_typeobjectP7_objectS5_
+00000000000295f0 l     F .text	000000000000000d .hidden _ZN8pybind116detail36function_record_PyTypeObject_methods12tp_free_implEPv
+00000000000299b0 l     F .text	0000000000000077 .hidden _ZNK8pybind116detail10object_apiINS_6handleEEplERKS3_
+0000000000029820 l     F .text	0000000000000187 .hidden _ZN8pybind1110make_tupleILNS_19return_value_policyE1EJNS_6objectEEEENS_5tupleEDpOT0_
+0000000000029a30 l     F .text	0000000000000243 .hidden _ZN8pybind1110make_tupleILNS_19return_value_policyE1EJNS_6detail8accessorINS2_17accessor_policies12generic_itemEEENS_5tupleEEEES7_DpOT0_
+0000000000029c80 l     F .text	00000000000003db .hidden _ZN8pybind1137cast_error_unable_to_convert_call_argERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES7_
+000000000002a0c0 l     F .text	00000000000000b7 .hidden _ZNK8pybind116detail8accessorINS0_17accessor_policies12generic_itemEE9get_cacheEv
+000000000002a0a0 l     F .text	000000000000001f .hidden _ZNSt5arrayIN8pybind116objectELm2EED2Ev
+000000000000f30c l     O .rodata	0000000000000013 .hidden _ZTSN8pybind116objectE
+000000000000f332 l     O .rodata	0000000000000044 .hidden _ZTSN8pybind116detail8accessorINS0_17accessor_policies12generic_itemEEE
+000000000000f376 l     O .rodata	0000000000000012 .hidden _ZTSN8pybind115tupleE
+000000000002b870 l     F .text	0000000000000109 .hidden _ZN8pybind116detail27apply_exception_translatorsERSt12forward_listIPFvNSt15__exception_ptr13exception_ptrEESaIS5_EE
+000000000002baf0 l     F .text	00000000000000c5 .hidden _ZNK8pybind116detail10object_apiINS0_8accessorINS0_17accessor_policies8str_attrEEEEclILNS_19return_value_policyE1EJRKNS_6handleEEEENS_6objectEDpOT0_
+000000000002b6b0 l     F .text	000000000000010c .hidden _ZSt19__relocate_object_aIN8pybind116detail13function_callES2_SaIS2_EEvPT_PT0_RT1_
+000000000002bc60 l     F .text	0000000000000187 .hidden _ZN8pybind1110make_tupleILNS_19return_value_policyE1EJRKNS_6handleEEEENS_5tupleEDpOT0_
+000000000000f31f l     O .rodata	0000000000000013 .hidden _ZTSN8pybind116handleE
+000000000002c510 l     F .text	00000000000001c6 .hidden _ZNSt10_HashtableISt10type_indexSt4pairIKS0_PN8pybind116detail9type_infoEESaIS7_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENS9_18_Mod_range_hashingENS9_20_Default_ranged_hashENS9_20_Prime_rehash_policyENS9_17_Hashtable_traitsILb0ELb0ELb1EEEE8_M_eraseESt17integral_constantIbLb1EERS2_
+000000000002c6e0 l     F .text	000000000000015e .hidden _ZNSt10_HashtableISt10type_indexSt4pairIKS0_PN8pybind116detail9type_infoEESaIS7_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENS9_18_Mod_range_hashingENS9_20_Default_ranged_hashENS9_20_Prime_rehash_policyENS9_17_Hashtable_traitsILb0ELb0ELb1EEEE8_M_eraseEmPNS9_15_Hash_node_baseEPNS9_10_Hash_nodeIS7_Lb0EEE
+000000000002ce70 l     F .text	00000000000000f7 .hidden _ZN8pybind116detail8instance15allocate_layoutEv
+000000000002cf70 l     F .text	00000000000002aa .hidden _ZN8pybind116detail14clear_instanceEP7_object
+000000000002d500 l     F .text	00000000000001dc .hidden _ZZN8pybind116detail24deregister_instance_implEPvPNS0_8instanceEENKUlRSt18unordered_multimapIPKvS3_St4hashIS6_ESt8equal_toIS6_ESaISt4pairIKS6_S3_EEEE_clESG_
+000000000002d310 l     F .text	000000000000003a .hidden _ZN8pybind116detail24deregister_instance_implEPvPNS0_8instanceE
+000000000002d350 l     F .text	00000000000001a5 .hidden _ZN8pybind116detail21traverse_offset_basesEPvPKNS0_9type_infoEPNS0_8instanceEPFbS1_S6_E
+000000000002d220 l     F .text	0000000000000010 .hidden _ZN8pybind116detail8instance17deallocate_layoutEv
+000000000002d230 l     F .text	00000000000000dc .hidden _ZN8pybind116detail14clear_patientsEP7_object
+000000000002d6e0 l     F .text	000000000000022d .hidden _ZZN8pybind116detail14clear_patientsEP7_objectENKUlRNS0_9internalsEE_clES4_
+000000000002e070 l     F .text	00000000000000a3 .hidden _ZNK8pybind114dict8containsIRA24_KcEEbOT_
+000000000002e120 l     F .text	0000000000000154 .hidden _ZN8pybind116detail11type_casterIcvE4castEPKcNS_19return_value_policyENS_6handleE
+000000000002e550 l     F .text	0000000000000101 .hidden _ZN8pybind1112cpp_function10initializeIRPFN2at6TensorES3_S3_S3_dES3_JS3_S3_S3_dEJNS_4nameENS_5scopeENS_7siblingENS_3argESA_SA_SA_A59_cEEEvOT_PFT0_DpT1_EDpRKT2_
+000000000002e410 l     F .text	000000000000013f .hidden _ZN8pybind117module_10add_objectEPKcNS_6handleEb
+000000000002e660 l     F .text	0000000000000010 .hidden _ZZN8pybind1112cpp_function10initializeIRPFN2at6TensorES3_S3_S3_dES3_JS3_S3_S3_dEJNS_4nameENS_5scopeENS_7siblingENS_3argESA_SA_SA_A59_cEEEvOT_PFT0_DpT1_EDpRKT2_ENUlRNS_6detail13function_callEE_8__invokeESP_
+000000000002ec80 l     F .text	00000000000001f5 .hidden _ZN8pybind116detail17process_attributeINS_3argEvE4initERKS2_PNS0_15function_recordE
+000000000000f3aa l     O .rodata	0000000000000061 .hidden _ZZN8pybind1112cpp_function10initializeIRPFN2at6TensorES3_S3_S3_dES3_JS3_S3_S3_dEJNS_4nameENS_5scopeENS_7siblingENS_3argESA_SA_SA_A59_cEEEvOT_PFT0_DpT1_EDpRKT2_E9signature
+000000000000f410 l     O .rodata	0000000000000008 .hidden _ZZN8pybind1112cpp_function10initializeIRPFN2at6TensorES3_S3_S3_dES3_JS3_S3_S3_dEJNS_4nameENS_5scopeENS_7siblingENS_3argESA_SA_SA_A59_cEEEvOT_PFT0_DpT1_EDpRKT2_E5types
+000000000002e670 l     F .text	00000000000001b1 .hidden _ZZN8pybind1112cpp_function10initializeIRPFN2at6TensorES3_S3_S3_dES3_JS3_S3_S3_dEJNS_4nameENS_5scopeENS_7siblingENS_3argESA_SA_SA_A59_cEEEvOT_PFT0_DpT1_EDpRKT2_ENKUlRNS_6detail13function_callEE_clESP_
+000000000002e830 l     F .text	0000000000000095 .hidden _ZN8pybind116detail15argument_loaderIJN2at6TensorES3_S3_dEE18load_impl_sequenceIJLm0ELm1ELm2ELm3EEEEbRNS0_13function_callESt16integer_sequenceImJXspT_EEE
+000000000002ea20 l     F .text	000000000000016d .hidden _ZNO8pybind116detail15argument_loaderIJN2at6TensorES3_S3_dEE9call_implIS3_RPFS3_S3_S3_S3_dEJLm0ELm1ELm2ELm3EENS0_9void_typeEEET_OT0_St16integer_sequenceImJXspT1_EEEOT2_
+000000000002eb90 l     F .text	00000000000000e5 .hidden _ZNSt11_Tuple_implILm0EJN8pybind116detail11type_casterIN2at6TensorEvEES5_S5_NS2_IdvEEEED2Ev
+000000000002e8d0 l     F .text	0000000000000142 .hidden _ZN8pybind116detail11type_casterIdvE4loadENS_6handleEb
+000000000002ee80 l     F .text	0000000000000173 .hidden _ZNSt6vectorIN8pybind116detail15argument_recordESaIS2_EE12emplace_backIJRA5_KcDnNS0_6handleEbbEEERS2_DpOT_
+000000000002f170 l     F .text	0000000000000096 .hidden _ZN8pybind113strC2ERKNS_6objectE
+000000000000ee8a l     O .rodata	000000000000001f .hidden _ZTSN8pybind1117error_already_setE
+000000000000eea9 l     O .rodata	0000000000000018 .hidden _ZTSN8pybind1110cast_errorE
+000000000000eec1 l     O .rodata	000000000000001f .hidden _ZTSN8pybind1117builtin_exceptionE
+0000000000032e78 l     O .data.rel.ro	0000000000000018 .hidden _ZTISt19_Sp_counted_deleterIPN8pybind116detail25error_fetch_and_normalizeEPFvS3_ESaIvELN9__gnu_cxx12_Lock_policyE2EE
+000000000000eee0 l     O .rodata	0000000000000071 .hidden _ZTSSt19_Sp_counted_deleterIPN8pybind116detail25error_fetch_and_normalizeEPFvS3_ESaIvELN9__gnu_cxx12_Lock_policyE2EE
+0000000000033050 l     O .data.rel.ro	0000000000000018 .hidden _ZTIN8pybind1120reference_cast_errorE
+000000000000f388 l     O .rodata	0000000000000022 .hidden _ZTSN8pybind1120reference_cast_errorE
+00000000000346b8 l     O .data	0000000000000008 .hidden DW.ref.__gxx_personality_v0
+0000000000000000 l    df *ABS*	0000000000000000 kernel.cu
+000000000000b858 l       .gcc_except_table	0000000000000000 GCC_except_table1
+000000000000b93c l       .gcc_except_table	0000000000000000 GCC_except_table3
+0000000000000000 l    df *ABS*	0000000000000000 crtend.c
+000000000000fce0 l     O .eh_frame	0000000000000004 .hidden __EH_FRAME_LIST_END__
+0000000000030d8c l     F .init	0000000000000000 .hidden _init
+0000000000030da8 l     F .fini	0000000000000000 .hidden _fini
+00000000000346c0 l       .got.plt	0000000000000000 .hidden _GLOBAL_OFFSET_TABLE_
+0000000000033098 l       .dynamic	0000000000000000 .hidden _DYNAMIC
+0000000000000000  w      *UND*	0000000000000000 __gmon_start__
+0000000000000000  w    F *UND*	0000000000000000 __register_frame_info
+0000000000000000  w    F *UND*	0000000000000000 __cxa_finalize
+0000000000000000  w    F *UND*	0000000000000000 __deregister_frame_info
+0000000000000000       F *UND*	0000000000000000 _ZSt21ios_base_library_initv
+0000000000000000         *UND*	0000000000000000 PyErr_Fetch
+0000000000000000         *UND*	0000000000000000 PyErr_Restore
+0000000000000000         *UND*	0000000000000000 PyThread_tss_get
+0000000000000000         *UND*	0000000000000000 PyGILState_GetThisThreadState
+0000000000000000         *UND*	0000000000000000 _PyThreadState_UncheckedGet
+0000000000000000         *UND*	0000000000000000 PyEval_AcquireThread
+0000000000000000         *UND*	0000000000000000 PyThreadState_New
+0000000000000000         *UND*	0000000000000000 PyThread_tss_set
+0000000000000000       F *UND*	0000000000000000 __cxa_begin_catch
+0000000000000000       F *UND*	0000000000000000 _ZSt9terminatev
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE10_M_replaceEmmPKcm
+0000000000000000       F *UND*	0000000000000000 memcpy
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_appendEPKcm
+0000000000000000       F *UND*	0000000000000000 _ZdlPvm
+0000000000000000       F *UND*	0000000000000000 _ZSt20__throw_length_errorPKc
+0000000000000000       F *UND*	0000000000000000 _Unwind_Resume
+0000000000000000         *UND*	0000000000000000 PyEval_SaveThread
+0000000000014460 g     F .text	00000000000015b8 _Z3runN2at6TensorES0_S0_d
+0000000000000000       F *UND*	0000000000000000 _ZN3c108GradMode10is_enabledEv
+0000000000000000       F *UND*	0000000000000000 _ZN3c108GradMode11set_enabledEb
+0000000000000000       F *UND*	0000000000000000 _ZN3c106detail14torchCheckFailEPKcS2_jS2_
+0000000000000000       F *UND*	0000000000000000 _ZN3c106detail19maybe_wrap_dim_slowIlEET_S2_S2_b
+000000000001a840  w    F .text	00000000000000d8 _ZN3c106Device8validateEv
+000000000001aaa0  w    F .text	00000000000000d5 _ZN3c104impl17InlineDeviceGuardINS0_16VirtualGuardImplEEC2ENS_6DeviceE
+0000000000000000       F *UND*	0000000000000000 _ZNK3c107SymBool10guard_boolEPKcl
+0000000000000000       O *UND*	0000000000000000 _ZN3c1019UndefinedTensorImpl10_singletonE
+0000000000000000       F *UND*	0000000000000000 _ZN3c106detail23torchInternalAssertFailEPKcS2_jS2_S2_
+0000000000000000       F *UND*	0000000000000000 _ZN2at4_ops9to_device4callERKNS_6TensorEN3c106DeviceENS5_10ScalarTypeEbbSt8optionalINS5_12MemoryFormatEE
+000000000001b080  w    F .text	00000000000000e3 _ZNK2at10TensorBase22is_contiguous_or_falseEN3c1012MemoryFormatE
+0000000000000000       F *UND*	0000000000000000 _ZNK2at10TensorBase21__dispatch_contiguousEN3c1012MemoryFormatE
+0000000000016a10  w    F .text	0000000000000145 _ZNK2at10TensorBase7optionsEv
+000000000001c430  w    F .text	00000000000000ba _ZNR3c1013TensorOptions9set_dtypeESt8optionalINS_10ScalarTypeEE
+00000000000168f0  w    F .text	0000000000000113 _ZN5torch5emptyEN3c108ArrayRefIlEENS0_13TensorOptionsESt8optionalINS0_12MemoryFormatEE
+000000000002f210 g     F .text	0000000000001b11 _Z46launch_dense_qkv_prefill_causal_h8_kv1or8_d128RKN2at6TensorES2_S2_fRS0_
+000000000001c700  w    F .text	0000000000000174 _ZNK2at6Tensor2toEN3c1013TensorOptionsEbbSt8optionalINS1_12MemoryFormatEE
+0000000000000000       F *UND*	0000000000000000 _ZN6caffe28TypeMeta26error_unsupported_typemetaES0_
+000000000001aea0  w    F .text	0000000000000096 _ZNK3c1010TensorImpl20is_contiguous_customENS_12MemoryFormatE
+0000000000000000       F *UND*	0000000000000000 _ZNK3c1017SymbolicShapeMeta18init_is_contiguousEv
+000000000001b070  w    F .text	0000000000000006 _ZN3c106detail23torchInternalAssertFailEPKcS2_jS2_NS0_22CompileTimeEmptyStringE
+00000000000168a0  w    F .text	000000000000004f _ZN2at10TensorBaseD2Ev
+0000000000000000       F *UND*	0000000000000000 _ZN3c104impl23ExcludeDispatchKeyGuardC1ENS_14DispatchKeySetE
+000000000001b860  w    F .text	000000000000022c _ZN2at5emptyEN3c108ArrayRefIlEENS0_13TensorOptionsESt8optionalINS0_12MemoryFormatEE
+000000000001b2e0  w    F .text	000000000000057e _ZN5torch8autograd13make_variableEN2at6TensorEbb
+0000000000000000       F *UND*	0000000000000000 _ZN3c104impl23ExcludeDispatchKeyGuardD1Ev
+0000000000015a20 g     F .text	000000000000019e PyInit_ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1
+0000000000000000         *UND*	0000000000000000 Py_GetVersion
+0000000000000000       F *UND*	0000000000000000 strncmp
+0000000000000000         *UND*	0000000000000000 PyExc_ImportError
+0000000000000000         *UND*	0000000000000000 PyErr_Format
+0000000000000000         *UND*	0000000000000000 PyModuleDef_Init
+0000000000000000       F *UND*	0000000000000000 __cxa_guard_acquire
+0000000000000000       F *UND*	0000000000000000 __cxa_atexit
+0000000000000000       F *UND*	0000000000000000 __cxa_guard_release
+0000000000000000       F *UND*	0000000000000000 __cxa_guard_abort
+0000000000000000         *UND*	0000000000000000 PyGILState_Ensure
+0000000000000000       F *UND*	0000000000000000 _Znwm
+0000000000000000         *UND*	0000000000000000 PyGILState_Release
+0000000000000000         *UND*	0000000000000000 PyErr_SetString
+0000000000000000       F *UND*	0000000000000000 __cxa_end_catch
+0000000000000000       F *UND*	0000000000000000 _ZNSt9exceptionD2Ev
+0000000000000000       O *UND*	0000000000000000 __libc_single_threaded
+000000000001bf80  w    F .text	000000000000003f _ZNSt16_Sp_counted_baseILN9__gnu_cxx12_Lock_policyE2EE24_M_release_last_use_coldEv
+0000000000000000         *UND*	0000000000000000 PyErr_Occurred
+0000000000000000       F *UND*	0000000000000000 __cxa_allocate_exception
+0000000000000000       F *UND*	0000000000000000 _ZNSt13runtime_errorC1EPKc
+0000000000000000       O *UND*	0000000000000000 _ZTISt13runtime_error
+0000000000000000       F *UND*	0000000000000000 _ZNSt13runtime_errorD1Ev
+0000000000000000       F *UND*	0000000000000000 __cxa_throw
+0000000000000000       F *UND*	0000000000000000 __assert_fail
+0000000000000000       F *UND*	0000000000000000 __cxa_free_exception
+0000000000016eb0  w    F .text	0000000000000089 _ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EEPKS5_OS8_
+0000000000000000       F *UND*	0000000000000000 strlen
+0000000000000000         *UND*	0000000000000000 PyObject_Str
+0000000000000000         *UND*	0000000000000000 PyUnicode_AsEncodedString
+0000000000000000         *UND*	0000000000000000 PyBytes_AsStringAndSize
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_createERmm
+0000000000000000         *UND*	0000000000000000 PyObject_GetAttrString
+0000000000000000         *UND*	0000000000000000 PyList_Size
+0000000000000000         *UND*	0000000000000000 PyErr_Clear
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE12_M_constructEmc
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_mutateEmmPKcm
+0000000000000000         *UND*	0000000000000000 PyFrame_GetCode
+0000000000000000         *UND*	0000000000000000 PyFrame_GetLineNumber
+0000000000000000         *UND*	0000000000000000 _Py_Dealloc
+0000000000000000         *UND*	0000000000000000 PyFrame_GetBack
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE7reserveEm
+0000000000000000       F *UND*	0000000000000000 _ZSt19__throw_logic_errorPKc
+0000000000018ea0  w    F .text	00000000000000a4 _ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EEOS8_PKS5_
+0000000000018f50  w    F .text	00000000000000d9 _ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EEOS8_S9_
+0000000000019030  w    F .text	00000000000000c5 _ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EEPKS5_RKS8_
+0000000000000000         *UND*	0000000000000000 PyObject_HasAttrString
+0000000000019490  w    F .text	0000000000000094 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEC2IS3_EEPKcRKS3_
+0000000000000000       F *UND*	0000000000000000 _ZNSt13runtime_errorC1ERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+0000000000000000         *UND*	0000000000000000 PyGILState_Check
+0000000000000000       O *UND*	0000000000000000 stderr
+0000000000000000       F *UND*	0000000000000000 fprintf
+0000000000000000       F *UND*	0000000000000000 fputc
+0000000000000000       F *UND*	0000000000000000 fflush
+0000000000000000       F *UND*	0000000000000000 _ZNSt13runtime_errorC2ERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+0000000000000000       F *UND*	0000000000000000 _ZNSt13runtime_errorD2Ev
+0000000000000000         *UND*	0000000000000000 PyUnicode_AsUTF8AndSize
+000000000000efe7  w    O .rodata	0000000000000035 _ZTSNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+0000000000000000         *UND*	0000000000000000 PyByteArray_Type
+0000000000000000         *UND*	0000000000000000 PyType_IsSubtype
+0000000000000000         *UND*	0000000000000000 PyByteArray_AsString
+0000000000000000         *UND*	0000000000000000 PyByteArray_Size
+0000000000000000         *UND*	0000000000000000 PyBytes_AsString
+0000000000000000         *UND*	0000000000000000 PyBytes_Size
+0000000000000000       F *UND*	0000000000000000 __cxa_rethrow
+000000000001a130  w    F .text	0000000000000001 _ZNSt16_Sp_counted_baseILN9__gnu_cxx12_Lock_policyE2EED2Ev
+0000000000000000       F *UND*	0000000000000000 strcmp
+0000000000000000       F *UND*	0000000000000000 __cxa_demangle
+0000000000000000       F *UND*	0000000000000000 _ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE4findEPKcmm
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE8_M_eraseEmm
+0000000000000000       F *UND*	0000000000000000 free
+0000000000000000       F *UND*	0000000000000000 _ZSt24__throw_out_of_range_fmtPKcz
+0000000000000000         *UND*	0000000000000000 PyExc_RuntimeError
+0000000000000000         *UND*	0000000000000000 PyThreadState_Clear
+0000000000000000         *UND*	0000000000000000 PyThreadState_DeleteCurrent
+000000000001a920  w    F .text	000000000000017b _ZN3c106detail12_str_wrapperIJPKcRKiEE4callB5cxx11ERKS3_S5_
+0000000000000000       F *UND*	0000000000000000 _ZN3c106detail23torchInternalAssertFailEPKcS2_jS2_RKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1119basic_ostringstreamIcSt11char_traitsIcESaIcEEC1Ev
+0000000000000000       F *UND*	0000000000000000 _ZSt16__ostream_insertIcSt11char_traitsIcEERSt13basic_ostreamIT_T0_ES6_PKS3_l
+0000000000000000       F *UND*	0000000000000000 _ZNSt9basic_iosIcSt11char_traitsIcEE5clearESt12_Ios_Iostate
+0000000000000000       F *UND*	0000000000000000 _ZNSolsEi
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_assignERKS4_
+0000000000000000       O *UND*	0000000000000000 _ZTTNSt7__cxx1119basic_ostringstreamIcSt11char_traitsIcESaIcEEE
+0000000000000000       O *UND*	0000000000000000 _ZTVNSt7__cxx1115basic_stringbufIcSt11char_traitsIcESaIcEEE
+0000000000000000       O *UND*	0000000000000000 _ZTVSt15basic_streambufIcSt11char_traitsIcEE
+0000000000000000       F *UND*	0000000000000000 _ZNSt6localeD1Ev
+0000000000000000       F *UND*	0000000000000000 _ZNSt8ios_baseD2Ev
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1119basic_ostringstreamIcSt11char_traitsIcESaIcEED1Ev
+0000000000032ee8  w    O .data.rel.ro	00000000000000c8 _ZTVN3c104impl16VirtualGuardImplE
+0000000000000000       O *UND*	0000000000000000 _ZN3c104impl26device_guard_impl_registryE
+000000000001acf0  w    F .text	00000000000001ab _ZN3c106detail12_str_wrapperIJPKcRKNS_10DeviceTypeES3_EE4callB5cxx11ERKS3_S6_S9_
+0000000000000000       F *UND*	0000000000000000 _ZN3c106detail14torchCheckFailEPKcS2_jRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+000000000001ab80  w    F .text	000000000000000a _ZNK3c104impl16VirtualGuardImpl9getDeviceEv
+000000000001ab90  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl14exchangeDeviceENS_6DeviceE
+000000000001aba0  w    F .text	0000000000000001 _ZN3c104impl24DeviceGuardImplInterfaceD2Ev
+000000000001abb0  w    F .text	0000000000000009 _ZNK3c104impl16VirtualGuardImpl4typeEv
+000000000001abc0  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl9setDeviceENS_6DeviceE
+000000000001abd0  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl18uncheckedSetDeviceENS_6DeviceE
+000000000001abe0  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl9getStreamENS_6DeviceE
+000000000001abf0  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl16getDefaultStreamENS_6DeviceE
+000000000001ac00  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl23getStreamFromGlobalPoolENS_6DeviceEb
+000000000001ac10  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl12getNewStreamENS_6DeviceEi
+000000000001ac20  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl14exchangeStreamENS_6StreamE
+000000000001ac30  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl12destroyEventEPva
+000000000001ac40  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl6recordEPPvRKNS_6StreamEaNS_9EventFlagE
+000000000001ac50  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl5blockEPvRKNS_6StreamE
+000000000001ac60  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl10queryEventEPv
+000000000001ac70  w    F .text	000000000000000a _ZNK3c104impl16VirtualGuardImpl11deviceCountEv
+000000000001ac80  w    F .text	000000000000000d _ZNK3c104impl16VirtualGuardImpl11queryStreamERKNS_6StreamE
+000000000001ac90  w    F .text	0000000000000010 _ZNK3c104impl16VirtualGuardImpl17synchronizeStreamERKNS_6StreamE
+000000000001aca0  w    F .text	0000000000000010 _ZNK3c104impl16VirtualGuardImpl16synchronizeEventEPv
+000000000001acb0  w    F .text	0000000000000010 _ZNK3c104impl16VirtualGuardImpl17synchronizeDeviceEa
+000000000001acc0  w    F .text	0000000000000010 _ZNK3c104impl16VirtualGuardImpl21recordDataPtrOnStreamERKNS_7DataPtrERKNS_6StreamE
+000000000001acd0  w    F .text	0000000000000010 _ZNK3c104impl16VirtualGuardImpl11elapsedTimeEPvS2_a
+000000000001ace0  w    F .text	000000000000000a _ZN3c104impl16VirtualGuardImplD0Ev
+0000000000000000       F *UND*	0000000000000000 _ZN3c10lsERSoNS_10DeviceTypeE
+000000000001af40  w    F .text	0000000000000050 _ZN3c107SymBoolD2Ev
+000000000001af90  w    F .text	00000000000000d7 _ZNK3c1010TensorImpl26is_contiguous_default_implIbEET_NS_12MemoryFormatE
+0000000000000000       F *UND*	0000000000000000 _ZNK3c1017SymbolicShapeMeta32init_is_channels_last_contiguousEv
+0000000000000000       F *UND*	0000000000000000 _ZNK3c1017SymbolicShapeMeta35init_is_channels_last_3d_contiguousEv
+000000000001b170  w    F .text	0000000000000118 _ZNK3c1010TensorImpl26is_contiguous_default_implINS_7SymBoolEEET_NS_12MemoryFormatE
+0000000000000000       F *UND*	0000000000000000 _ZNK3c107SymBool14guard_or_falseEPKcl
+000000000001b290  w    F .text	000000000000004f _ZN3c1013intrusive_ptrINS_10TensorImplENS_19UndefinedTensorImplEED2Ev
+000000000001bb30  w    F .text	00000000000001ea _ZN5torch8autograd12AutogradMetaC2EPN3c1010TensorImplEbNS0_4EdgeE
+0000000000032fd8  w    O .data.rel.ro	0000000000000028 _ZTVN3c1015VariableVersion14VersionCounterE
+0000000000000000       F *UND*	0000000000000000 _ZN3c1010TensorImpl17set_autograd_metaESt10unique_ptrINS_21AutogradMetaInterfaceESt14default_deleteIS2_EE
+000000000001bd20  w    F .text	0000000000000069 _ZN5torch8autograd4EdgeD2Ev
+000000000001bae0  w    F .text	000000000000004b _ZN3c1013intrusive_ptrINS_10TensorImplENS_6detail34intrusive_target_default_null_typeIS1_EEED2Ev
+000000000001ba90  w    F .text	000000000000004b _ZN3c1015VariableVersionD2Ev
+000000000001c260  w    F .text	000000000000004b _ZN3c1013intrusive_ptrINS_15VariableVersion14VersionCounterENS_6detail34intrusive_target_default_null_typeIS2_EEED2Ev
+0000000000000000       F *UND*	0000000000000000 _ZN2at4_ops19empty_memory_format4callEN3c108ArrayRefINS2_6SymIntEEESt8optionalINS2_10ScalarTypeEES6_INS2_6LayoutEES6_INS2_6DeviceEES6_IbES6_INS2_12MemoryFormatEE
+000000000001c2b0  w    F .text	000000000000017b _ZN3c106detail12_str_wrapperIJPKcRKlEE4callB5cxx11ERKS3_S5_
+0000000000000000       O *UND*	0000000000000000 _ZTVN5torch8autograd12AutogradMetaE
+000000000001bd90  w    F .text	0000000000000069 _ZNSt12__shared_ptrISt6vectorISt8functionIFN2at10TensorBaseERKS3_EESaIS7_EELN9__gnu_cxx12_Lock_policyE2EED2Ev
+000000000001be00  w    F .text	000000000000005e _ZNSt6vectorISt10unique_ptrIN5torch8autograd15FunctionPreHookESt14default_deleteIS3_EESaIS6_EED2Ev
+000000000001be60  w    F .text	0000000000000069 _ZNSt12__shared_ptrIN5torch8autograd11ForwardGradELN9__gnu_cxx12_Lock_policyE2EED2Ev
+000000000001bed0  w    F .text	0000000000000039 _ZNSt10__weak_ptrIN5torch8autograd4NodeELN9__gnu_cxx12_Lock_policyE2EED2Ev
+000000000001bf10  w    F .text	0000000000000069 _ZNSt12__shared_ptrIN5torch8autograd4NodeELN9__gnu_cxx12_Lock_policyE2EED2Ev
+0000000000000000       F *UND*	0000000000000000 _ZN3c1021AutogradMetaInterfaceD2Ev
+000000000001bfc0  w    F .text	00000000000000c4 _ZN3c1020intrusive_ptr_targetD2Ev
+0000000000033028  w    O .data.rel.ro	0000000000000028 _ZTVN3c1020intrusive_ptr_targetE
+000000000001c0e0  w    F .text	000000000000017b _ZN3c106detail12_str_wrapperIJPKcRKjEE4callB5cxx11ERKS3_S5_
+000000000001c090  w    F .text	0000000000000017 _ZN3c1015VariableVersion14VersionCounterD0Ev
+000000000001c0b0  w    F .text	0000000000000001 _ZN3c1020intrusive_ptr_target17release_resourcesEv
+000000000001c0c0  w    F .text	0000000000000017 _ZN3c1020intrusive_ptr_targetD0Ev
+0000000000000000       F *UND*	0000000000000000 _ZNSo9_M_insertImEERSoT_
+0000000000000000       F *UND*	0000000000000000 _ZNSo9_M_insertIlEERSoT_
+000000000001c4f0  w    F .text	0000000000000175 _ZN3c106detail12_str_wrapperIJPKcRKNS_10ScalarTypeES3_EE4callB5cxx11ERKS3_S6_S9_
+000000000001c670  w    F .text	0000000000000081 _ZN3c106detail4_strINS_10ScalarTypeEJPKcEEERSoS5_RKT_DpRKT0_
+0000000000000000       F *UND*	0000000000000000 _ZN2at4_ops15to_dtype_layout4callERKNS_6TensorESt8optionalIN3c1010ScalarTypeEES5_INS6_6LayoutEES5_INS6_6DeviceEES5_IbEbbS5_INS6_12MemoryFormatEE
+0000000000000000         *UND*	0000000000000000 PyThread_tss_create
+0000000000000000         *UND*	0000000000000000 PyThread_tss_delete
+0000000000000000         *UND*	0000000000000000 PyThreadState_Get
+000000000001dde0  w    F .text	0000000000000072 _ZNSt13unordered_mapISt10type_indexP7_objectSt4hashIS0_ESt8equal_toIS0_ESaISt4pairIKS0_S2_EEED2Ev
+000000000001de60  w    F .text	0000000000000052 _ZNSt14_Fwd_list_baseINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESaIS5_EED2Ev
+000000000001dec0  w    F .text	000000000000009e _ZNSt13unordered_mapINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEPvSt4hashIS5_ESt8equal_toIS5_ESaISt4pairIKS5_S6_EEED2Ev
+000000000001df60  w    F .text	000000000000009b _ZNSt13unordered_mapIPK7_objectSt6vectorIPS0_SaIS4_EESt4hashIS2_ESt8equal_toIS2_ESaISt4pairIKS2_S6_EEED2Ev
+000000000001e000  w    F .text	000000000000009b _ZNSt13unordered_mapISt10type_indexSt6vectorIPFbP7_objectRPvESaIS7_EESt4hashIS0_ESt8equal_toIS0_ESaISt4pairIKS0_S9_EEED2Ev
+0000000000000000         *UND*	0000000000000000 PyUnicode_FromString
+0000000000000000         *UND*	0000000000000000 PyBaseObject_Type
+0000000000000000         *UND*	0000000000000000 PyType_Ready
+0000000000000000         *UND*	0000000000000000 PyObject_SetAttrString
+0000000000000000         *UND*	0000000000000000 PyCapsule_GetPointer
+0000000000000000         *UND*	0000000000000000 PyObject_SetItem
+0000000000000000         *UND*	0000000000000000 PyExc_SystemError
+0000000000000000         *UND*	0000000000000000 PyInterpreterState_Get
+0000000000000000         *UND*	0000000000000000 PyInterpreterState_GetDict
+0000000000000000         *UND*	0000000000000000 PyDict_Type
+0000000000000000         *UND*	0000000000000000 PyObject_CallFunctionObjArgs
+0000000000000000         *UND*	0000000000000000 PyErr_NormalizeException
+0000000000000000         *UND*	0000000000000000 PyException_SetTraceback
+0000000000000000         *UND*	0000000000000000 PyException_SetCause
+0000000000000000         *UND*	0000000000000000 PyException_SetContext
+0000000000000000         *UND*	0000000000000000 PyCapsule_New
+0000000000000000       F *UND*	0000000000000000 __tls_get_addr
+0000000000000000         *UND*	0000000000000000 PyDict_GetItemWithError
+0000000000000000       F *UND*	0000000000000000 memset
+0000000000000000         *UND*	0000000000000000 PyType_Type
+0000000000000000         *UND*	0000000000000000 PyProperty_Type
+0000000000000000       F *UND*	0000000000000000 _ZNSt15__exception_ptr13exception_ptr9_M_addrefEv
+0000000000000000       F *UND*	0000000000000000 _ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE
+0000000000000000       F *UND*	0000000000000000 _ZNSt15__exception_ptr13exception_ptr10_M_releaseEv
+0000000000000000       O *UND*	0000000000000000 _ZTISt16nested_exception
+0000000000000000       F *UND*	0000000000000000 __dynamic_cast
+0000000000000000         *UND*	0000000000000000 PyExc_MemoryError
+0000000000000000         *UND*	0000000000000000 PyExc_ValueError
+0000000000000000         *UND*	0000000000000000 PyExc_IndexError
+0000000000000000         *UND*	0000000000000000 PyExc_OverflowError
+0000000000000000         *UND*	0000000000000000 _PyObject_GetDictPtr
+0000000000000000         *UND*	0000000000000000 PyExc_TypeError
+0000000000000000         *UND*	0000000000000000 _PyType_Lookup
+0000000000000000         *UND*	0000000000000000 PyObject_IsInstance
+0000000000000000         *UND*	0000000000000000 PyInstanceMethod_Type
+0000000000000000         *UND*	0000000000000000 PyWeakref_NewRef
+0000000000000000         *UND*	0000000000000000 PyLong_Type
+0000000000000000         *UND*	0000000000000000 PyBool_Type
+0000000000000000       F *UND*	0000000000000000 memmove
+0000000000000000       F *UND*	0000000000000000 _ZNKSt8__detail20_Prime_rehash_policy14_M_need_rehashEmmm
+0000000000000000       F *UND*	0000000000000000 _ZSt28__throw_bad_array_new_lengthv
+0000000000000000       F *UND*	0000000000000000 _ZSt17__throw_bad_allocv
+0000000000000000       F *UND*	0000000000000000 strdup
+0000000000000000         *UND*	0000000000000000 PyObject_Repr
+0000000000000000         *UND*	0000000000000000 PyExc_FutureWarning
+0000000000000000         *UND*	0000000000000000 PyErr_WarnEx
+0000000000000000         *UND*	0000000000000000 PyCFunction_Type
+0000000000000000         *UND*	0000000000000000 _Py_NoneStruct
+0000000000000000         *UND*	0000000000000000 _PyObject_New
+0000000000000000         *UND*	0000000000000000 PyCMethod_New
+0000000000000000         *UND*	0000000000000000 PyInstanceMethod_New
+0000000000022060  w    F .text	000000000000009d _ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EEOS8_RKS8_
+0000000000028410  w    F .text	0000000000000146 _ZNSt11_Deque_baseIbSaIbEE17_M_initialize_mapEm
+0000000000000000       F *UND*	0000000000000000 _ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE4findEcm
+0000000000029120  w    F .text	00000000000000f1 _ZNSt5dequeIbSaIbEE12emplace_backIJbEEERbDpOT_
+0000000000028f50  w    F .text	00000000000000d6 _ZNSt10_HashtableISt10type_indexSt4pairIKS0_P7_objectESaIS5_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENS7_18_Mod_range_hashingENS7_20_Default_ranged_hashENS7_20_Prime_rehash_policyENS7_17_Hashtable_traitsILb0ELb0ELb1EEEE4findERS2_
+0000000000027c60  w    F .text	0000000000000060 _ZNSt5dequeIbSaIbEED2Ev
+00000000000283b0  w    F .text	0000000000000060 _ZNSt11_Deque_baseIbSaIbEED2Ev
+0000000000028350  w    F .text	0000000000000060 _ZNSt5stackIbSt5dequeIbSaIbEEED2Ev
+000000000002ab00  w    F .text	00000000000003af _ZNSt6vectorIbSaIbEE13_M_insert_auxESt13_Bit_iteratorb
+0000000000000000         *UND*	0000000000000000 PyDict_Copy
+0000000000000000         *UND*	0000000000000000 PyDict_DelItemString
+0000000000000000         *UND*	0000000000000000 PyDict_Size
+0000000000000000         *UND*	0000000000000000 PyTuple_New
+0000000000000000         *UND*	0000000000000000 PyTuple_SetItem
+0000000000000000         *UND*	0000000000000000 PyDict_New
+000000000002aeb0  w    F .text	00000000000005b1 _ZNSt6vectorIbSaIbEE14_M_fill_insertESt13_Bit_iteratormb
+000000000002b470  w    F .text	0000000000000072 _ZNSt13unordered_setIP7_objectSt4hashIS1_ESt8equal_toIS1_ESaIS1_EED2Ev
+0000000000000000         *UND*	0000000000000000 _Py_NotImplementedStruct
+0000000000000000       F *UND*	0000000000000000 _ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE5rfindEPKcmm
+0000000000000000         *UND*	0000000000000000 PyTuple_Size
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEpLEPKc
+0000000000000000         *UND*	0000000000000000 PyDict_Next
+0000000000000000         *UND*	0000000000000000 PyUnicode_AsUTF8String
+0000000000027cc0  w    F .text	000000000000010f _ZNSt7__cxx119to_stringEm
+0000000000000000       F *UND*	0000000000000000 _ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE17find_first_not_ofEPKcmm
+0000000000000000       F *UND*	0000000000000000 _ZNKSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE16find_last_not_ofEPKcmm
+0000000000028560  w    F .text	0000000000000082 _ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EEOS8_S5_
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE14_M_replace_auxEmmmc
+0000000000000000       F *UND*	0000000000000000 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED2Ev
+0000000000000000       F *UND*	0000000000000000 _ZSt11_Hash_bytesPKvmm
+0000000000029030  w    F .text	00000000000000ea _ZNKSt10_HashtableISt10type_indexSt4pairIKS0_P7_objectESaIS5_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENS7_18_Mod_range_hashingENS7_20_Default_ranged_hashENS7_20_Prime_rehash_policyENS7_17_Hashtable_traitsILb0ELb0ELb1EEEE19_M_find_before_nodeEmRS2_m
+0000000000029220  w    F .text	00000000000001da _ZNSt5dequeIbSaIbEE17_M_reallocate_mapEmb
+0000000000000000         *UND*	0000000000000000 PyType_FromSpec
+0000000000000000         *UND*	0000000000000000 PyModule_Type
+0000000000000000         *UND*	0000000000000000 PyEval_GetBuiltins
+0000000000000000         *UND*	0000000000000000 PyErr_SetObject
+0000000000000000         *UND*	0000000000000000 PyNumber_Add
+000000000002a060  w    F .text	0000000000000036 _ZNSt5arrayINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEELm2EED2Ev
+0000000000000000         *UND*	0000000000000000 PyObject_GetItem
+000000000002a9d0  w    F .text	000000000000012e _ZNSt6vectorIbSaIbEE13_M_reallocateEm
+000000000002a770  w    F .text	0000000000000042 _ZNSt13_Bvector_baseISaIbEED2Ev
+0000000000000000       F *UND*	0000000000000000 _ZSt17current_exceptionv
+0000000000000000         *UND*	0000000000000000 PyTuple_GetItem
+0000000000000000         *UND*	0000000000000000 PyObject_CallObject
+000000000002c0d0  w    F .text	00000000000001c6 _ZNSt10_HashtableISt10type_indexSt4pairIKS0_St6vectorIPFbP7_objectRPvESaIS9_EEESaISC_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENSE_18_Mod_range_hashingENSE_20_Default_ranged_hashENSE_20_Prime_rehash_policyENSE_17_Hashtable_traitsILb0ELb0ELb1EEEE8_M_eraseESt17integral_constantIbLb1EERS2_
+000000000002c2a0  w    F .text	00000000000000ea _ZNKSt10_HashtableISt10type_indexSt4pairIKS0_St6vectorIPFbP7_objectRPvESaIS9_EEESaISC_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENSE_18_Mod_range_hashingENSE_20_Default_ranged_hashENSE_20_Prime_rehash_policyENSE_17_Hashtable_traitsILb0ELb0ELb1EEEE19_M_find_before_nodeEmRS2_m
+000000000002c390  w    F .text	0000000000000173 _ZNSt10_HashtableISt10type_indexSt4pairIKS0_St6vectorIPFbP7_objectRPvESaIS9_EEESaISC_ENSt8__detail10_Select1stESt8equal_toIS0_ESt4hashIS0_ENSE_18_Mod_range_hashingENSE_20_Default_ranged_hashENSE_20_Prime_rehash_policyENSE_17_Hashtable_traitsILb0ELb0ELb1EEEE8_M_eraseEmPNSE_15_Hash_node_baseEPNSE_10_Hash_nodeISC_Lb0EEE
+0000000000000000       O *UND*	0000000000000000 _ZTISt9exception
+0000000000000000       O *UND*	0000000000000000 _ZTISt14overflow_error
+0000000000000000       O *UND*	0000000000000000 _ZTISt11range_error
+0000000000000000       O *UND*	0000000000000000 _ZTISt12out_of_range
+0000000000000000       O *UND*	0000000000000000 _ZTISt12length_error
+0000000000000000       O *UND*	0000000000000000 _ZTISt16invalid_argument
+0000000000000000       O *UND*	0000000000000000 _ZTISt12domain_error
+0000000000000000       O *UND*	0000000000000000 _ZTISt9bad_alloc
+0000000000000000         *UND*	0000000000000000 PyObject_GC_UnTrack
+0000000000000000         *UND*	0000000000000000 PyMem_Calloc
+0000000000000000       O *UND*	0000000000000000 _ZTVSt9bad_alloc
+0000000000000000       F *UND*	0000000000000000 _ZNSt9bad_allocD1Ev
+0000000000000000         *UND*	0000000000000000 PyObject_ClearWeakRefs
+0000000000000000         *UND*	0000000000000000 PyMem_Free
+0000000000000000         *UND*	0000000000000000 PyDict_Contains
+0000000000000000         *UND*	0000000000000000 PyUnicode_DecodeUTF8
+0000000000000000         *UND*	0000000000000000 PyModule_AddObject
+0000000000033068  w    O .data.rel.ro	0000000000000020 _ZTIPFN2at6TensorES0_S0_S0_dE
+0000000000000000       F *UND*	0000000000000000 _ZN8pybind116detail11type_casterIN2at6TensorEvE4castERKS3_NS_19return_value_policyENS_6handleE
+0000000000000000       F *UND*	0000000000000000 _ZN8pybind116detail11type_casterIN2at6TensorEvE4loadENS_6handleEb
+0000000000000000         *UND*	0000000000000000 PyFloat_Type
+0000000000000000         *UND*	0000000000000000 PyFloat_AsDouble
+0000000000000000         *UND*	0000000000000000 PyNumber_Check
+0000000000000000         *UND*	0000000000000000 PyNumber_Float
+0000000000000000         *UND*	0000000000000000 PyModule_NewObject
+0000000000000000       O *UND*	0000000000000000 _ZTVN10__cxxabiv120__si_class_type_infoE
+0000000000032e90  w    O .data.rel.ro	0000000000000018 _ZTISt16_Sp_counted_baseILN9__gnu_cxx12_Lock_policyE2EE
+000000000000ef51  w    O .rodata	0000000000000034 _ZTSSt16_Sp_counted_baseILN9__gnu_cxx12_Lock_policyE2EE
+0000000000032ea8  w    O .data.rel.ro	0000000000000010 _ZTISt11_Mutex_baseILN9__gnu_cxx12_Lock_policyE2EE
+0000000000000000       O *UND*	0000000000000000 _ZTVN10__cxxabiv117__class_type_infoE
+000000000000ef85  w    O .rodata	000000000000002f _ZTSSt11_Mutex_baseILN9__gnu_cxx12_Lock_policyE2EE
+0000000000000000       F *UND*	0000000000000000 _ZNKSt13runtime_error4whatEv
+0000000000032fb0  w    O .data.rel.ro	0000000000000018 _ZTIN3c104impl16VirtualGuardImplE
+000000000000f0e9  w    O .rodata	000000000000001e _ZTSN3c104impl16VirtualGuardImplE
+0000000000032fc8  w    O .data.rel.ro	0000000000000010 _ZTIN3c104impl24DeviceGuardImplInterfaceE
+000000000000f107  w    O .rodata	0000000000000026 _ZTSN3c104impl24DeviceGuardImplInterfaceE
+0000000000033000  w    O .data.rel.ro	0000000000000018 _ZTIN3c1015VariableVersion14VersionCounterE
+000000000000f12d  w    O .rodata	0000000000000028 _ZTSN3c1015VariableVersion14VersionCounterE
+0000000000033018  w    O .data.rel.ro	0000000000000010 _ZTIN3c1020intrusive_ptr_targetE
+000000000000f155  w    O .rodata	000000000000001d _ZTSN3c1020intrusive_ptr_targetE
+0000000000000000         *UND*	0000000000000000 PyObject_GenericGetDict
+0000000000000000         *UND*	0000000000000000 PyObject_GenericSetDict
+0000000000000000       O *UND*	0000000000000000 _ZTVN10__cxxabiv119__pointer_type_infoE
+000000000000f418  w    O .rodata	000000000000001a _ZTSPFN2at6TensorES0_S0_S0_dE
+0000000000033088  w    O .data.rel.ro	0000000000000010 _ZTIFN2at6TensorES0_S0_S0_dE
+0000000000000000       O *UND*	0000000000000000 _ZTVN10__cxxabiv120__function_type_infoE
+000000000000f432  w    O .rodata	0000000000000019 _ZTSFN2at6TensorES0_S0_S0_dE
+0000000000034f78 g     O .bss	0000000000000001 __hip_cuid_129c9771c7d8abf7
+0000000000000000       O *UND*	0000000000000000 _ZTIN10__cxxabiv115__forced_unwindE
+0000000000000000       F *UND*	0000000000000000 __gxx_personality_v0
+0000000000000000       F *UND*	0000000000000000 bcmp
+0000000000000000       F *UND*	0000000000000000 _ZN2at4_ops6expand4callERKNS_6TensorEN3c108ArrayRefINS5_6SymIntEEEb
+0000000000000000       F *UND*	0000000000000000 _ZN2at4_ops28scaled_dot_product_attention4callERKNS_6TensorES4_S4_RKSt8optionalIS2_EdbS5_IdEb
+0000000000000000       F *UND*	0000000000000000 _ZN2at4_ops5copy_4callERNS_6TensorERKS2_b
+0000000000030d30  w    F .text	000000000000005b _ZNSt14_Optional_baseIN2at6TensorELb0ELb0EED2Ev
+0000000000035008 g     O .bss	0000000000000001 __hip_cuid_d398e6414af908ff

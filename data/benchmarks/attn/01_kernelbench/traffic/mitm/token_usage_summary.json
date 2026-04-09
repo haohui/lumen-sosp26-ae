@@ -1,0 +1,9 @@
+{
+  "jsonl_path": "/workspace/kernel_benchmark/opt_kernel/attention-d128-openai/01_kernelbench/rerun5_20260323_162020/mitm_r3/traffic.jsonl",
+  "events_total": 3,
+  "responses_total": 2,
+  "responses_with_usage": 0,
+  "usage_totals": {},
+  "usage_by_model": {},
+  "usage_by_host": {}
+}

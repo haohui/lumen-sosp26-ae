@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "For _fused_moe_kernel, SM throughput is 91.96% of peak and roofline Compute SOL is 92.0%, while DRAM throughput is only 42.13% (Memory SOL 42.1%). Warps active is 100% and issue utilization is 100%, so the dominant limit is arithmetic throughput rather than memory bandwidth or occupancy.",
+    "root_causes": [
+      {
+        "cause": "Heavy FP32 vector ALU workload from fully fused FC1 + SiLU + FC2 path saturates VALU pipelines.",
+        "evidence": [
+          {
+            "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 91.95792324130456,
+            "interpretation": "Compute pipeline is already close to peak sustained throughput."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Reduce FP32 ALU pressure by using lower-precision math where acceptable (e.g., bf16/fp16 accumulations for selected paths) and/or enabling matrix-core/Triton dot paths for GEMM-like sections.",
+            "rationale": "Lower-precision or matrix-core execution increases effective math throughput and can move the kernel away from VALU saturation."
+          }
+        ]
+      },
+      {
+        "cause": "Non-tensorized reduction style (`tl.sum` over BLOCK_K/BLOCK_J with scalar/vector ops) leaves peak matrix throughput untapped.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "No tensor/matrix pipeline usage; all math is on standard ALUs."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Restructure FC1/FC2 inner products into tile-wise matmul patterns (`tl.dot`/MFMA-compatible blocking) and retune BLOCK_K/BLOCK_J/BLOCK_OUT for matrix instruction mapping.",
+            "rationale": "Mapping reductions to matrix instructions raises compute throughput ceiling beyond current non-tensor ALU limit."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Reduce FP32 ALU pressure by using lower-precision math where acceptable (e.g., bf16/fp16 accumulations for selected paths) and/or enabling matrix-core/Triton dot paths for GEMM-like sections.",
+        "rationale": "Lower-precision or matrix-core execution increases effective math throughput and can move the kernel away from VALU saturation."
+      },
+      {
+        "fix": "Restructure FC1/FC2 inner products into tile-wise matmul patterns (`tl.dot`/MFMA-compatible blocking) and retune BLOCK_K/BLOCK_J/BLOCK_OUT for matrix instruction mapping.",
+        "rationale": "Mapping reductions to matrix instructions raises compute throughput ceiling beyond current non-tensor ALU limit."
+      }
+    ]
+  }
+]

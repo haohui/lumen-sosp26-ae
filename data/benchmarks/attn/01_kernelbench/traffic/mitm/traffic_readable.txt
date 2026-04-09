@@ -1,0 +1,15 @@
+# Readable MITM Trace Summary
+# source: opt_kernel/attention-d128-openai/01_kernelbench/traffic/mitm/traffic.jsonl
+# generated_utc: 2026-03-23T17:16:26.693498+00:00
+
+[1] 2026-03-23T16:26:01.254083+00:00 session_start include_body=True max_body_bytes=-1
+[2] 2026-03-23T16:26:05.476605+00:00 response flow=9067f7ab-ba6d-480e-b2c3-8af687a4bcb5
+      req=GET https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json body_bytes=0 captured=0
+      rsp_status=200 duration_s=0.012004375457763672
+
+[3] 2026-03-23T16:29:17.866062+00:00 response flow=58d01a61-f198-40e1-b7b1-9a38e91c2fd7
+      req=POST https://api.openai.com/v1/responses body_bytes=27739 captured=27739
+      rsp_status=200 duration_s=190.72636127471924 model=gpt-5.3-codex max_output_tokens=None
+      usage: input_tokens=8603 output_tokens=10847 total_tokens=19450
+
+[4] 2026-03-23T16:29:18.598738+00:00 session_end

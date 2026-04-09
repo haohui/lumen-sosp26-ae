@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Roofline reports compute bottleneck with Compute SOL 92.0% vs Memory SOL 42.1%. Kernel metrics match this: sm throughput is 91.96% of peak while DRAM throughput is only 42.12% of peak, indicating arithmetic pipelines (VALU) are the limiter, not memory.",
+    "root_causes": [
+      {
+        "cause": "Very high FP/ALU work from fully fused FC1 + SiLU + FC2 + TOPK accumulation dominates execution.",
+        "evidence": [
+          {
+            "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+            "value": 91.95792324130456,
+            "interpretation": "SM compute pipelines are close to saturated, leaving little compute headroom."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Reduce math per output by splitting/factoring parts of the fusion (e.g., precompute/reuse shared terms across TOPK or separate FC stages when reuse is low).",
+            "rationale": "When compute is the bottleneck, lowering instruction count/FLOPs directly improves runtime more than memory optimizations."
+          }
+        ]
+      },
+      {
+        "cause": "Kernel uses only vector ALU path (no tensor-core/MFMA acceleration), so peak matrix throughput is limited by non-tensor execution.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "No tensor pipeline utilization; all heavy GEMV/GEMM-like work runs on VALU."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Retile/rewrite dot-product sections to map onto MFMA/tensor instructions (or use Triton matmul patterns/datatypes that lower to tensor ops on CDNA3).",
+            "rationale": "Moving dense matrix math to tensor units increases effective compute throughput and reduces VALU pressure in a compute-bound kernel."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Reduce math per output by splitting/factoring parts of the fusion (e.g., precompute/reuse shared terms across TOPK or separate FC stages when reuse is low).",
+        "rationale": "When compute is the bottleneck, lowering instruction count/FLOPs directly improves runtime more than memory optimizations."
+      },
+      {
+        "fix": "Retile/rewrite dot-product sections to map onto MFMA/tensor instructions (or use Triton matmul patterns/datatypes that lower to tensor ops on CDNA3).",
+        "rationale": "Moving dense matrix math to tensor units increases effective compute throughput and reduces VALU pressure in a compute-bound kernel."
+      }
+    ]
+  }
+]

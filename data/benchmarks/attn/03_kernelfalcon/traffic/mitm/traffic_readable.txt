@@ -1,0 +1,216 @@
+# Readable MITM Trace Summary
+# source: opt_kernel/attention-d128-openai/03_kernelfalcon/traffic/mitm/traffic.jsonl
+# generated_utc: 2026-03-23T04:37:45.972982+00:00
+
+[1] 2026-03-23T03:26:57.521018+00:00 session_start include_body=True max_body_bytes=-1
+[2] 2026-03-23T03:27:59.203553+00:00 response flow=1cab29be-3f3a-4734-9e79-5f3488823a9e
+      req=POST https://api.openai.com/v1/responses body_bytes=8933 captured=8933
+      rsp_status=200 duration_s=9.53852891921997 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2801 output_tokens=469 total_tokens=3270
+
+[3] 2026-03-23T03:28:13.480585+00:00 response flow=048d7975-065c-436e-b78f-2e79b29d4ea6
+      req=POST https://api.openai.com/v1/responses body_bytes=8678 captured=8678
+      rsp_status=200 duration_s=14.231514692306519 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=2539 output_tokens=1340 total_tokens=3879
+
+[4] 2026-03-23T03:28:31.062115+00:00 response flow=edecec3b-9a25-47a1-a6eb-6fec8c429895
+      req=POST https://api.openai.com/v1/responses body_bytes=30067 captured=30067
+      rsp_status=200 duration_s=15.179643869400024 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=7989 output_tokens=1392 total_tokens=9381
+
+[5] 2026-03-23T03:29:00.590577+00:00 response flow=f4b33d81-5e5d-4a16-83cc-ff80826ce174
+      req=POST https://api.openai.com/v1/responses body_bytes=1724 captured=1724
+      rsp_status=200 duration_s=8.529036283493042 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=365 output_tokens=443 total_tokens=808
+
+[6] 2026-03-23T03:29:39.670383+00:00 response flow=21d0e382-6dd2-49e1-93e5-03dbcc6297a0
+      req=POST https://api.openai.com/v1/responses body_bytes=8026 captured=8026
+      rsp_status=200 duration_s=8.517852067947388 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=472 total_tokens=3047
+
+[7] 2026-03-23T03:29:56.807916+00:00 response flow=8d9451e7-250b-46fa-b076-ef79beb6fd70
+      req=POST https://api.openai.com/v1/responses body_bytes=10679 captured=10679
+      rsp_status=200 duration_s=17.091403484344482 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=2965 output_tokens=1529 total_tokens=4494
+
+[8] 2026-03-23T03:30:14.827706+00:00 response flow=0cc0ce27-caaa-473b-bf45-4188d60a2f0d
+      req=POST https://api.openai.com/v1/responses body_bytes=30494 captured=30494
+      rsp_status=200 duration_s=15.584987878799438 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8178 output_tokens=1469 total_tokens=9647
+
+[9] 2026-03-23T03:30:50.053720+00:00 response flow=05a11878-6c54-4b27-a799-2f3dd3cc0463
+      req=POST https://api.openai.com/v1/responses body_bytes=1843 captured=1843
+      rsp_status=200 duration_s=10.633511304855347 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=401 output_tokens=522 total_tokens=923
+
+[10] 2026-03-23T03:31:29.584064+00:00 response flow=0ae9792d-e4e5-4391-9628-a581ea19473c
+      req=POST https://api.openai.com/v1/responses body_bytes=8026 captured=8026
+      rsp_status=200 duration_s=8.6230947971344 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=456 total_tokens=3031
+
+[11] 2026-03-23T03:31:43.197252+00:00 response flow=0973aaf1-b08d-4674-84ee-6464d190b95c
+      req=POST https://api.openai.com/v1/responses body_bytes=13942 captured=13942
+      rsp_status=200 duration_s=13.56643533706665 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=3691 output_tokens=1401 total_tokens=5092
+
+[12] 2026-03-23T03:32:01.253742+00:00 response flow=42a7c0d3-3f22-4967-8eb5-e05dae5c2bba
+      req=POST https://api.openai.com/v1/responses body_bytes=30284 captured=30284
+      rsp_status=200 duration_s=15.61923885345459 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8050 output_tokens=1436 total_tokens=9486
+
+[13] 2026-03-23T03:32:32.664099+00:00 response flow=e0b93d4a-e547-4cb4-bcdd-ee01a718e7f3
+      req=POST https://api.openai.com/v1/responses body_bytes=1713 captured=1713
+      rsp_status=200 duration_s=10.692184686660767 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=369 output_tokens=562 total_tokens=931
+
+[14] 2026-03-23T03:33:12.724088+00:00 response flow=f3c6d09a-ba0d-4f13-a53a-e90f0d8551a7
+      req=POST https://api.openai.com/v1/responses body_bytes=8026 captured=8026
+      rsp_status=200 duration_s=9.503111362457275 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=465 total_tokens=3040
+
+[15] 2026-03-23T03:33:28.242526+00:00 response flow=e77fc56c-a33a-4249-abad-02e3ac45961d
+      req=POST https://api.openai.com/v1/responses body_bytes=17199 captured=17199
+      rsp_status=200 duration_s=15.47131061553955 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=4425 output_tokens=1371 total_tokens=5796
+
+[16] 2026-03-23T03:33:48.593710+00:00 response flow=e51be739-ce03-4919-9c56-b22774a4dc16
+      req=POST https://api.openai.com/v1/responses body_bytes=30206 captured=30206
+      rsp_status=200 duration_s=17.979057550430298 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8020 output_tokens=1429 total_tokens=9449
+
+[17] 2026-03-23T03:34:20.611603+00:00 response flow=20c116a3-0d8f-495b-9a8a-fdbc9b2da75e
+      req=POST https://api.openai.com/v1/responses body_bytes=1801 captured=1801
+      rsp_status=200 duration_s=11.605808734893799 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=380 output_tokens=534 total_tokens=914
+
+[18] 2026-03-23T03:34:58.881130+00:00 response flow=03a3021c-50d2-4f9c-83a3-29d0ba7862b6
+      req=POST https://api.openai.com/v1/responses body_bytes=8026 captured=8026
+      rsp_status=200 duration_s=8.009136199951172 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=453 total_tokens=3028
+
+[19] 2026-03-23T03:35:15.037002+00:00 response flow=c5cdc8bd-2ee1-4a27-9bd5-06b4bf0207d3
+      req=POST https://api.openai.com/v1/responses body_bytes=20597 captured=20597
+      rsp_status=200 duration_s=16.1065776348114 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=5131 output_tokens=1381 total_tokens=6512
+
+[20] 2026-03-23T03:35:31.321206+00:00 response flow=6c014a4e-23ff-44d4-96b4-e1885f12b71f
+      req=POST https://api.openai.com/v1/responses body_bytes=30232 captured=30232
+      rsp_status=200 duration_s=13.849148988723755 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8030 output_tokens=1387 total_tokens=9417
+
+[21] 2026-03-23T03:35:55.115966+00:00 response flow=b769140f-44f8-46ad-8f8a-41ac934ea07f
+      req=POST https://api.openai.com/v1/responses body_bytes=31370 captured=31370
+      rsp_status=200 duration_s=20.235038995742798 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8309 output_tokens=1496 total_tokens=9805
+
+[22] 2026-03-23T03:36:14.006494+00:00 response flow=e03c7100-6d35-4b38-961f-4efc85caa859
+      req=POST https://api.openai.com/v1/responses body_bytes=30713 captured=30713
+      rsp_status=200 duration_s=16.488555908203125 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8145 output_tokens=1413 total_tokens=9558
+
+[23] 2026-03-23T03:36:44.050868+00:00 response flow=8ba42a08-05e3-4f2e-b133-4d2d5f9e11bc
+      req=POST https://api.openai.com/v1/responses body_bytes=1770 captured=1770
+      rsp_status=200 duration_s=8.771950244903564 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=373 output_tokens=485 total_tokens=858
+
+[24] 2026-03-23T03:37:24.082730+00:00 response flow=9531f805-9339-4f28-a54e-8a810db3d12f
+      req=POST https://api.openai.com/v1/responses body_bytes=8026 captured=8026
+      rsp_status=200 duration_s=9.43086838722229 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=489 total_tokens=3064
+
+[25] 2026-03-23T03:37:37.646020+00:00 response flow=3307150b-10fa-4ac3-866f-8a63f906fe07
+      req=POST https://api.openai.com/v1/responses body_bytes=23784 captured=23784
+      rsp_status=200 duration_s=13.514347314834595 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=5828 output_tokens=1344 total_tokens=7172
+
+[26] 2026-03-23T03:37:59.812786+00:00 response flow=f9b3c607-bfa4-495e-bbc8-8c7ef16501bd
+      req=POST https://api.openai.com/v1/responses body_bytes=30143 captured=30143
+      rsp_status=200 duration_s=19.747377395629883 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=7993 output_tokens=1496 total_tokens=9489
+
+[27] 2026-03-23T03:38:29.884616+00:00 response flow=e4c5ac22-1b23-4278-bda0-eeeed4d8e0ab
+      req=POST https://api.openai.com/v1/responses body_bytes=1790 captured=1790
+      rsp_status=200 duration_s=9.418110609054565 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=386 output_tokens=478 total_tokens=864
+
+[28] 2026-03-23T03:39:08.931936+00:00 response flow=90c8dec1-ecb5-4234-9a10-a191f4ee56fb
+      req=POST https://api.openai.com/v1/responses body_bytes=8018 captured=8018
+      rsp_status=200 duration_s=8.446626901626587 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=475 total_tokens=3050
+
+[29] 2026-03-23T03:39:23.359253+00:00 response flow=639f28f6-6884-4da6-bb0a-24906cd4592c
+      req=POST https://api.openai.com/v1/responses body_bytes=24043 captured=24043
+      rsp_status=200 duration_s=14.37839412689209 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=5888 output_tokens=1403 total_tokens=7291
+
+[30] 2026-03-23T03:39:41.119112+00:00 response flow=0b67931a-3629-44e6-9591-8f56ead6643c
+      req=POST https://api.openai.com/v1/responses body_bytes=30260 captured=30260
+      rsp_status=200 duration_s=15.381505966186523 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8052 output_tokens=1435 total_tokens=9487
+
+[31] 2026-03-23T03:40:13.162325+00:00 response flow=55c4b97c-0096-4664-be5d-1c743238a576
+      req=POST https://api.openai.com/v1/responses body_bytes=1735 captured=1735
+      rsp_status=200 duration_s=11.166329622268677 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=369 output_tokens=549 total_tokens=918
+
+[32] 2026-03-23T03:40:54.028621+00:00 response flow=e4e30b6d-5b27-4487-8de8-74547800fc58
+      req=POST https://api.openai.com/v1/responses body_bytes=8026 captured=8026
+      rsp_status=200 duration_s=10.013428449630737 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=533 total_tokens=3108
+
+[33] 2026-03-23T03:41:09.084251+00:00 response flow=5a25c79f-eaa8-4518-bdd5-15086aedee56
+      req=POST https://api.openai.com/v1/responses body_bytes=24248 captured=24248
+      rsp_status=200 duration_s=15.006117105484009 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=5922 output_tokens=1458 total_tokens=7380
+
+[34] 2026-03-23T03:41:29.601380+00:00 response flow=3af1a214-e183-47c7-b559-f14f443c45a5
+      req=POST https://api.openai.com/v1/responses body_bytes=30252 captured=30252
+      rsp_status=200 duration_s=18.155346155166626 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8107 output_tokens=1546 total_tokens=9653
+
+[35] 2026-03-23T03:42:03.315629+00:00 response flow=64de4681-0fc7-4334-9642-4db8e761e58e
+      req=POST https://api.openai.com/v1/responses body_bytes=1920 captured=1920
+      rsp_status=200 duration_s=9.33136510848999 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=424 output_tokens=516 total_tokens=940
+
+[36] 2026-03-23T03:42:43.197129+00:00 response flow=2f2cefc9-eccb-497c-86c8-9c26d3cb3eda
+      req=POST https://api.openai.com/v1/responses body_bytes=8026 captured=8026
+      rsp_status=200 duration_s=9.030282735824585 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=452 total_tokens=3027
+
+[37] 2026-03-23T03:42:57.217340+00:00 response flow=4b1d037b-8978-4a41-9c12-529699b50379
+      req=POST https://api.openai.com/v1/responses body_bytes=24204 captured=24204
+      rsp_status=200 duration_s=13.97108507156372 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=5913 output_tokens=1381 total_tokens=7294
+
+[38] 2026-03-23T03:43:19.299205+00:00 response flow=2a5ffe4e-6867-4890-8bcf-ef465972c869
+      req=POST https://api.openai.com/v1/responses body_bytes=30104 captured=30104
+      rsp_status=200 duration_s=19.602241039276123 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8030 output_tokens=1474 total_tokens=9504
+
+[39] 2026-03-23T03:43:58.643216+00:00 response flow=2c2906b3-b4e0-4ca2-8a1c-8dc834e25f38
+      req=POST https://api.openai.com/v1/responses body_bytes=1825 captured=1825
+      rsp_status=200 duration_s=13.017934083938599 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=395 output_tokens=495 total_tokens=890
+
+[40] 2026-03-23T03:44:38.841807+00:00 response flow=e9dca31a-a0d8-4362-9c47-a598065464ed
+      req=POST https://api.openai.com/v1/responses body_bytes=8026 captured=8026
+      rsp_status=200 duration_s=9.586143255233765 model=gpt-5.3-codex max_output_tokens=16384
+      usage: input_tokens=2575 output_tokens=420 total_tokens=2995
+
+[41] 2026-03-23T03:44:53.778866+00:00 response flow=dea50e55-e48e-4dfc-bfec-e3e941ad6cb0
+      req=POST https://api.openai.com/v1/responses body_bytes=23727 captured=23727
+      rsp_status=200 duration_s=14.888184547424316 model=gpt-5.3-codex max_output_tokens=24576
+      usage: input_tokens=5853 output_tokens=1433 total_tokens=7286
+
+[42] 2026-03-23T03:45:14.813562+00:00 response flow=5f6cfa6b-4171-4d58-8655-1606f65a5b61
+      req=POST https://api.openai.com/v1/responses body_bytes=30201 captured=30201
+      rsp_status=200 duration_s=18.679399728775024 model=gpt-5.3-codex max_output_tokens=20000
+      usage: input_tokens=8082 output_tokens=1490 total_tokens=9572
+
+[43] 2026-03-23T03:45:51.761820+00:00 response flow=25b8a715-1879-472e-8ead-2ff48843d038
+      req=POST https://api.openai.com/v1/responses body_bytes=1791 captured=1791
+      rsp_status=200 duration_s=10.014614820480347 model=gpt-5.3-codex max_output_tokens=2048
+      usage: input_tokens=389 output_tokens=484 total_tokens=873
+
+[44] 2026-03-23T03:45:53.438867+00:00 session_end

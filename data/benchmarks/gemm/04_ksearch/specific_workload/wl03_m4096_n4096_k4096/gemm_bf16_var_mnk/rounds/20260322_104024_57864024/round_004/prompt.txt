@@ -1,0 +1,812 @@
+You are improving a HIP C++ kernel on MI300X.
+The current implementation may be correct-but-slower-than-desired, or it may have regressed.
+
+Original Specification:
+Name: gemm_bf16_var_mnk
+Type: gemm
+
+Axes:
+  M: variable (rows of A and output)
+  N: variable (rows of B (before transpose) and cols of output)
+  K: variable (reduction dimension)
+
+Inputs:
+  A: [M, K] (DType.BFLOAT16) - lhs matrix
+  B: [N, K] (DType.BFLOAT16) - rhs matrix, transposed in matmul
+
+Outputs:
+  C: [M, N] (DType.BFLOAT16) - gemm output
+
+
+Reference Implementation:
+import torch
+
+def run(A, B):
+    C = torch.matmul(A, B.T)
+    return C
+
+Cycle-Best Base Implementation (reference):
+<header_file name="kernel.h">
+#ifndef GEMM_BF16_VAR_MNK_KERNEL_H
+#define GEMM_BF16_VAR_MNK_KERNEL_H
+
+#include <hip/hip_runtime.h>
+#include <hip/hip_bfloat16.h>
+
+hipError_t ksearch_launch_gemm_bf16_var_mnk_balanced(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    const hip_bfloat16* A,
+    const hip_bfloat16* B,
+    hip_bfloat16* C,
+    int M,
+    int N,
+    int K);
+
+#endif  // GEMM_BF16_VAR_MNK_KERNEL_H
+</header_file>
+
+<cuda_file name="kernel.cu">
+#include "kernel.h"
+
+#include <cstdint>
+
+namespace {
+constexpr int TILE_M = 32;
+constexpr int TILE_N = 32;
+constexpr int TILE_K = 16;
+
+using int16x4_t = short __attribute__((ext_vector_type(4)));
+using float32x4_t = float __attribute__((ext_vector_type(4)));
+
+__device__ __forceinline__ float ksearch_bf16_to_float(hip_bfloat16 v) {
+  union {
+    hip_bfloat16 b;
+    uint16_t u16;
+  } in_bits;
+  union {
+    uint32_t u32;
+    float f32;
+  } out_bits;
+  in_bits.b = v;
+  out_bits.u32 = static_cast<uint32_t>(in_bits.u16) << 16;
+  return out_bits.f32;
+}
+
+__device__ __forceinline__ hip_bfloat16 ksearch_float_to_bf16_rn(float x) {
+  union {
+    float f32;
+    uint32_t u32;
+  } in_bits;
+  union {
+    uint16_t u16;
+    hip_bfloat16 b;
+  } out_bits;
+
+  in_bits.f32 = x;
+  const uint32_t lsb = (in_bits.u32 >> 16) & 1u;
+  in_bits.u32 += 0x7FFFu + lsb;  // round-to-nearest-even
+  out_bits.u16 = static_cast<uint16_t>(in_bits.u32 >> 16);
+  return out_bits.b;
+}
+
+__device__ __forceinline__ float ksearch_mfma_probe(int tid) {
+#if defined(__HIP_DEVICE_COMPILE__) && \
+    (defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__) || defined(__gfx90a__) || defined(__gfx908__))
+  int16x4_t a = {
+      static_cast<short>(tid + 1),
+      static_cast<short>(tid + 2),
+      static_cast<short>(tid + 3),
+      static_cast<short>(tid + 4)};
+  int16x4_t b = {
+      static_cast<short>(tid + 5),
+      static_cast<short>(tid + 6),
+      static_cast<short>(tid + 7),
+      static_cast<short>(tid + 8)};
+  float32x4_t c = {0.0f, 0.0f, 0.0f, 0.0f};
+
+  float32x4_t d = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a, b, c, 0, 0, 0);
+  return d[0];
+#else
+  (void)tid;
+  return 0.0f;
+#endif
+}
+
+__global__ void gemm_bf16_var_mnk_balanced_kernel(
+    const hip_bfloat16* __restrict__ A,
+    const hip_bfloat16* __restrict__ B,
+    hip_bfloat16* __restrict__ C,
+    int M,
+    int N,
+    int K) {
+  __shared__ hip_bfloat16 As[TILE_M][TILE_K];
+  __shared__ hip_bfloat16 Bs[TILE_N][TILE_K];
+
+  const int tx = static_cast<int>(threadIdx.x);
+  const int ty = static_cast<int>(threadIdx.y);
+  const int tid = ty * static_cast<int>(blockDim.x) + tx;
+
+  const int block_row = static_cast<int>(blockIdx.y) * TILE_M;
+  const int block_col = static_cast<int>(blockIdx.x) * TILE_N;
+
+  float acc[4][4];
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+      acc[i][j] = 0.0f;
+    }
+  }
+
+  volatile float mfma_sink = ksearch_mfma_probe(tid);
+  (void)mfma_sink;
+
+  const int row_base_local = ty * 4;
+  const int col_base_local = tx * 4;
+
+  for (int k0 = 0; k0 < K; k0 += TILE_K) {
+    for (int idx = tid; idx < TILE_M * TILE_K; idx += static_cast<int>(blockDim.x * blockDim.y)) {
+      const int r = idx / TILE_K;
+      const int kk = idx % TILE_K;
+      const int gr = block_row + r;
+      const int gk = k0 + kk;
+      if (gr < M && gk < K) {
+        As[r][kk] = A[gr * K + gk];
+      } else {
+        As[r][kk] = ksearch_float_to_bf16_rn(0.0f);
+      }
+    }
+
+    for (int idx = tid; idx < TILE_N * TILE_K; idx += static_cast<int>(blockDim.x * blockDim.y)) {
+      const int r = idx / TILE_K;
+      const int kk = idx % TILE_K;
+      const int gn = block_col + r;
+      const int gk = k0 + kk;
+      if (gn < N && gk < K) {
+        Bs[r][kk] = B[gn * K + gk];
+      } else {
+        Bs[r][kk] = ksearch_float_to_bf16_rn(0.0f);
+      }
+    }
+
+    __syncthreads();
+
+#pragma unroll
+    for (int kk = 0; kk < TILE_K; ++kk) {
+      float a_frag[4];
+      float b_frag[4];
+
+#pragma unroll
+      for (int i = 0; i < 4; ++i) {
+        a_frag[i] = ksearch_bf16_to_float(As[row_base_local + i][kk]);
+      }
+#pragma unroll
+      for (int j = 0; j < 4; ++j) {
+        b_frag[j] = ksearch_bf16_to_float(Bs[col_base_local + j][kk]);
+      }
+
+#pragma unroll
+      for (int i = 0; i < 4; ++i) {
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+          acc[i][j] += a_frag[i] * b_frag[j];
+        }
+      }
+    }
+
+    __syncthreads();
+  }
+
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+    const int gr = block_row + row_base_local + i;
+    if (gr >= M) continue;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+      const int gc = block_col + col_base_local + j;
+      if (gc < N) {
+        C[gr * N + gc] = ksearch_float_to_bf16_rn(acc[i][j]);
+      }
+    }
+  }
+}
+}  // namespace
+
+hipError_t ksearch_launch_gemm_bf16_var_mnk_balanced(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    const hip_bfloat16* A,
+    const hip_bfloat16* B,
+    hip_bfloat16* C,
+    int M,
+    int N,
+    int K) {
+  (void)shared_mem;
+  gemm_bf16_var_mnk_balanced_kernel<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+  return hipGetLastError();
+}
+</cuda_file>
+
+<cpp_file name="main.cpp">
+#include <torch/extension.h>
+#include <pybind11/pybind11.h>
+#include <hip/hip_runtime.h>
+
+#include <climits>
+
+#include "kernel.h"
+
+namespace py = pybind11;
+
+#define TORCH_HIP_CHECK(expr) \
+  TORCH_CHECK((expr) == hipSuccess, "HIP error: ", hipGetErrorString(expr))
+
+torch::Tensor run(torch::Tensor A, torch::Tensor B) {
+  TORCH_CHECK(A.defined(), "A must be a valid tensor");
+  TORCH_CHECK(B.defined(), "B must be a valid tensor");
+  TORCH_CHECK(A.dim() == 2, "A must be 2D [M, K]");
+  TORCH_CHECK(B.dim() == 2, "B must be 2D [N, K]");
+  TORCH_CHECK(A.size(1) == B.size(1), "A.size(1) must equal B.size(1)");
+
+  const int64_t M64 = A.size(0);
+  const int64_t K64 = A.size(1);
+  const int64_t N64 = B.size(0);
+
+  auto A_bf16 = A.to(torch::kBFloat16).contiguous();
+  auto B_bf16 = B.to(torch::kBFloat16).contiguous();
+
+  int device_count = 0;
+  TORCH_HIP_CHECK(hipGetDeviceCount(&device_count));
+  TORCH_CHECK(device_count > 0, "No HIP device available");
+
+  int device_index = 0;
+  if (A_bf16.is_cuda()) {
+    device_index = A_bf16.get_device();
+  } else if (B_bf16.is_cuda()) {
+    device_index = B_bf16.get_device();
+  }
+
+  TORCH_CHECK(device_index >= 0 && device_index < device_count, "Invalid device index");
+  TORCH_HIP_CHECK(hipSetDevice(device_index));
+
+  auto device = torch::Device(torch::kCUDA, device_index);
+  auto A_dev = A_bf16.is_cuda() ? A_bf16 : A_bf16.to(device);
+  auto B_dev = B_bf16.is_cuda() ? B_bf16 : B_bf16.to(device);
+
+  if (A_dev.get_device() != device_index) A_dev = A_dev.to(device);
+  if (B_dev.get_device() != device_index) B_dev = B_dev.to(device);
+
+  A_dev = A_dev.contiguous();
+  B_dev = B_dev.contiguous();
+
+  auto C_dev = torch::zeros({M64, N64}, A_dev.options().dtype(torch::kBFloat16).device(device));
+
+  if (M64 == 0 || N64 == 0) {
+    return C_dev.to(torch::kCPU);
+  }
+
+  TORCH_CHECK(M64 <= static_cast<int64_t>(INT_MAX), "M is too large");
+  TORCH_CHECK(N64 <= static_cast<int64_t>(INT_MAX), "N is too large");
+  TORCH_CHECK(K64 <= static_cast<int64_t>(INT_MAX), "K is too large");
+
+  const auto* A_ptr = reinterpret_cast<const hip_bfloat16*>(A_dev.data_ptr<c10::BFloat16>());
+  const auto* B_ptr = reinterpret_cast<const hip_bfloat16*>(B_dev.data_ptr<c10::BFloat16>());
+  auto* C_ptr = reinterpret_cast<hip_bfloat16*>(C_dev.data_ptr<c10::BFloat16>());
+
+  dim3 block(8, 8, 1);
+  dim3 grid(
+      static_cast<unsigned int>((N64 + 31) / 32),
+      static_cast<unsigned int>((M64 + 31) / 32),
+      1);
+
+  hipStream_t stream = nullptr;
+  hipError_t launch_err = ksearch_launch_gemm_bf16_var_mnk_balanced(
+      grid,
+      block,
+      0,
+      stream,
+      A_ptr,
+      B_ptr,
+      C_ptr,
+      static_cast<int>(M64),
+      static_cast<int>(N64),
+      static_cast<int>(K64));
+
+  TORCH_CHECK(launch_err == hipSuccess, "Kernel launch failed: ", hipGetErrorString(launch_err));
+  TORCH_HIP_CHECK(hipStreamSynchronize(stream));
+
+  return C_dev.to(torch::kCPU);
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("run", &run, py::arg("A"), py::arg("B"), "BF16 GEMM: C = A * B^T (HIP, MI300X)");
+}
+</cpp_file>
+
+Current Implementation (improve THIS code; keep it aligned with the base):
+<header_file name="kernel.h">
+#ifndef GEMM_BF16_VAR_MNK_KERNEL_H
+#define GEMM_BF16_VAR_MNK_KERNEL_H
+
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_runtime.h>
+
+hipError_t ksearch_launch_gemm_bf16_var_mnk_balanced(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    const hip_bfloat16* A,
+    const hip_bfloat16* B,
+    hip_bfloat16* C,
+    int M,
+    int N,
+    int K);
+
+#endif  // GEMM_BF16_VAR_MNK_KERNEL_H
+</header_file>
+
+<cuda_file name="kernel.cu">
+#include "kernel.h"
+
+#include <cstdint>
+
+namespace {
+
+constexpr int TILE_M = 16;
+constexpr int TILE_N = 16;
+constexpr int TILE_K = 16;
+
+using int16x4_t = short __attribute__((ext_vector_type(4)));
+using float32x4_t = float __attribute__((ext_vector_type(4)));
+
+__device__ __forceinline__ float ksearch_bf16_to_float(hip_bfloat16 v) {
+  union {
+    hip_bfloat16 b;
+    uint16_t u16;
+  } in_bits;
+  union {
+    uint32_t u32;
+    float f32;
+  } out_bits;
+  in_bits.b = v;
+  out_bits.u32 = static_cast<uint32_t>(in_bits.u16) << 16;
+  return out_bits.f32;
+}
+
+__device__ __forceinline__ hip_bfloat16 ksearch_float_to_bf16_rn(float x) {
+  union {
+    float f32;
+    uint32_t u32;
+  } in_bits;
+  union {
+    uint16_t u16;
+    hip_bfloat16 b;
+  } out_bits;
+
+  in_bits.f32 = x;
+  const uint32_t lsb = (in_bits.u32 >> 16) & 1u;
+  in_bits.u32 += 0x7FFFu + lsb;  // round-to-nearest-even
+  out_bits.u16 = static_cast<uint16_t>(in_bits.u32 >> 16);
+  return out_bits.b;
+}
+
+__global__ __launch_bounds__(64) void gemm_bf16_var_mnk_balanced_kernel(
+    const hip_bfloat16* __restrict__ A,
+    const hip_bfloat16* __restrict__ B,
+    hip_bfloat16* __restrict__ C,
+    int M,
+    int N,
+    int K) {
+  const int tid = static_cast<int>(threadIdx.x) +
+                  static_cast<int>(blockDim.x) * static_cast<int>(threadIdx.y);
+  if (tid >= 64) return;
+
+  const int lane_i = tid & 15;   // 0..15
+  const int lane_g = tid >> 4;   // 0..3
+
+  const int block_row = static_cast<int>(blockIdx.y) * TILE_M;
+  const int block_col = static_cast<int>(blockIdx.x) * TILE_N;
+
+  const int out_row = block_row + lane_i;
+  const int out_col_base = block_col + lane_g * 4;
+
+#if defined(__HIP_DEVICE_COMPILE__) && \
+    (defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__) || defined(__gfx90a__) || defined(__gfx908__))
+  const uint16_t* __restrict__ A_bits = reinterpret_cast<const uint16_t*>(A);
+  const uint16_t* __restrict__ B_bits = reinterpret_cast<const uint16_t*>(B);
+
+  float32x4_t acc = {0.0f, 0.0f, 0.0f, 0.0f};
+
+  for (int k0 = 0; k0 < K; k0 += TILE_K) {
+    const int k_base = k0 + lane_g * 4;
+
+    uint16_t a0 = 0, a1 = 0, a2 = 0, a3 = 0;
+    if (out_row < M) {
+      if (k_base + 0 < K) a0 = A_bits[out_row * K + (k_base + 0)];
+      if (k_base + 1 < K) a1 = A_bits[out_row * K + (k_base + 1)];
+      if (k_base + 2 < K) a2 = A_bits[out_row * K + (k_base + 2)];
+      if (k_base + 3 < K) a3 = A_bits[out_row * K + (k_base + 3)];
+    }
+
+    const int b_row = block_col + lane_i;
+    uint16_t b0 = 0, b1 = 0, b2 = 0, b3 = 0;
+    if (b_row < N) {
+      if (k_base + 0 < K) b0 = B_bits[b_row * K + (k_base + 0)];
+      if (k_base + 1 < K) b1 = B_bits[b_row * K + (k_base + 1)];
+      if (k_base + 2 < K) b2 = B_bits[b_row * K + (k_base + 2)];
+      if (k_base + 3 < K) b3 = B_bits[b_row * K + (k_base + 3)];
+    }
+
+    const int16x4_t a_frag = {
+        static_cast<short>(a0),
+        static_cast<short>(a1),
+        static_cast<short>(a2),
+        static_cast<short>(a3)};
+    const int16x4_t b_frag = {
+        static_cast<short>(b0),
+        static_cast<short>(b1),
+        static_cast<short>(b2),
+        static_cast<short>(b3)};
+
+    acc = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b_frag, acc, 0, 0, 0);
+  }
+
+  if (out_row < M) {
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const int out_col = out_col_base + i;
+      if (out_col < N) {
+        C[out_row * N + out_col] = ksearch_float_to_bf16_rn(acc[i]);
+      }
+    }
+  }
+#else
+  if (out_row < M) {
+#pragma unroll
+    for (int jj = 0; jj < 4; ++jj) {
+      const int out_col = out_col_base + jj;
+      if (out_col >= N) continue;
+      float sum = 0.0f;
+      for (int k = 0; k < K; ++k) {
+        sum += ksearch_bf16_to_float(A[out_row * K + k]) *
+               ksearch_bf16_to_float(B[out_col * K + k]);
+      }
+      C[out_row * N + out_col] = ksearch_float_to_bf16_rn(sum);
+    }
+  }
+#endif
+}
+
+}  // namespace
+
+hipError_t ksearch_launch_gemm_bf16_var_mnk_balanced(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    const hip_bfloat16* A,
+    const hip_bfloat16* B,
+    hip_bfloat16* C,
+    int M,
+    int N,
+    int K) {
+  (void)shared_mem;
+  gemm_bf16_var_mnk_balanced_kernel<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+  return hipGetLastError();
+}
+</cuda_file>
+
+<cpp_file name="main.cpp">
+#include <torch/extension.h>
+#include <pybind11/pybind11.h>
+#include <hip/hip_runtime.h>
+
+#include <climits>
+
+#include "kernel.h"
+
+namespace py = pybind11;
+
+#define TORCH_HIP_CHECK(expr) \
+  TORCH_CHECK((expr) == hipSuccess, "HIP error: ", hipGetErrorString(expr))
+
+torch::Tensor run(torch::Tensor A, torch::Tensor B) {
+  TORCH_CHECK(A.defined(), "A must be a valid tensor");
+  TORCH_CHECK(B.defined(), "B must be a valid tensor");
+  TORCH_CHECK(A.dim() == 2, "A must be 2D [M, K]");
+  TORCH_CHECK(B.dim() == 2, "B must be 2D [N, K]");
+  TORCH_CHECK(A.size(1) == B.size(1), "A.size(1) must equal B.size(1)");
+
+  const int64_t M64 = A.size(0);
+  const int64_t K64 = A.size(1);
+  const int64_t N64 = B.size(0);
+
+  TORCH_CHECK(M64 <= static_cast<int64_t>(INT_MAX), "M is too large");
+  TORCH_CHECK(N64 <= static_cast<int64_t>(INT_MAX), "N is too large");
+  TORCH_CHECK(K64 <= static_cast<int64_t>(INT_MAX), "K is too large");
+
+  int device_index = 0;
+  if (A.is_cuda()) {
+    device_index = A.get_device();
+  } else if (B.is_cuda()) {
+    device_index = B.get_device();
+  } else {
+    TORCH_HIP_CHECK(hipGetDevice(&device_index));
+  }
+  TORCH_HIP_CHECK(hipSetDevice(device_index));
+
+  auto device = torch::Device(torch::kCUDA, device_index);
+
+  auto A_bf16 = A.to(torch::kBFloat16).contiguous();
+  auto B_bf16 = B.to(torch::kBFloat16).contiguous();
+
+  auto A_dev = A_bf16.is_cuda() ? A_bf16 : A_bf16.to(device);
+  auto B_dev = B_bf16.is_cuda() ? B_bf16 : B_bf16.to(device);
+
+  if (A_dev.get_device() != device_index) A_dev = A_dev.to(device);
+  if (B_dev.get_device() != device_index) B_dev = B_dev.to(device);
+
+  A_dev = A_dev.contiguous();
+  B_dev = B_dev.contiguous();
+
+  auto C_dev = torch::empty({M64, N64}, A_dev.options().dtype(torch::kBFloat16).device(device));
+
+  if (M64 == 0 || N64 == 0) {
+    return C_dev.to(torch::kCPU);
+  }
+  if (K64 == 0) {
+    C_dev.zero_();
+    return C_dev.to(torch::kCPU);
+  }
+
+  const auto* A_ptr = reinterpret_cast<const hip_bfloat16*>(A_dev.data_ptr<c10::BFloat16>());
+  const auto* B_ptr = reinterpret_cast<const hip_bfloat16*>(B_dev.data_ptr<c10::BFloat16>());
+  auto* C_ptr = reinterpret_cast<hip_bfloat16*>(C_dev.data_ptr<c10::BFloat16>());
+
+  dim3 block(64, 1, 1);
+  dim3 grid(
+      static_cast<unsigned int>((N64 + 15) / 16),
+      static_cast<unsigned int>((M64 + 15) / 16),
+      1);
+
+  hipStream_t stream = nullptr;
+  hipError_t launch_err = ksearch_launch_gemm_bf16_var_mnk_balanced(
+      grid,
+      block,
+      0,
+      stream,
+      A_ptr,
+      B_ptr,
+      C_ptr,
+      static_cast<int>(M64),
+      static_cast<int>(N64),
+      static_cast<int>(K64));
+
+  TORCH_CHECK(launch_err == hipSuccess, "Kernel launch failed: ", hipGetErrorString(launch_err));
+
+  return C_dev.to(torch::kCPU);
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("run", &run, py::arg("A"), py::arg("B"), "BF16 GEMM: C = A * B^T (HIP, MI300X)");
+}
+</cpp_file>
+
+Performance Summary:
+- base_mean_latency_ms: 23.3538
+- base_speedup_vs_ref: 0.011x
+- base_score: 0.0109
+
+Recent Logs (only if FAILED):
+Status: INCORRECT_NUMERICAL
+Timestamp: 2026-03-22T10:51:46.710776
+
+Execution Log:
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.h -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.h [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.cu -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.hip [ok]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/main.cpp -> /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/main.cpp [skipped, no changes]
+/root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/kernel.h -> /root/.
+...<trace logs truncated for prompt>...
+he/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -c /root/.cache/flashinfer_bench/cache/torch/torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f/main.cpp -o main.o -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC
+[3/3] c++ kernel.cuda.o main.o -shared -L/opt/venv/lib/python3.12/site-packages/torch/lib -lc10 -lc10_hip -ltorch_cpu -ltorch_hip -ltorch -ltorch_python -L/opt/rocm-7.2.0/lib -lamdhip64 -o torch_gpt_5_3_codex_gemm_bf16_var_mnk_hip_optimized_r3_high_d9950f.so
+Builder TorchBuilder built gpt-5.3-codex_gemm_bf16_var_mnk_hip_optimized_r3_high
+
+Max relative error: 33354576.0
+Max absolute error: 496.0
+
+Improve round: 4/5
+
+Rules:
+- If the current implementation FAILED: fix correctness/compile/runtime issues FIRST.
+- If the current implementation PASSED: improve performance while preserving correctness.
+- Keep changes minimal; do not introduce extra unrelated optimizations.
+- Return only the full corrected XML blocks (no explanations, no markdown).
+
+IMPORTANT: Generate code in XML format with exactly 3 files with these strict names:
+
+<header_file name="kernel.h">
+- All HIP kernel function declarations
+- Host function declarations
+- Any necessary struct/type definitions
+- Include guards and necessary headers
+</header_file>
+
+<cuda_file name="kernel.cu">
+- All __global__ kernel implementations
+- All __device__ helper functions
+- HIP-specific optimizations and memory patterns
+- Proper error checking and memory management
+</cuda_file>
+
+<cpp_file name="main.cpp">
+- Host function that launches kernels
+- Memory allocation and data transfer management
+- Device management and error handling
+- Entry point function named "run" that can be called to execute the implementation
+- Handle both args and kwargs properly
+- Move CPU data to GPU, execute kernels, and return results to CPU
+- MUST include PyTorch C++ extension bindings using PYBIND11_MODULE
+- The "run" function must be exposed to Python through the binding
+- Include proper tensor type conversion between PyTorch tensors and device pointers
+- Include all necessary PyTorch headers: #include <torch/extension.h>
+</cpp_file>
+
+Code Generation Guidelines:
+- Use modern HIP features appropriate for MI300X
+- Optimize memory coalescing and reduce bank conflicts
+- Utilize shared memory effectively for data reuse
+- Consider occupancy and register usage
+- Implement proper error checking with hipGetLastError()
+- Use appropriate grid and block dimensions for the problem size
+- Leverage constant memory for frequently accessed read-only data
+- Use PyTorch tensor API (torch::Tensor) for all tensor arguments in the "run" function
+- Convert PyTorch tensors to HIP pointers using .data_ptr<float>() or similar methods
+- Ensure proper HIP stream synchronization and error handling
+
+** You MUST use MFMA to utilize the matrix cores on MI300X! ** For each round, you can see your current best solution and the previous round's summary, therefore you can implement the kernel step by step. ROCm/HIP compatibility note (when targeting AMD/MI300X): do not include <ATen/BFloat16.h> (prefer <c10/util/BFloat16.h> or only <torch/extension.h>), avoid HIP/ROCm-only headers/APIs such as <ATen/cuda/...>, <c10/cuda/...>, cudaStream_t/cudaError_t/cudaGetLastError, and output plain source code only (no CDATA, no HTML/XML escaping like &lt; or &gt; inside code).
+
+Generate the improved implementation:
+
+World Model (persistent across rounds; use it to guide kernel design):
+{
+  "computed_signals": {
+    "round_index": 0,
+    "trace": {
+      "latency_ms": null,
+      "mean_vs_baseline_factor": null,
+      "reference_latency_ms": null,
+      "speedup_factor": null,
+      "status": "unmeasured_initial_model"
+    }
+  },
+  "decision_tree": {
+    "active_leaf_id": "n1_balanced_general",
+    "nodes": [
+      {
+        "action": {
+          "difficulty_1_to_5": 1,
+          "expected_vs_baseline_factor": 1.0,
+          "score_0_to_1": 0.58,
+          "title": "Initialize GEMM BF16 search tree"
+        },
+        "choice": null,
+        "confidence_0_to_1": 0.45,
+        "decision": null,
+        "node_id": "root",
+        "node_type": "root",
+        "overall_rating_0_to_10": 5.8,
+        "parent_id": null,
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "initialized"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.6,
+          "score_0_to_1": 0.74,
+          "title": "Prototype balanced general-purpose GEMM family (no split-K)"
+        },
+        "choice": "balanced_2d_tiles",
+        "confidence_0_to_1": 0.62,
+        "decision": "kernel_family",
+        "node_id": "n1_balanced_general",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 7.4,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.35,
+          "score_0_to_1": 0.69,
+          "title": "Prototype skinny-dimension specialized family"
+        },
+        "choice": "skinny_shape_specialized",
+        "confidence_0_to_1": 0.55,
+        "decision": "kernel_family",
+        "node_id": "n3_skinny_specialized",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 6.9,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "difficulty_1_to_5": 4,
+          "expected_vs_baseline_factor": 1.25,
+          "score_0_to_1": 0.66,
+          "title": "Prototype deep-K reduction family (split-K with finalize)"
+        },
+        "choice": "k_partitioned_reduction",
+        "confidence_0_to_1": 0.48,
+        "decision": "kernel_family",
+        "node_id": "n2_splitk_deepk",
+        "node_type": "decision",
+        "overall_rating_0_to_10": 6.6,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "round_index": null,
+          "solution_id": null
+        }
+      }
+    ],
+    "root_id": "root"
+  },
+  "kernel_summary": "gemm_bf16_var_mnk is a dense GEMM with transposed-right operand semantics (C[m,n]=sum_k A[m,k]*B[n,k]) over fully runtime-variable M/N/K, so it is a reduction-heavy, high-reuse kernel whose bottleneck shifts by shape regime: large balanced problems should be compute-limited on MI300X if BF16 matrix-core-friendly tiling is used, while tiny-K or skinny-M/N cases are likely bandwidth/launch/underutilization limited; key constraints are BF16 input/output with likely FP32 accumulation needs, handling non-multiple edge tiles efficiently, and integrating via HIP wrapper launches from main.cpp with actual kernel launches only in kernel.cu.",
+  "open_questions": [
+    "What is the real production shape distribution of (M,N,K), especially frequency of skinny or tiny-K cases?",
+    "Are A and B guaranteed contiguous row-major with known alignment (e.g., 16/32-byte), or can arbitrary leading strides appear?",
+    "What numerical contract is required versus PyTorch matmul: FP32 accumulation and exact rounding behavior before BF16 store?",
+    "Is extra workspace memory acceptable for split-K partial reductions, and what is the allowed memory overhead?",
+    "Do we optimize for single-call latency, steady-state throughput, or both under multi-stream concurrency?",
+    "Are K values commonly multiples of matrix-core-friendly quanta, or must we expect many remainder-heavy K tails?"
+  ]
+}
+
+[KSEARCH HIP HARD CONSTRAINTS]
+- main.cpp MUST NOT contain kernel launch syntax `<<< >>>`.
+- main.cpp MUST NOT call `hipLaunchKernelGGL`.
+- main.cpp must call host launch wrappers declared in kernel.h with this pattern:
+  `hipError_t ksearch_launch_<kernel>(dim3 grid, dim3 block, size_t shared_mem, hipStream_t stream, ...);`
+- kernel.cu must implement those wrappers and perform actual `<<< >>>` launches there.
+- Do NOT include private HIP headers under `hip/amd_detail/*`.
+- Use only public HIP headers like `<hip/hip_runtime.h>`, `<hip/hip_bfloat16.h>`, `<hip/hip_fp8.h>` when needed.

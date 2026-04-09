@@ -1,0 +1,17 @@
+{
+  "gpu_count": "1",
+  "backend": "HipKittens-triton_gemm_v01+remap_xcd",
+  "dtype": "BF16",
+  "M": "2048",
+  "N": "2048",
+  "K": "2048",
+  "warmup": "1356",
+  "iters": "6780",
+  "graph_iters": "1",
+  "l2_flush_mb": "256",
+  "timer": "cuda_event_fallback",
+  "timing_ms": "0.061102",
+  "tflops": "281.168097",
+  "status": "ok",
+  "note": "python callable benchmark; max_abs_err=1.000000; max_rel_err=0.172043; atol=1.0; rtol=0.02; shared_input_seed=20260308; target_warmup_ms=200.0; target_repeat_ms=1000.0; resolved_warmup_iters=1356; resolved_repeat_iters=6780; probe_ms=0.147499; best_config={\"kwargs\": {\"BLOCK_SIZE_K\": 32, \"BLOCK_SIZE_M\": 64, \"BLOCK_SIZE_N\": 128, \"GROUP_SIZE_M\": 8, \"NUM_XCDS\": 8, \"REMAP_XCD\": 0, \"STAGGER_K\": 1, \"waves_per_eu\": 3}, \"maxnreg\": 0, \"num_ctas\": 1, \"num_stages\": 2, \"num_warps\": 4, \"num_xcds\": 8, \"remap_xcd\": false, \"stagger_k\": 1, \"waves_per_eu\": 3}"
+}

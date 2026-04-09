@@ -1,0 +1,24 @@
+{
+  "was_diagnosis_correct": true,
+  "was_fix_effective": false,
+  "expected_outcome": "If compute throughput was the main limiter, switching to MFMA/tensor-core-friendly matmul settings should have reduced kernel time and raised effective compute utilization (or at least improved time at similar utilization).",
+  "actual_outcome": "Kernel time regressed from 0.0214ms to 0.0245ms (-14.4%), despite targeting the compute path; verification passed but performance worsened.",
+  "reasoning": "The diagnosis appears directionally correct because SOL shows compute (62.4%) higher than memory (32.0%), consistent with a compute-leaning bottleneck. However, the applied changes were too broad and likely introduced lower occupancy and/or higher latency: BLOCK_M/N were increased substantially (64x32 -> 128x128), BLOCK_K doubled (16 -> 32), num_warps doubled (4 -> 8), and stages increased (2 -> 3). Those shifts can hurt wave scheduling flexibility, register pressure, and tile fit for the problem size, offsetting any MFMA gain. Also, removing explicit controls (matrix_instr_nonkdim and waves_per_eu set to None) may have reduced predictability of codegen/runtime behavior. Since runtime got worse, the fix was not effective even if the bottleneck hypothesis was plausible.",
+  "lessons": [
+    "A correct bottleneck diagnosis does not guarantee improvement; kernel-shape/occupancy tradeoffs can dominate.",
+    "Do not combine many major config changes at once when testing MFMA enablement; isolate variables to identify what helps vs hurts.",
+    "Larger tiles and more warps/stages are not universally better on MI300X; they must be matched to problem dimensions and occupancy limits.",
+    "When targeting MFMA, verify both ISA usage and achieved occupancy/register pressure before concluding the path is better."
+  ],
+  "avoid_patterns": [
+    "Avoid shotgun tuning (simultaneously changing tile sizes, warps, stages, and control knobs) in a single round.",
+    "Avoid assuming tensor-core/MFMA path automatically improves performance without checking occupancy and launch efficiency.",
+    "Avoid dropping explicit tuning knobs to None unless there is evidence autotuned defaults are better for this workload."
+  ],
+  "try_patterns": [
+    "Run an ablation study: first force/verify MFMA with minimal tile changes, then tune BLOCK_M/N/K one parameter at a time.",
+    "Test a smaller set of balanced tiles (e.g., moderate BLOCK_M/N with current BLOCK_K) to preserve occupancy while using MFMA.",
+    "Sweep num_warps and num_stages separately (e.g., keep warps fixed while varying stages) and track register pressure/active waves.",
+    "Use problem-size-aware tiling and ensure tile dimensions align with MFMA fragment shapes without over-inflating per-CTA resource use."
+  ]
+}

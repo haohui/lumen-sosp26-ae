@@ -1,0 +1,19 @@
+{
+  "round_num": 4,
+  "saved_at_utc": "2026-03-22T09:53:32Z",
+  "status": "passed",
+  "score": 0.06679905710418023,
+  "prompt_chars": 27021,
+  "raw_response_chars": 10532,
+  "trace_logs_chars": 27,
+  "world_model_chars": 12872,
+  "extra": {
+    "wm_enabled": true,
+    "action_node_id": "family_throughput_large",
+    "attempt_idx_in_cycle": 4,
+    "cycle_start_round": 1,
+    "parent_is_root": true,
+    "all_passed": true,
+    "score": 0.06679905710418023
+  }
+}

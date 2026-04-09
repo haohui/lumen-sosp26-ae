@@ -1,0 +1,10 @@
+
+/tmp/rocprof_bundle_from_success_20260408_040730/asm_extract_cudaforge/blob2_10.elf:	file format elf64-amdgpu
+
+SYMBOL TABLE:
+00000000000049f0 l       .dynamic	0000000000000000 .hidden _DYNAMIC
+0000000000002b00 g     F .text	0000000000000704 .protected _ZN12_GLOBAL__N_121fused_moe_kernel_implIiEEvPKhS2_S2_PKfPKT_S4_S4_S4_Ptiiiii
+0000000000001640 g     O .rodata	0000000000000040 _ZN12_GLOBAL__N_121fused_moe_kernel_implIiEEvPKhS2_S2_PKfPKT_S4_S4_S4_Ptiiiii.kd
+0000000000003300 g     F .text	00000000000006ec .protected _ZN12_GLOBAL__N_121fused_moe_kernel_implIlEEvPKhS2_S2_PKfPKT_S4_S4_S4_Ptiiiii
+0000000000001680 g     O .rodata	0000000000000040 _ZN12_GLOBAL__N_121fused_moe_kernel_implIlEEvPKhS2_S2_PKfPKT_S4_S4_S4_Ptiiiii.kd
+0000000000005a60 g     O .bss	0000000000000001 __hip_cuid_b2258e2a61932e4

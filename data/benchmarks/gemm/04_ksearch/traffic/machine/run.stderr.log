@@ -1,0 +1,7 @@
+[aiter] import [module_aiter_enum] under /workspace/aiter/aiter/jit/module_aiter_enum.so
+2026-03-12 06:16:59,642 - WARNING - prefill_rocm.py:270 - flashinfer.jit: FA3 backend not supported on ROCm. Selecting FA2 as the backend.
+/workspace/kernel_benchmark/ksearch/K-Search/generate_kernels_and_eval.py:470: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+/workspace/kernel_benchmark/ksearch/K-Search/generate_kernels_and_eval.py:308: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+[W312 06:49:28.223858797 CudaIPCTypes.cpp:16] Producer process has been terminated before all shared CUDA tensors released. See Note [Sharing CUDA tensors]

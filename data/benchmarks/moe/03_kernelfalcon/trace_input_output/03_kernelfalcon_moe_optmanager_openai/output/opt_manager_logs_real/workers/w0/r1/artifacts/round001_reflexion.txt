@@ -1,0 +1,21 @@
+{
+  "was_diagnosis_correct": true,
+  "was_fix_effective": false,
+  "expected_outcome": "If compute was the true limiter, increasing ILP and math utilization via better tiling/pipelining should reduce kernel time and likely raise/maintain high compute SOL while improving runtime.",
+  "actual_outcome": "Runtime is still very high (2204.5826ms) and reported improvement is +nan%, indicating no measurable speedup from the attempted change path; compute SOL remains high at 88.4%.",
+  "reasoning": "The diagnosis appears directionally correct because NCU shows compute pressure (88.4%) much higher than memory (42.1%), consistent with a compute-bound kernel. However, the specific fix was not effectively realized: config changes are listed as 'none', so the proposed tile/pipeline retuning was likely not actually applied (or had negligible effect). The infms -> finite ms transition suggests baseline/measurement instability rather than a true optimization gain, and +nan% confirms unusable comparison for improvement. Thus, compute bottleneck identification is plausible, but this iteration did not validate a successful compute-throughput optimization.",
+  "lessons": [
+    "A correct bottleneck diagnosis is insufficient if the kernel launch/config parameters are unchanged; ensure the intended optimization is concretely applied.",
+    "Do not trust speedup conclusions when baseline is invalid (infms) or improvement is NaN; stabilize benchmarking first.",
+    "For compute-bound kernels, track achieved FLOP/s, instruction mix, occupancy, and tensor/vec ALU utilization before and after to verify real math-throughput gains."
+  ],
+  "avoid_patterns": [
+    "Running optimization rounds with no effective config/code delta while expecting performance movement.",
+    "Using unstable or invalid baseline measurements (inf/NaN) to judge optimization impact."
+  ],
+  "try_patterns": [
+    "Apply explicit, versioned sweeps of BLOCK_J/BLOCK_OUT/num_stages with recorded register usage, occupancy, and runtime.",
+    "Establish a stable benchmark protocol (warmup, fixed clocks/power mode, repeated trials, median/CI) before tuning.",
+    "Add profiler-guided checks for compute efficiency (issued/active warps, FP32 pipe utilization, dependency stalls) to target ILP and reduction overhead more precisely."
+  ]
+}

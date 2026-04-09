@@ -1,0 +1,200 @@
+[trace] log_dir=/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/gemm_formal_api53high_20260312_054654/02_cudaforge_gemm1_openai/mitm
+[trace] proxy=http://127.0.0.1:18080
+[trace] mitm_bin=mitmweb
+[CONFIG] backend=hip, gpu=MI300X, profiler_feedback=False
+[BATCH] Output folder: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex
+[1_Square_matrix_multiplication_.py] Round 0
+[Seed] Generating the initial kernel ...
+Usage: In=1229, Out=7291, Total=8520
+[91mTest Error (CompilationError):[0m load_inline() got an unexpected keyword argument 'hip_sources'
+[seed] failed. See metrics.message for details.
+[seed] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0000.json
+[1_Square_matrix_multiplication_.py] Round 1
+[Repair] start repairing
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=9
+Usage: In=1682, Out=441, Total=2123
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=11
+Usage: In=1657, Out=4383, Total=6040
+[91mTest Error (CompilationError):[0m [92mSuccessfully preprocessed all matching files.[0m
+Error building extension 'bf16_matmul_rocm_ext_fixed': [1/3] c++ -MMD -MF main.o.d -DTORCH_EXTENSION_NAME=bf16_matmul_rocm_ext_fixed -DTORCH_API_INCLUDE_EXTENSION_H -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -O3 -c /root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/main.cpp -o main.o -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC
+[2/3] /opt/rocm-7.2.0/bin/hipcc  -DWITH_HIP -DTORCH_EXTENSION_NAME=bf16_matmul_rocm_ext_fixed -DTORCH_API_INCLUDE_EXTENSION_H -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -O3 -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 --offload-arch=gfx908 --offload-arch=gfx90a --offload-arch=gfx942 --offload-arch=gfx1030 --offload-arch=gfx1100 --offload-arch=gfx1101 --offload-arch=gfx1200 --offload-arch=gfx1201 --offload-arch=gfx950 --offload-arch=gfx1151 --offload-arch=gfx1150 -fno-gpu-rdc -O3 -c /root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip -o hip.cuda.o 
+FAILED: [code=1] hip.cuda.o 
+/opt/rocm-7.2.0/bin/hipcc  -DWITH_HIP -DTORCH_EXTENSION_NAME=bf16_matmul_rocm_ext_fixed -DTORCH_API_INCLUDE_EXTENSION_H -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -O3 -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 --offload-arch=gfx908 --offload-arch=gfx90a --offload-arch=gfx942 --offload-arch=gfx1030 --offload-arch=gfx1100 --offload-arch=gfx1101 --offload-arch=gfx1200 --offload-arch=gfx1201 --offload-arch=gfx950 --offload-arch=gfx1151 --offload-arch=gfx1150 -fno-gpu-rdc -O3 -c /root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip -o hip.cuda.o 
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:12:28: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   12 | __device__ __forceinline__ __hip_bfloat16 bf16_zero() {
+      |                            ^~~~~~~~~~~~~~
+      |                            hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:13:12: error: use of undeclared identifier '__float2bfloat16'
+   13 |     return __float2bfloat16(0.0f);
+      |            ^~~~~~~~~~~~~~~~
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:17:11: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   17 |     const __hip_bfloat16* __restrict__ A,
+      |           ^~~~~~~~~~~~~~
+      |           hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:18:11: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   18 |     const __hip_bfloat16* __restrict__ B,
+      |           ^~~~~~~~~~~~~~
+      |           hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:19:5: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   19 |     __hip_bfloat16* __restrict__ C,
+      |     ^~~~~~~~~~~~~~
+      |     hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:22:16: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   22 |     __shared__ __hip_bfloat16 As[TILE][TILE];
+      |                ^~~~~~~~~~~~~~
+      |                hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:23:16: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   23 |     __shared__ __hip_bfloat16 Bs[TILE][TILE];
+      |                ^~~~~~~~~~~~~~
+      |                hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:43:24: error: use of undeclared identifier '__bfloat162float'
+   43 |             acc = fmaf(__bfloat162float(As[ty][k]), __bfloat162float(Bs[k][tx]), acc);
+      |                        ^~~~~~~~~~~~~~~~
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:43:53: error: use of undeclared identifier '__bfloat162float'
+   43 |             acc = fmaf(__bfloat162float(As[ty][k]), __bfloat162float(Bs[k][tx]), acc);
+      |                                                     ^~~~~~~~~~~~~~~~
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:50:28: error: use of undeclared identifier '__float2bfloat16'
+   50 |         C[row * M + col] = __float2bfloat16(acc);
+      |                            ^~~~~~~~~~~~~~~~
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:75:11: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   75 |     const __hip_bfloat16* A_ptr =
+      |           ^~~~~~~~~~~~~~
+      |           hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:76:32: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   76 |         reinterpret_cast<const __hip_bfloat16*>(A_c.data_ptr<c10::BFloat16>());
+      |                                ^~~~~~~~~~~~~~
+      |                                hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:77:11: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   77 |     const __hip_bfloat16* B_ptr =
+      |           ^~~~~~~~~~~~~~
+      |           hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:78:32: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   78 |         reinterpret_cast<const __hip_bfloat16*>(B_c.data_ptr<c10::BFloat16>());
+      |                                ^~~~~~~~~~~~~~
+      |                                hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:79:5: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   79 |     __hip_bfloat16* C_ptr =
+      |     ^~~~~~~~~~~~~~
+      |     hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+/root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip:80:26: error: unknown type name '__hip_bfloat16'; did you mean 'hip_bfloat16'?
+   80 |         reinterpret_cast<__hip_bfloat16*>(C.data_ptr<c10::BFloat16>());
+      |                          ^~~~~~~~~~~~~~
+      |                          hip_bfloat16
+/opt/rocm-7.2.0/include/hip/amd_detail/amd_hip_bfloat16.h:56:8: note: 'hip_bfloat16' declared here
+   56 | struct hip_bfloat16 {
+      |        ^
+16 errors generated when compiling for gfx1030.
+failed to execute:/opt/rocm-7.2.0/lib/llvm/bin/clang++  --offload-arch=gfx908 --offload-arch=gfx90a --offload-arch=gfx942 --offload-arch=gfx1030 --offload-arch=gfx1100 --offload-arch=gfx1101 --offload-arch=gfx1200 --offload-arch=gfx1201 --offload-arch=gfx950 --offload-arch=gfx1151 --offload-arch=gfx1150  -DWITH_HIP -DTORCH_EXTENSION_NAME=bf16_matmul_rocm_ext_fixed -DTORCH_API_INCLUDE_EXTENSION_H -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /opt/rocm-7.2.0/include -isystem /usr/include/python3.12 -fPIC -std=c++17 -O3 -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -fno-gpu-rdc -O3 -c -x hip /root/.cache/torch_extensions/py312_cpu/bf16_matmul_rocm_ext_fixed/hip.hip -o "hip.cuda.o"
+ninja: build stopped: subcommand failed.
+[repair] failed. See metrics.message for details.
+[repair] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0001.json
+[1_Square_matrix_multiplication_.py] Round 2
+[Repair] start repairing
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=14
+Usage: In=4934, Out=667, Total=5601
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=15
+Usage: In=4933, Out=4566, Total=9499
+[91mTest Error (CompilationError):[0m load_inline() got an unexpected keyword argument 'hip_sources'
+[repair] failed. See metrics.message for details.
+[repair] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0002.json
+[1_Square_matrix_multiplication_.py] Round 3
+[Repair] start repairing
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=4
+Usage: In=1741, Out=567, Total=2308
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=5
+Usage: In=1719, Out=2746, Total=4465
+[repair] score=1.0108
+[repair] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0003.json
+[1_Square_matrix_multiplication_.py] Round 4
+Optimizing start
+=============================================================
+Detected kernel names: ['bf16_gemm_tiled_kernel']
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=7
+Usage: In=1889, Out=4623, Total=6512
+[91mTest Error (CompilationError):[0m load_inline() got an unexpected keyword argument 'hip_sources'
+[opt] failed. See metrics.message for details.
+[opt] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0004.json
+[1_Square_matrix_multiplication_.py] Round 5
+[Repair] start repairing
+Usage: In=2248, Out=595, Total=2843
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=1
+Usage: In=2241, Out=4094, Total=6335
+[repair] score=1.0236
+[repair] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0005.json
+[1_Square_matrix_multiplication_.py] Round 6
+Optimizing start
+=============================================================
+Detected kernel names: ['bf16_gemm_tiled_2x2_kernel']
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=7
+Usage: In=2378, Out=6114, Total=8492
+[91mTest Error (CompilationError):[0m load_inline() got an unexpected keyword argument 'hip_sources'
+[opt] failed. See metrics.message for details.
+[opt] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0006.json
+[1_Square_matrix_multiplication_.py] Round 7
+[Repair] start repairing
+Usage: In=2356, Out=415, Total=2771
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=1
+Usage: In=2334, Out=3820, Total=6154
+[repair] score=1.0097
+[repair] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0007.json
+[1_Square_matrix_multiplication_.py] Round 8
+Optimizing start
+=============================================================
+Detected kernel names: ['bf16_gemm_tiled_2x2_kernel']
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=7
+Usage: In=2512, Out=8493, Total=11005
+[91mTest Error (CompilationError):[0m load_inline() got an unexpected keyword argument 'hip_sources'
+[opt] failed. See metrics.message for details.
+[opt] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0008.json
+[1_Square_matrix_multiplication_.py] Round 9
+[Repair] start repairing
+Usage: In=2373, Out=636, Total=3009
+[prompt-sanitize] replaced_cuda_or_nvidia_terms=1
+Usage: In=2353, Out=3388, Total=5741
+[repair] score=1.0235
+[repair] metrics saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/evaluation/eval_0009.json
+[1_Square_matrix_multiplication_.py] Figure saved to: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/figures/1_Square_matrix_multiplication__score.png
+[SUMMARY] {'task': 'KernelBench/level1/1_Square_matrix_multiplication_.py', 'best_score': 1.0236093606967789, 'best_runnable': True, 'task_dir': '/workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_', 'figure': '/workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/1_Square_matrix_multiplication_/figures/1_Square_matrix_multiplication__score.png', 'input_tokens_sum': 38579, 'output_tokens_sum': 52839, 'total_tokens_sum': 91418}
+[GLOBAL] Avg speedup=1.0236, Accuracy=1.0000
+[GLOBAL] Saved: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/summary.json
+[GLOBAL] Saved: /workspace/kernel_benchmark/CudaForge/run_gemm_gemm_formal_api53high_20260312_054654/20260312_054918_1_Square_matrix_multiplication__hip_openai_gpt-5.3-codex/summary.csv
+[trace] command_exit=0
+[trace] flow_dump=/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/gemm_formal_api53high_20260312_054654/02_cudaforge_gemm1_openai/mitm/traffic_flows.mitm
+[trace] jsonl=/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/gemm_formal_api53high_20260312_054654/02_cudaforge_gemm1_openai/mitm/traffic.jsonl
+[trace] mitm_log=/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/gemm_formal_api53high_20260312_054654/02_cudaforge_gemm1_openai/mitm/mitmproxy.log
+[trace] proxy_env=/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/gemm_formal_api53high_20260312_054654/02_cudaforge_gemm1_openai/mitm/proxy_env.sh
+[trace] token_usage=/workspace/kernel_benchmark/opt_kernel/gemm/trace_runs/gemm_formal_api53high_20260312_054654/02_cudaforge_gemm1_openai/mitm/token_usage_summary.json
+[trace] captured_events=

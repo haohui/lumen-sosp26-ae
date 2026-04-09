@@ -1,0 +1,19 @@
+{
+  "round_num": 20,
+  "saved_at_utc": "2026-04-01T02:49:32Z",
+  "status": "INCORRECT_NUMERICAL",
+  "score": -1.0,
+  "prompt_chars": 63246,
+  "raw_response_chars": 18483,
+  "trace_logs_chars": 4686,
+  "world_model_chars": 20586,
+  "extra": {
+    "wm_enabled": true,
+    "action_node_id": "alt_C_hybrid_route",
+    "attempt_idx_in_cycle": 5,
+    "cycle_start_round": 16,
+    "parent_is_root": true,
+    "all_passed": false,
+    "score": -1.0
+  }
+}

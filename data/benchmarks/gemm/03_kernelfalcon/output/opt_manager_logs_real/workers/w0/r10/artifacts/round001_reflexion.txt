@@ -1,0 +1,23 @@
+{
+  "was_diagnosis_correct": false,
+  "was_fix_effective": false,
+  "expected_outcome": "If compute-path inefficiency was the true bottleneck, forcing MFMA-friendly matmul tiling should reduce kernel time and increase effective compute utilization (higher compute SOL and/or better achieved throughput).",
+  "actual_outcome": "Kernel time regressed from 0.0214 ms to 0.0223 ms (-4.1%), despite passing verification. Reported SOL remains compute-skewed (Compute 71.3%, Memory 32.8%), with no evidence of a compute-side uplift translating to speedup.",
+  "reasoning": "The change (BLOCK_N 32→64 with MFMA-oriented retuning) did not produce the expected latency reduction for a compute bottleneck; instead performance worsened. That indicates either (a) the original root cause was incomplete/incorrect, or (b) this specific parameter move introduced secondary penalties (e.g., occupancy drop, register pressure, wave scheduling inefficiency, worse tile fit/epilogue overhead) that outweighed any MFMA gain. Since compute SOL is still relatively high, the kernel may already have been reasonably compute-utilized, and simply enlarging N-tile did not improve instruction-level efficiency enough. Net result: diagnosis-to-fix mapping was not validated by outcome.",
+  "lessons": [
+    "Do not treat 'compute bottleneck' as sufficient proof that larger MFMA-oriented tiles will help; verify occupancy/register and wave-level effects for each tile change.",
+    "Validate optimization success with end-to-end time first; ISA-level MFMA presence alone is not a performance guarantee.",
+    "Single-parameter tiling changes (like BLOCK_N only) can regress due to imbalance; co-tune BLOCK_M/BLOCK_N/BLOCK_K with occupancy constraints.",
+    "Use before/after counter comparisons (achieved MFMA rate, VALU utilization, occupancy, register spills, waves/CU) to confirm the intended mechanism."
+  ],
+  "avoid_patterns": [
+    "Assuming tensor-core/MFMA path enforcement will automatically improve performance without checking occupancy and resource pressure.",
+    "Making larger tile-size changes in one dimension without evaluating shape-specific fit and launch-wave efficiency."
+  ],
+  "try_patterns": [
+    "Run a constrained autotune sweep over BLOCK_M/N/K and matrix_instr_nonkdim with explicit occupancy and VGPR limits.",
+    "Collect and compare low-level counters (MFMA issue rate, achieved FLOPs, occupancy, spills, LDS usage) to identify why the regression occurred.",
+    "Test alternative tilings that preserve or improve occupancy (e.g., moderate BLOCK_N with adjusted BLOCK_K) rather than only increasing BLOCK_N.",
+    "If compute SOL remains high but latency regresses, investigate instruction mix/scheduling and launch geometry before further tile enlargement."
+  ]
+}

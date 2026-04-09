@@ -1,0 +1,264 @@
+{
+  "computed_signals": {
+    "round_index": 7,
+    "trace": {
+      "latency_ms": 1.8140317916870117,
+      "mean_vs_baseline_factor": null,
+      "reference_latency_ms": 1.8524654150009154,
+      "speedup_factor": 1.0211868521213519,
+      "status": "passed"
+    }
+  },
+  "decision_tree": {
+    "active_leaf_id": "fam_general_fix_launch_and_rebenchmark",
+    "nodes": [
+      {
+        "action": {
+          "description": "Initialize problem model and define first-iteration alternative kernel directions for MI300X HIP GEMM BF16.",
+          "difficulty_1_to_5": 2,
+          "expected_vs_baseline_factor": 1.0,
+          "rationale": "Need structured hypotheses before coding due broad runtime variability in M/N/K.",
+          "score_0_to_1": 0.56,
+          "title": "World model initialization"
+        },
+        "choice": null,
+        "confidence_0_to_1": 0.67,
+        "decision": null,
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "MI300X favors high arithmetic intensity GEMM; BF16 throughput is high, but occupancy and tile shape must fit wave/LDS/register limits.",
+            "notes": "Model identifies compute-bound vs latency-bound shape regimes and hardware-fit constraints.",
+            "rating_0_to_10": 6.0,
+            "risk": "Without shape distribution, chosen first kernel may miss dominant regime."
+          },
+          "memory_bandwidth": {
+            "notes": "Dense A/B reads and C writes; reuse opportunity via tiled staging is central.",
+            "rating_0_to_10": 6.0,
+            "risk": "Bandwidth pressure may dominate for small-K or poorly reused tiles."
+          },
+          "register_pressure": {
+            "notes": "FP32 accumulators for BF16 inputs likely needed, increasing VGPR pressure for larger per-thread tiles.",
+            "rating_0_to_10": 5.0,
+            "risk": "Overly aggressive tiling could reduce occupancy and hide less latency."
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "root",
+        "node_type": "root",
+        "notes": "- 1) Problem classification: Dense matrix-multiply-like kernel (GEMM) with reduction over K; outputs C[M,N] are independent per (m,n) after reduction; all M/N/K are runtime-variable and can be highly non-square.\n- 2) Canonical math & deps: C[m,n] = cast_bf16(sum_{k=0..K-1} A[m,k] * B[n,k]) because reference is A @ B^T; reduction dimension is K; (m,n) tiles can execute independently; reduction order is reorderable if accumulation precision policy permits.\n- 3) Data layout/access: A shape [M,K] BF16 dense; B shape [N,K] BF16 dense with logical transpose in matmul (rows of B contiguous along K); C shape [M,N] BF16 dense write. Dominant reads: A and B; dominant write: C once. Reuse exists across neighboring outputs sharing A rows and B rows, motivating LDS/register staging.\n- 4) Bottleneck regimes: (a) Large M,N,K -> compute throughput / tensor-core utilization limited; (b) small K or tiny total workload -> launch+sync+memory latency limited; (c) skinny M or skinny N -> poor wave occupancy/coalescing and scheduling imbalance.\n- 5) Design-space knobs: output tile sizes (Mtile/Ntile/Ktile), wave-to-tile mapping, split-K vs no split-K, persistent vs non-persistent scheduling, LDS staging depth, vector access width/alignment, edge predication, accumulation type (FP32/BF16), epilogue cast/store policy.\n- 6) High-level skeleton: map CTAs to C tiles; initialize register accumulators; iterate over K tiles loading A/B panels to LDS/registers; synchronize; compute FMAs; finalize by casting accumulators to BF16 and writing C with bounds guards.\n- 7) Candidate families (pruned): Family-G balanced general kernel for medium/large dimensions; Family-S skinny-dimension specialized mapping for M<<N or N<<M; Family-T tiny-K low-latency path minimizing staging overhead.\n\nReference Implementation (excerpt):\nimport torch\n\ndef run(A, B):\n    C = torch.matmul(A, B.T)\n    return C",
+        "overall_rating_0_to_10": 5.0,
+        "parent_id": null,
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": null,
+            "status": "world_model_ready"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a first optimized kernel targeting general moderate-to-large M/N/K with cooperative tile reuse and FP32 accumulation, then BF16 output cast.",
+          "difficulty_1_to_5": 4,
+          "expected_vs_baseline_factor": 1.15,
+          "rationale": "Most production GEMM time is typically in large dense shapes where balanced tiling gives highest upside on MI300X.",
+          "score_0_to_1": 0.24,
+          "title": "Prototype Family-G general balanced kernel"
+        },
+        "choice": "family_g_balanced_general",
+        "confidence_0_to_1": 0.84,
+        "decision": "select_first_kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Should align well with MI300X compute-centric GEMM path if tile dimensions fit LDS and VGPR constraints.",
+            "notes": "MFMA is only touched in a probe kernel; compute-path fit to MI300X matrix units is effectively unproven for end-to-end GEMM.",
+            "rating_0_to_10": 2.0,
+            "risk": "high"
+          },
+          "memory_bandwidth": {
+            "notes": "Current measured path does not launch the full GEMM kernel, so real bandwidth behavior is unvalidated and likely to change after fix.",
+            "rating_0_to_10": 3.0,
+            "risk": "high"
+          },
+          "register_pressure": {
+            "notes": "4x4 FP32 accumulators are moderate today; register demand may rise with proper unrolling/vectorization once launch is corrected.",
+            "rating_0_to_10": 5.0,
+            "risk": "medium"
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "fam_general",
+        "node_type": "decision",
+        "notes": "CURRENT:\n- does: Defines a tiled BF16 GEMM kernel (shared-memory staging, FP32 accumulation, BF16 output cast), but the launch wrapper currently dispatches only mfma_touch_kernel and never launches gemm_bf16_var_mnk_kernel.\n- bottleneck: other (execution-path wiring / functional launch mismatch).\nFOLLOW_THROUGH:\n- aligned_with_intent: no\n- if_no: Expected intent was a production balanced GEMM implementation for variable M/N/K. Actual implementation path only probes MFMA and returns, so measured runtime does not represent intended GEMM work.\nUPDATE_BELIEF:\n- what changed after eval_result?: The +1.02x result is now interpreted as a misleading pass signal rather than true GEMM optimization progress.\n- next bet: Fix wrapper to launch the real kernel through ksearch host wrapper, verify correctness against torch.matmul(A, B.T), then retune tile/block parameters.\nPERF_GAP:\n- expected_vs_baseline_factor: 2.6\n- observed_speedup_factor: 1.021\n- hypothesized_reason: estimate assumed full GEMM execution, but observed path skipped intended compute.\nSELF_CHECK: Mutually exclusive with root siblings this round because Family-G owns balanced general-shape mapping, while Family-S and Family-T target specialized regimes.",
+        "overall_rating_0_to_10": 3.9,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "latency_ms": 1.8140317916870117,
+            "mean_vs_baseline_factor": null,
+            "metrics": {
+              "score": 1.0211868521213519,
+              "score_name": "mean_speedup_vs_ref"
+            },
+            "reference_latency_ms": 1.8524654150009154,
+            "speedup_factor": 1.0211868521213519,
+            "status": "passed"
+          },
+          "parent_solution_id": null,
+          "solution_id": "e86dfbec0c1911a7039fca15bc92b74e1c49ba24"
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a specialized asymmetric mapping kernel for cases where one output dimension is much smaller, prioritizing wave utilization and cache-friendly traversal.",
+          "difficulty_1_to_5": 4,
+          "expected_vs_baseline_factor": 1.95,
+          "rationale": "Skinny matrices often suffer poor occupancy with generic mapping; a dedicated path can recover utilization.",
+          "score_0_to_1": 0.77,
+          "title": "Prototype Family-S skinny-dimension kernel"
+        },
+        "choice": "family_s_skinny_specialized",
+        "confidence_0_to_1": 0.63,
+        "decision": "select_first_kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Useful when default tile shapes underfill waves on MI300X due extreme aspect ratios.",
+            "notes": "Lower arithmetic intensity on extreme aspect ratios; requires careful mapping to avoid underutilization.",
+            "rating_0_to_10": 6.0,
+            "risk": "medium"
+          },
+          "memory_bandwidth": {
+            "notes": "Skinny shapes are often memory-traffic sensitive; targeted scheduling can improve effective bandwidth use.",
+            "rating_0_to_10": 8.0,
+            "risk": "medium"
+          },
+          "register_pressure": {
+            "notes": "Specialized kernels may increase per-thread state to hide latency.",
+            "rating_0_to_10": 6.0,
+            "risk": "medium"
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "fam_skinny",
+        "node_type": "decision",
+        "notes": "Re-prioritized slightly upward after Family-G launch-path misalignment; this remains a credible alternative for extreme aspect-ratio workloads.\nSELF_CHECK: Exclusive with sibling families at root because this path assumes ownership of skinny-shape dispatch policy rather than balanced-general or tiny-K-first policies.",
+        "overall_rating_0_to_10": 7.5,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": "expected_perf_prior",
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "Implement a low-overhead path optimized for very small K, reducing staging/synchronization overhead and favoring rapid completion for latency-sensitive shapes.",
+          "difficulty_1_to_5": 3,
+          "expected_vs_baseline_factor": 1.7,
+          "rationale": "When K is tiny, full tiled pipelines can be overhead-dominated; a lean path can win materially.",
+          "score_0_to_1": 0.75,
+          "title": "Prototype Family-T tiny-K latency kernel"
+        },
+        "choice": "family_t_tinyk_latency",
+        "confidence_0_to_1": 0.65,
+        "decision": "select_first_kernel_family",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "Best fit when arithmetic work per output is low; avoids over-investing in heavy tiling setup on MI300X.",
+            "notes": "Good fit when minimizing overhead and synchronization for small reductions.",
+            "rating_0_to_10": 7.0,
+            "risk": "medium"
+          },
+          "memory_bandwidth": {
+            "notes": "Tiny-K cases are less bandwidth-dominated; latency and launch overhead dominate.",
+            "rating_0_to_10": 6.0,
+            "risk": "low"
+          },
+          "register_pressure": {
+            "notes": "Latency-focused kernels can remain compact but may still trade registers for fewer synchronizations.",
+            "rating_0_to_10": 5.0,
+            "risk": "medium"
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "fam_tinyk",
+        "node_type": "decision",
+        "notes": "Promoted as a practical exploration branch while balanced-family execution is corrected.\nSELF_CHECK: Exclusive with sibling families at root because this path prioritizes tiny-K latency ownership and dispatch, not balanced-general or skinny-shape ownership.",
+        "overall_rating_0_to_10": 7.4,
+        "parent_id": "root",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": "expected_perf_prior",
+            "status": "open"
+          },
+          "parent_solution_id": null,
+          "solution_id": null
+        }
+      },
+      {
+        "action": {
+          "description": "",
+          "difficulty_1_to_5": 2,
+          "expected_vs_baseline_factor": 1.3,
+          "rationale": "",
+          "score_0_to_1": 0.86,
+          "title": "Repair wrapper launch path to execute gemm_bf16_var_mnk_kernel, validate correctness, then retune balanced tiles"
+        },
+        "choice": "launch_real_gemm_kernel_then_retune",
+        "confidence_0_to_1": 0.81,
+        "decision": "chain_refinement_after_pass",
+        "impacts": {
+          "compute_intensity_and_hw_fit": {
+            "hw_notes": "",
+            "notes": "Enables actual compute-path validation on MI300X matrix hardware.",
+            "rating_0_to_10": 7.0,
+            "risk": "low"
+          },
+          "memory_bandwidth": {
+            "notes": "Once real kernel is launched, shared/global traffic can be measured and optimized.",
+            "rating_0_to_10": 6.0,
+            "risk": "medium"
+          },
+          "register_pressure": {
+            "notes": "Launch fix itself is low risk; later tuning may alter register footprint.",
+            "rating_0_to_10": 5.0,
+            "risk": "medium"
+          }
+        },
+        "last_updated_round": 0,
+        "node_id": "fam_general_fix_launch_and_rebenchmark",
+        "node_type": "decision",
+        "notes": "Composable refinement of Family-G: first restore end-to-end execution correctness through the HIP host wrapper API, then profile/tune block sizes and vectorized loads. This is a child refinement, not a sibling family alternative.",
+        "overall_rating_0_to_10": 8.1,
+        "parent_id": "fam_general",
+        "solution_ref": {
+          "eval": {
+            "score": null,
+            "score_name": "expected_perf_prior",
+            "status": "open"
+          },
+          "parent_solution_id": "e86dfbec0c1911a7039fca15bc92b74e1c49ba24",
+          "solution_id": null
+        }
+      }
+    ],
+    "root_id": "root"
+  },
+  "kernel_summary": "gemm_bf16_var_mnk is a dense GEMM computing C[M,N] = A[M,K] x B[N,K]^T with BF16 inputs/output and a K-dimension reduction per element; for MI300X, large balanced shapes are likely compute-throughput limited while small-K or tiny problems are launch/memory-latency limited, and skinny shapes risk wave underutilization, so performance hinges on selecting shape-aware tiling/mapping, FP32-vs-BF16 accumulation policy, reuse via staged A/B panels, robust tail handling for variable M/N/K, and compliant HIP integration via host launch wrappers.",
+  "open_questions": [
+    "What accumulation semantics are required for correctness parity with torch.matmul BF16 (FP32 accumulate then cast, or pure BF16 acceptable)?",
+    "What is the real workload distribution of (M,N,K), especially frequency of skinny or tiny-K regimes?",
+    "Are A/B/C always contiguous row-major tensors, or must arbitrary leading strides and non-contiguous views be supported?",
+    "What alignment guarantees exist for A/B/C pointers (e.g., 2/4/8/16-byte), impacting vector access choices?",
+    "Is deterministic reduction order required across runs/devices, or is non-deterministic parallel reduction acceptable?",
+    "Is extra workspace allowed for split-K or multi-stage reductions, or must kernel be strictly in-place without auxiliary buffers?",
+    "What baseline should speedup be measured against in this project (naive HIP kernel, rocBLAS, or previous ksearch candidate)?"
+  ]
+}

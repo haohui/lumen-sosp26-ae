@@ -1,0 +1,51 @@
+[
+  {
+    "category": "compute",
+    "summary": "Pre-computed: compute-bound kernel",
+    "reasoning": "Compute throughput is 54.46% of peak while DRAM throughput is 35.93% of peak, both below 60%, and roofline explicitly reports underutilized with 45.5% headroom and not at roofline.",
+    "root_causes": [
+      {
+        "cause": "No matrix-core/tensor-core path is being used, limiting math throughput on MI300X.",
+        "evidence": [
+          {
+            "metric": "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+            "value": 0.0,
+            "interpretation": "Tensor/matrix pipelines are completely idle, so matmul runs on non-tensor ALUs with lower achievable throughput."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Retune/rewrite the kernel to force MFMA-enabled Triton codegen on CDNA3 (use HIP-targeted matmul configs and verify generated ISA contains MFMA instructions for fp16/bf16).",
+            "rationale": "Activating matrix cores is the primary path to raise compute SOL significantly for GEMM-like workloads."
+          }
+        ]
+      },
+      {
+        "cause": "On-chip memory behavior likely introduces stalls despite full wave occupancy.",
+        "evidence": [
+          {
+            "metric": "rocm__SQ_LDS_BANK_CONFLICT",
+            "value": 1048576.0,
+            "interpretation": "Substantial LDS bank conflicts indicate shared-memory access contention, which can stall execution and keep both compute and memory below peak."
+          }
+        ],
+        "fixes": [
+          {
+            "fix": "Adjust tile/layout choices to reduce LDS bank conflicts (e.g., try different BLOCK_K/BLOCK_N shapes, add padding/swizzled LDS layout, and re-autotune with conflict-aware configs).",
+            "rationale": "Lower LDS contention improves data feed to ALUs and raises effective utilization without requiring more global bandwidth."
+          }
+        ]
+      }
+    ],
+    "recommended_fixes": [
+      {
+        "fix": "Retune/rewrite the kernel to force MFMA-enabled Triton codegen on CDNA3 (use HIP-targeted matmul configs and verify generated ISA contains MFMA instructions for fp16/bf16).",
+        "rationale": "Activating matrix cores is the primary path to raise compute SOL significantly for GEMM-like workloads."
+      },
+      {
+        "fix": "Adjust tile/layout choices to reduce LDS bank conflicts (e.g., try different BLOCK_K/BLOCK_N shapes, add padding/swizzled LDS layout, and re-autotune with conflict-aware configs).",
+        "rationale": "Lower LDS contention improves data feed to ALUs and raises effective utilization without requiring more global bandwidth."
+      }
+    ]
+  }
+]

@@ -1,6 +1,0 @@
-{
-  "run_root": "/data01/home/daifeng/kernel_benchmark/ksearch/K-Search/.ksearch-output-attention-per-workload/20260323_061108",
-  "dataset_dir": "/data01/home/daifeng/kernel_benchmark/ksearch/K-Search/.ksearch-output-attention-per-workload/20260323_061108/datasets/wl04_4981e554-a222-4317-8849-a557a6bd24cc",
-  "source_solution_json": "/data01/home/daifeng/kernel_benchmark/ksearch/K-Search/.ksearch-output-attention-per-workload/20260323_061108/artifacts/wl04_4981e554-a222-4317-8849-a557a6bd24cc/dense_qkv_prefill_causal_h8_kv1_d128_bs16/solutions/dense_qkv_prefill_causal_h8_kv1_d128_bs16/gpt-5.3-codex_dense_qkv_prefill_causal_h8_kv1_d128_bs16_hip_optimized_r9_high_20260323_084546_a85410f5.json",
-  "timing_csv": "/data01/home/daifeng/kernel_benchmark/ksearch/K-Search/.ksearch-output-attention-per-workload/20260323_061108/timing_pair_5wl_attention/timing_5wl_attention_cudagraph_w200ms_r1000ms_cpu120-127_gpu7_streamfix.csv"
-}

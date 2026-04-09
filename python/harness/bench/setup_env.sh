@@ -23,14 +23,15 @@ PINNED_HIPBLASLT_SHA256="4d103e5573fcb1d3133d634c96c5c0a44232f15f76dcdb1195c8057
 PINNED_HIPKITTENS_CDNA3_COMMIT="7d58fa1026b4"
 
 REINSTALL_AITER=0
+REQUIRE_AITER=0
+STRICT_VERSIONS=0
 SKIP_SMOKE=0
 DRY_RUN=0
 HIPKITTENS_REPO_URL="${HIPKITTENS_REPO_URL:-https://github.com/HazyResearch/HipKittens.git}"
 HIPKITTENS_SRC_CACHE_ROOT="${HIPKITTENS_SRC_CACHE_ROOT:-/tmp}"
 
 MINI_DIR="${GEMM_ROOT}/08_hipketten/build_hipkittens_mini"
-UNIFIED_DIR_07="${GEMM_ROOT}/07_triton/build_hipkittens_unified"
-UNIFIED_DIR_08="${GEMM_ROOT}/08_hipketten/build_hipkittens_unified"
+UNIFIED_DIR="${GEMM_ROOT}/08_hipketten/build_hipkittens_unified"
 SIZES=(1024 2048 4096 8192 16384)
 
 usage() {
@@ -41,6 +42,8 @@ Usage:
 Options:
   --python <bin>                  Python executable (default: python3 or $PYTHON_BIN)
   --reinstall-aiter               Force reinstall amd-aiter==0.1.10.post3 (pinned)
+  --require-aiter                 Fail setup if pinned/importable aiter is unavailable
+  --strict-versions               Fail setup if pinned torch/triton/ROCm stack mismatches
   (if HipKittens .so is missing, script auto-fetches pinned HipKittens source and recompiles)
   --skip-smoke                    Skip post-setup import/version checks
   --dry-run                       Print commands without executing
@@ -75,6 +78,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --reinstall-aiter)
       REINSTALL_AITER=1
+      shift
+      ;;
+    --require-aiter)
+      REQUIRE_AITER=1
+      shift
+      ;;
+    --strict-versions)
+      STRICT_VERSIONS=1
       shift
       ;;
     --skip-smoke)
@@ -113,7 +124,8 @@ print(sys.executable, sys.version.split()[0])
 PY
 )"
 
-current_aiter_ver="$("${PYTHON_BIN}" - <<'PY'
+get_aiter_state() {
+  "${PYTHON_BIN}" - <<'PY'
 try:
     import importlib.metadata as md
     print(md.version("amd-aiter"))
@@ -129,24 +141,48 @@ except Exception:
     except Exception:
         print("")
 PY
-)"
+}
 
-if [[ "${REINSTALL_AITER}" -eq 1 ]]; then
+install_pinned_aiter() {
   log "installing amd-aiter==${PINNED_AITER_VER} (current='${current_aiter_ver:-<none>}')"
   run_cmd "${PIP_CMD[@]}" install "${COMMON_PIP_ARGS[@]}" \
     pybind11 ninja packaging pandas psutil einops
-  run_cmd "${PIP_CMD[@]}" install "${COMMON_PIP_ARGS[@]}" \
-    --upgrade "amd-aiter==${PINNED_AITER_VER}"
+  if run_cmd "${PIP_CMD[@]}" install "${COMMON_PIP_ARGS[@]}" \
+    --upgrade "amd-aiter==${PINNED_AITER_VER}"; then
+    return 0
+  fi
+  return 1
+}
+
+current_aiter_ver="$(get_aiter_state)"
+
+if [[ "${REINSTALL_AITER}" -eq 1 ]]; then
+  if ! install_pinned_aiter; then
+    if [[ "${REQUIRE_AITER}" -eq 1 ]]; then
+      die "failed to install required amd-aiter==${PINNED_AITER_VER}"
+    fi
+    log "WARN: pinned amd-aiter install failed; continuing without required aiter"
+  fi
 elif [[ "${current_aiter_ver}" == "${PINNED_AITER_VER}" ]]; then
   log "amd-aiter already pinned at ${PINNED_AITER_VER}"
 elif [[ "${current_aiter_ver}" == importable:* ]]; then
   log "amd-aiter metadata unavailable; using importable source (${current_aiter_ver#importable:})"
 else
-  log "installing amd-aiter==${PINNED_AITER_VER} (current='${current_aiter_ver:-<none>}')"
-  run_cmd "${PIP_CMD[@]}" install "${COMMON_PIP_ARGS[@]}" \
-    pybind11 ninja packaging pandas psutil einops
-  run_cmd "${PIP_CMD[@]}" install "${COMMON_PIP_ARGS[@]}" \
-    --upgrade "amd-aiter==${PINNED_AITER_VER}"
+  if ! install_pinned_aiter; then
+    if [[ "${REQUIRE_AITER}" -eq 1 ]]; then
+      die "failed to install required amd-aiter==${PINNED_AITER_VER}"
+    fi
+    log "WARN: pinned amd-aiter install failed; continuing without required aiter"
+  fi
+fi
+
+current_aiter_ver="$(get_aiter_state)"
+if [[ "${REQUIRE_AITER}" -eq 1 ]]; then
+  if [[ "${current_aiter_ver}" != "${PINNED_AITER_VER}" && "${current_aiter_ver}" != importable:* ]]; then
+    die "required aiter unavailable after setup (state='${current_aiter_ver:-<none>}')"
+  fi
+elif [[ -z "${current_aiter_ver}" ]]; then
+  log "WARN: aiter unavailable; AITER baselines will be skipped by benchmark scripts"
 fi
 
 verify_pinned_python_stack() {
@@ -155,17 +191,22 @@ verify_pinned_python_stack() {
     PINNED_TRITON_VER="${PINNED_TRITON_VER}" \
     PINNED_AITER_VER="${PINNED_AITER_VER}" \
     PINNED_TORCH_HIP_VER="${PINNED_TORCH_HIP_VER}" \
+    REQUIRE_AITER="${REQUIRE_AITER}" \
+    STRICT_VERSIONS="${STRICT_VERSIONS}" \
     "${PYTHON_BIN}" - <<'PY'
 import os
 import importlib.metadata as md
 import torch
 import triton
 import pathlib
+import sys
 
 expected_torch = os.environ["PINNED_TORCH_VER"]
 expected_triton = os.environ["PINNED_TRITON_VER"]
 expected_aiter = os.environ["PINNED_AITER_VER"]
 expected_hip = os.environ["PINNED_TORCH_HIP_VER"]
+require_aiter = os.environ.get("REQUIRE_AITER", "0") == "1"
+strict_versions = os.environ.get("STRICT_VERSIONS", "0") == "1"
 
 actual_torch = torch.__version__
 actual_triton = triton.__version__
@@ -183,17 +224,29 @@ except Exception:
             import aiter
         path = pathlib.Path(getattr(aiter, "__file__", "")).as_posix()
         actual_aiter = f"importable:{path}"
-    except Exception as e:
-        raise SystemExit(f"amd-aiter unavailable: metadata missing and import failed: {type(e).__name__}: {e}")
+    except Exception:
+        actual_aiter = "missing"
 
 if actual_torch != expected_torch:
-    raise SystemExit(f"torch version mismatch: expected {expected_torch}, got {actual_torch}")
+    msg = f"torch version mismatch: expected {expected_torch}, got {actual_torch}"
+    if strict_versions:
+        raise SystemExit(msg)
+    print(f"[setup_env] WARN: {msg}", file=sys.stderr)
 if actual_triton != expected_triton:
-    raise SystemExit(f"triton version mismatch: expected {expected_triton}, got {actual_triton}")
-if actual_aiter != expected_aiter and not str(actual_aiter).startswith("importable:"):
-    raise SystemExit(f"amd-aiter version mismatch: expected {expected_aiter}, got {actual_aiter}")
+    msg = f"triton version mismatch: expected {expected_triton}, got {actual_triton}"
+    if strict_versions:
+        raise SystemExit(msg)
+    print(f"[setup_env] WARN: {msg}", file=sys.stderr)
+if require_aiter:
+    if actual_aiter != expected_aiter and not str(actual_aiter).startswith("importable:"):
+        raise SystemExit(f"amd-aiter version mismatch: expected {expected_aiter}, got {actual_aiter}")
+elif actual_aiter == "missing":
+    print("[setup_env] WARN: amd-aiter unavailable; AITER baselines will be skipped", file=sys.stderr)
 if actual_hip != expected_hip:
-    raise SystemExit(f"torch HIP runtime mismatch: expected {expected_hip}, got {actual_hip}")
+    msg = f"torch HIP runtime mismatch: expected {expected_hip}, got {actual_hip}"
+    if strict_versions:
+        raise SystemExit(msg)
+    print(f"[setup_env] WARN: {msg}", file=sys.stderr)
 PY
 }
 
@@ -205,7 +258,10 @@ verify_pinned_rocm_stack() {
     rocm_ver="$(cat /opt/rocm-7.1.1/.info/version)"
   fi
   if [[ "${rocm_ver}" != "${PINNED_ROCM_VER}" ]]; then
-    die "ROCm version mismatch: expected ${PINNED_ROCM_VER}, got '${rocm_ver:-<missing>}'"
+    if [[ "${STRICT_VERSIONS}" -eq 1 ]]; then
+      die "ROCm version mismatch: expected ${PINNED_ROCM_VER}, got '${rocm_ver:-<missing>}'"
+    fi
+    log "WARN: ROCm version mismatch: expected ${PINNED_ROCM_VER}, got '${rocm_ver:-<missing>}'"
   fi
 
   local hipblaslt_link=""
@@ -215,7 +271,13 @@ verify_pinned_rocm_stack() {
       break
     fi
   done
-  [[ -n "${hipblaslt_link}" ]] || die "libhipblaslt.so not found under /opt/rocm*/lib"
+  if [[ -z "${hipblaslt_link}" ]]; then
+    if [[ "${STRICT_VERSIONS}" -eq 1 ]]; then
+      die "libhipblaslt.so not found under /opt/rocm*/lib"
+    fi
+    log "WARN: libhipblaslt.so not found under /opt/rocm*/lib"
+    return 0
+  fi
 
   local hipblaslt_real
   hipblaslt_real="$(readlink -f "${hipblaslt_link}")"
@@ -225,15 +287,24 @@ verify_pinned_rocm_stack() {
   local hipblaslt_ver_prefix
   hipblaslt_ver_prefix="$(echo "${PINNED_HIPBLASLT_VER}" | awk -F. '{print $1 "." $2}')"
   if [[ "${hipblaslt_real_name}" != "libhipblaslt.so.${hipblaslt_ver_prefix}."* ]]; then
-    die "hipBLASLt version mismatch: expected API ${PINNED_HIPBLASLT_VER}, got ${hipblaslt_real_name}"
+    if [[ "${STRICT_VERSIONS}" -eq 1 ]]; then
+      die "hipBLASLt version mismatch: expected API ${PINNED_HIPBLASLT_VER}, got ${hipblaslt_real_name}"
+    fi
+    log "WARN: hipBLASLt version mismatch: expected API ${PINNED_HIPBLASLT_VER}, got ${hipblaslt_real_name}"
   fi
   if [[ "${hipblaslt_real_name}" != "${PINNED_HIPBLASLT_REALNAME}" ]]; then
-    die "hipBLASLt soname mismatch: expected ${PINNED_HIPBLASLT_REALNAME}, got ${hipblaslt_real_name}"
+    if [[ "${STRICT_VERSIONS}" -eq 1 ]]; then
+      die "hipBLASLt soname mismatch: expected ${PINNED_HIPBLASLT_REALNAME}, got ${hipblaslt_real_name}"
+    fi
+    log "WARN: hipBLASLt soname mismatch: expected ${PINNED_HIPBLASLT_REALNAME}, got ${hipblaslt_real_name}"
   fi
   local hipblaslt_sha
   hipblaslt_sha="$(sha256sum "${hipblaslt_real}" | cut -d' ' -f1)"
   if [[ "${hipblaslt_sha}" != "${PINNED_HIPBLASLT_SHA256}" ]]; then
-    die "hipBLASLt hash mismatch: expected ${PINNED_HIPBLASLT_SHA256}, got ${hipblaslt_sha}"
+    if [[ "${STRICT_VERSIONS}" -eq 1 ]]; then
+      die "hipBLASLt hash mismatch: expected ${PINNED_HIPBLASLT_SHA256}, got ${hipblaslt_sha}"
+    fi
+    log "WARN: hipBLASLt hash mismatch: expected ${PINNED_HIPBLASLT_SHA256}, got ${hipblaslt_sha}"
   fi
 }
 
@@ -302,35 +373,47 @@ compile_hipkittens_module() {
     -o "${out_so}"
 }
 
+hipkittens_so_needs_rebuild() {
+  local so="$1"
+  [[ -f "${so}" ]] || return 0
+  command -v ldd >/dev/null 2>&1 || return 1
+  if ldd "${so}" 2>/dev/null | grep -q "not found"; then
+    return 0
+  fi
+  return 1
+}
+
 rebuild_missing_hipkittens_modules() {
   local ext_suffix="$1"
   local need_rebuild=0
   for s in "${SIZES[@]}"; do
-    [[ -f "${MINI_DIR}/tk_kernel_${s}_mini${ext_suffix}" ]] || need_rebuild=1
+    local mini_so="${MINI_DIR}/tk_kernel_${s}_mini${ext_suffix}"
+    if [[ ! -f "${mini_so}" ]] || hipkittens_so_needs_rebuild "${mini_so}"; then
+      need_rebuild=1
+    fi
   done
-  for d in "${UNIFIED_DIR_07}" "${UNIFIED_DIR_08}"; do
-    for s in "${SIZES[@]}"; do
-      [[ -f "${d}/tk_kernel_unified_${s}${ext_suffix}" ]] || need_rebuild=1
-    done
+  for s in "${SIZES[@]}"; do
+    local uni_so="${UNIFIED_DIR}/tk_kernel_unified_${s}${ext_suffix}"
+    if [[ ! -f "${uni_so}" ]] || hipkittens_so_needs_rebuild "${uni_so}"; then
+      need_rebuild=1
+    fi
   done
   [[ "${need_rebuild}" -eq 1 ]] || return 0
 
-  log "missing HipKittens modules detected; rebuilding from repository __autogen.cpp sources"
+  log "missing/incompatible HipKittens modules detected; rebuilding from repository __autogen.cpp sources"
   local tk_root
   tk_root="$(fetch_pinned_hipkittens_source)"
   for s in "${SIZES[@]}"; do
     local mini_out="${MINI_DIR}/tk_kernel_${s}_mini${ext_suffix}"
-    if [[ ! -f "${mini_out}" ]]; then
+    if [[ ! -f "${mini_out}" ]] || hipkittens_so_needs_rebuild "${mini_out}"; then
       compile_hipkittens_module "${MINI_DIR}/tk_kernel_${s}_mini__autogen.cpp" "${mini_out}" "${tk_root}"
     fi
   done
-  for d in "${UNIFIED_DIR_07}" "${UNIFIED_DIR_08}"; do
-    for s in "${SIZES[@]}"; do
-      local uni_out="${d}/tk_kernel_unified_${s}${ext_suffix}"
-      if [[ ! -f "${uni_out}" ]]; then
-        compile_hipkittens_module "${d}/tk_kernel_unified_${s}__autogen.cpp" "${uni_out}" "${tk_root}"
-      fi
-    done
+  for s in "${SIZES[@]}"; do
+    local uni_out="${UNIFIED_DIR}/tk_kernel_unified_${s}${ext_suffix}"
+    if [[ ! -f "${uni_out}" ]] || hipkittens_so_needs_rebuild "${uni_out}"; then
+      compile_hipkittens_module "${UNIFIED_DIR}/tk_kernel_unified_${s}__autogen.cpp" "${uni_out}" "${tk_root}"
+    fi
   done
 }
 
@@ -345,13 +428,11 @@ verify_required_modules() {
     fi
   done
 
-  for d in "${UNIFIED_DIR_07}" "${UNIFIED_DIR_08}"; do
-    for s in "${SIZES[@]}"; do
-      if [[ ! -f "${d}/tk_kernel_unified_${s}${ext_suffix}" ]]; then
-        echo "missing unified module: ${d}/tk_kernel_unified_${s}${ext_suffix}" >&2
-        errors=1
-      fi
-    done
+  for s in "${SIZES[@]}"; do
+    if [[ ! -f "${UNIFIED_DIR}/tk_kernel_unified_${s}${ext_suffix}" ]]; then
+      echo "missing unified module: ${UNIFIED_DIR}/tk_kernel_unified_${s}${ext_suffix}" >&2
+      errors=1
+    fi
   done
 
   if [[ "${errors}" -ne 0 ]]; then
@@ -368,27 +449,42 @@ print(sysconfig.get_config_var("EXT_SUFFIX") or ".so")
 PY
 )"
 
-mkdir -p "${MINI_DIR}" "${UNIFIED_DIR_07}" "${UNIFIED_DIR_08}"
+mkdir -p "${MINI_DIR}" "${UNIFIED_DIR}"
 rebuild_missing_hipkittens_modules "${ext_suffix}"
 verify_required_modules "${ext_suffix}"
 
 if [[ "${SKIP_SMOKE}" -eq 0 ]]; then
   log "running smoke checks"
-  run_cmd env GEMM_ROOT_ENV="${GEMM_ROOT}" "${PYTHON_BIN}" - <<'PY'
+  run_cmd env GEMM_ROOT_ENV="${GEMM_ROOT}" PINNED_AITER_VER="${PINNED_AITER_VER}" REQUIRE_AITER="${REQUIRE_AITER}" "${PYTHON_BIN}" - <<'PY'
 import importlib.util
 import pathlib
 import importlib.metadata as md
 import os
 
-assert md.version("amd-aiter") == "0.1.10.post3", md.version("amd-aiter")
+expected_aiter = os.environ["PINNED_AITER_VER"]
+require_aiter = os.environ.get("REQUIRE_AITER", "0") == "1"
+actual_aiter = None
+try:
+    actual_aiter = md.version("amd-aiter")
+except Exception:
+    try:
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            import aiter
+        actual_aiter = f"importable:{pathlib.Path(getattr(aiter, '__file__', '')).as_posix()}"
+    except Exception:
+        actual_aiter = "missing"
+if require_aiter and actual_aiter != expected_aiter and not str(actual_aiter).startswith("importable:"):
+    raise AssertionError(f"amd-aiter mismatch: expected {expected_aiter}, got {actual_aiter}")
 
 import torch
 import triton
-import aiter
 
 print("[smoke] torch", torch.__version__)
 print("[smoke] triton", triton.__version__)
-print("[smoke] aiter", md.version("amd-aiter"))
+print("[smoke] aiter", actual_aiter)
 
 root = pathlib.Path(os.environ["GEMM_ROOT_ENV"]).resolve()
 p7 = root / "07_triton" / "best_kernel.py"

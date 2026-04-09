@@ -1,6 +1,0 @@
-gpu_count,backend,dtype,M,N,K,warmup,iters,graph_iters,l2_flush_mb,timer,timing_ms,tflops,status,note
-1,AITER-triton-gemm_a16w16,BF16,1024,1024,1024,5,30,1,256,cuda_graph_event,0.048485,44.291377,ok,python callable benchmark; max_abs_err=0.250000; max_rel_err=0.058559; atol=1.0; rtol=0.02; shared_input_seed=20260307
-1,AITER-triton-gemm_a16w16,BF16,2048,2048,2048,5,30,1,256,cuda_graph_event,0.095399,180.084377,ok,python callable benchmark; max_abs_err=0.500000; max_rel_err=0.270142; atol=1.0; rtol=0.02; shared_input_seed=20260308
-1,AITER-triton-gemm_a16w16,BF16,4096,4096,4096,5,30,1,256,cuda_graph_event,0.238166,577.072757,ok,python callable benchmark; max_abs_err=1.000000; max_rel_err=1.612903; atol=1.0; rtol=0.02; shared_input_seed=20260309
-1,AITER-triton-gemm_a16w16,BF16,8192,8192,8192,5,30,1,256,cuda_graph_event,1.767938,621.917579,ok,python callable benchmark; max_abs_err=2.000000; max_rel_err=7.166667; atol=1.0; rtol=0.02; shared_input_seed=20260310
-1,AITER-triton-gemm_a16w16,BF16,16384,16384,16384,5,30,1,256,cuda_graph_event,14.638748,600.877406,ok,python callable benchmark; max_abs_err=4.000000; max_rel_err=82.000000; atol=1.0; rtol=0.02; shared_input_seed=20260311

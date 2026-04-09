@@ -1,3 +1,0 @@
-run_tag=openai_moe_b04_fused_noquant_r20_1stage_20260401_014035_dockerbg
-updated_utc=2026-04-01T03:55:37.084291Z
-note=trace_mode_none_no_mitm_traffic

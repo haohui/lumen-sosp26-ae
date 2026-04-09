@@ -1,2 +1,0 @@
-run_root=/data01/home/daifeng/kernel_benchmark/ksearch/K-Search/.ksearch-output-attention-per-workload/20260323_061108
-trace_source=/data01/home/daifeng/kernel_benchmark/.ksearch-trace-logs/attention_ksearch_20260323_061105

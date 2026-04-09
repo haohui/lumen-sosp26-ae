@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import importlib
 import importlib.util
 import json
@@ -200,8 +201,55 @@ def _resolve_hipkittens_kernel(case_n: int, kernels_dir: Path) -> Tuple[str, Pat
             f"missing prebuilt HipKittens module for N={case_n}: "
             f"expected {module_name}*.so under {kernels_dir}"
         )
-    so_path = max(matches, key=lambda p: p.stat().st_mtime)
-    return module_name, so_path
+    py_tag = f"cpython-{sys.version_info.major}{sys.version_info.minor}"
+    tag_matches = [p for p in matches if py_tag in p.name]
+    if tag_matches:
+        so_path = max(tag_matches, key=lambda p: p.stat().st_mtime)
+        return module_name, so_path
+
+    available = ", ".join(p.name for p in matches)
+    raise RuntimeError(
+        f"HipKittens modules found for N={case_n}, but none match Python ABI tag '{py_tag}'. "
+        f"available: {available}"
+    )
+
+
+def _prepare_hipkittens_runtime() -> None:
+    # Ensure ROCm runtime libs are discoverable before loading pybind .so modules.
+    rocm_lib_dirs = [Path("/opt/rocm-7.1.1/lib"), Path("/opt/rocm/lib")]
+    existing = [d for d in rocm_lib_dirs if d.exists() and d.is_dir()]
+    if existing:
+        cur = [x for x in os.environ.get("LD_LIBRARY_PATH", "").split(":") if x]
+        extra = [str(d) for d in existing]
+        merged: List[str] = []
+        seen: set[str] = set()
+        for p in extra + cur:
+            if p not in seen:
+                seen.add(p)
+                merged.append(p)
+        os.environ["LD_LIBRARY_PATH"] = ":".join(merged)
+
+    # Best-effort preload to avoid transitive lookup failures (e.g. libamdhip64.so.7).
+    lib_names = [
+        "libhsa-runtime64.so.1",
+        "libamdhip64.so.6",
+        "libamdhip64.so.7",
+        "libamdhip64.so",
+        "libhipblas.so.2",
+        "libhipblaslt.so.1",
+        "librocblas.so.4",
+    ]
+    dl_mode = int(getattr(ctypes, "RTLD_GLOBAL", 0))
+    for name in lib_names:
+        for d in existing:
+            candidate = d / name
+            if not candidate.exists():
+                continue
+            try:
+                ctypes.CDLL(str(candidate), mode=dl_mode)
+            except OSError:
+                pass
+            break
 
 
 def _load_so_module(name: str, so_path: Path):
@@ -439,6 +487,7 @@ def run_hipkittens_baseline(
     rows: List[Dict[str, Any]] = []
     name = "hipkittens"
     print(f"\n[{name}]")
+    _prepare_hipkittens_runtime()
     kernels_dir = Path(args.hipkittens_kernels_dir).resolve()
     for s in sizes:
         try:

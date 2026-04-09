@@ -1,7 +1,0 @@
-{
-  "source_run": "openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg",
-  "selection": "optimization_result_real.kernel_code",
-  "best_time_ms": 40.981929244995115,
-  "total_rounds": 10,
-  "updated_utc": "2026-04-01T03:55:36.210812Z"
-}

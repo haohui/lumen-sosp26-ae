@@ -1,8 +1,0 @@
-{
-  "source_run": "openai_moe_b04_fused_noquant_r20_1stage_20260401_014035_dockerbg",
-  "selection": "best_passed_by_metrics_score",
-  "selected_round": "round_010",
-  "selected_score": 0.667094156350157,
-  "source_round_dir": "/data01/home/daifeng/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b04_fused_noquant_r20_1stage_20260401_014035_dockerbg/04_ksearch_artifacts/moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048/rounds/20260401_014041_b1ebcbc7/round_010",
-  "updated_utc": "2026-04-01T03:55:36.234430Z"
-}

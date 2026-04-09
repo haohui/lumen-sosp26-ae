@@ -599,7 +599,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Run OpenAI best-kernel timing (CUDA Graph) or print locked table."
     )
-    p.add_argument("--mode", choices=["locked", "run"], default="locked")
+    p.add_argument("--mode", choices=["locked", "run"], default="run")
     p.add_argument("--domain", choices=["all", "gemm", "attention", "moe"], default="all")
     p.add_argument("--python", type=str, default=sys.executable)
     p.add_argument("--device", type=str, default="cuda:0")

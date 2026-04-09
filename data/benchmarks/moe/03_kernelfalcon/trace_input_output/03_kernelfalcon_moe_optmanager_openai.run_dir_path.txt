@@ -1,1 +1,0 @@
-/workspace/kernel_benchmark/opt_kernel/moe/trace_runs/openai_moe_b03_fused_noquant_r10_1stage_20260401_014035_dockerbg/03_kernelfalcon_moe_optmanager_openai/output

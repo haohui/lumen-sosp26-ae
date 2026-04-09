@@ -1,2 +1,0 @@
-gpu_count,backend,dtype,M,N,K,warmup,iters,graph_iters,l2_flush_mb,timer,timing_ms,tflops,status,note
-1,KernelFalcon-best(A@B^T),BF16,1024,1024,1024,2097,10485,1,256,cuda_event_fallback,0.036597,58.678611,ok,kernelfalcon_best A@B^T; max_abs_err=0.500000; max_rel_err=0.062500; atol=1.0; rtol=0.02; input_seed=20260402; target_warmup_ms=200.0; target_repeat_ms=1000.0; resolved_warmup_iters=2097; resolved_repeat_iters=10485; probe_ms=0.095382

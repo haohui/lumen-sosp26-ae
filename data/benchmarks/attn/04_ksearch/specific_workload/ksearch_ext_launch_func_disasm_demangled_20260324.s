@@ -1,2 +1,0 @@
-
-/root/.cache/torch_extensions/py312_cpu/ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1/ksearch_dense_qkv_prefill_causal_h8_kv1or8_d128_ext_src_v1.so:	file format elf64-x86-64

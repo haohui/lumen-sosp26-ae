@@ -1,7 +1,0 @@
-```json
-{
-  "critical_issue": "Wave reduction is incorrect: all lanes accumulate `__shfl_down` without `lane<offset` guarding, corrupting attention dot-products.",
-  "why_it_matters": "Out-of-range shuffle behavior propagates wrong partial sums, producing incorrect scores/softmax weights and thus mismatched SDPA outputs versus PyTorch.",
-  "minimal_fix_hint": "Guard each reduction step with `if (lane_id < offset)` or use a proven wavefront reduction primitive."
-}
-```

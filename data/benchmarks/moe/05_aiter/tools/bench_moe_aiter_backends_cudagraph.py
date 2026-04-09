@@ -540,61 +540,67 @@ def main() -> int:
 
         for backend in backends:
             fn, out_buf = backend_map[backend]
+            try:
+                # One eager run for initial compile and output materialization
+                with torch.no_grad():
+                    fn()
+                    torch.cuda.synchronize(device=device)
 
-            # One eager run for initial compile and output materialization
-            with torch.no_grad():
-                fn()
-                torch.cuda.synchronize(device=device)
+                timing = _run_timer(
+                    fn,
+                    device=device,
+                    warmup=args.warmup,
+                    warmup_ms=args.warmup_ms,
+                    graph_iters=args.graph_iters,
+                    trials=args.trials,
+                    repeat_ms=args.repeat_ms,
+                    pre_capture_iters=args.pre_capture_iters,
+                    min_replays=args.min_replays,
+                    max_replays=args.max_replays,
+                    disable_cudagraph=args.disable_cudagraph,
+                )
 
-            timing = _run_timer(
-                fn,
-                device=device,
-                warmup=args.warmup,
-                warmup_ms=args.warmup_ms,
-                graph_iters=args.graph_iters,
-                trials=args.trials,
-                repeat_ms=args.repeat_ms,
-                pre_capture_iters=args.pre_capture_iters,
-                min_replays=args.min_replays,
-                max_replays=args.max_replays,
-                disable_cudagraph=args.disable_cudagraph,
-            )
+                # Refresh output once after timing (avoid stale buffer assumptions)
+                with torch.no_grad():
+                    fn()
+                    torch.cuda.synchronize(device=device)
+                st = _stats(out_ref, out_buf, atol=args.atol, rtol=args.rtol)
 
-            # Refresh output once after timing (avoid stale buffer assumptions)
-            with torch.no_grad():
-                fn()
-                torch.cuda.synchronize(device=device)
-            st = _stats(out_ref, out_buf, atol=args.atol, rtol=args.rtol)
+                row = {
+                    "backend": backend,
+                    "tokens": str(tokens),
+                    "median_ms": f"{timing.median_ms:.6f}",
+                    "mean_ms": f"{timing.mean_ms:.6f}",
+                    "stdev_ms": f"{timing.stdev_ms:.6f}",
+                    "p10_ms": f"{timing.p10_ms:.6f}",
+                    "p90_ms": f"{timing.p90_ms:.6f}",
+                    "cv": f"{timing.cv:.6f}",
+                    "graph_iters": str(timing.graph_iters),
+                    "num_replays": str(timing.num_replays),
+                    "total_calls_per_sample": str(timing.total_calls_per_sample),
+                    "suspicious": str(bool(timing.suspicious)),
+                    "suspicious_reason": timing.suspicious_reason or "",
+                    "allclose": str(st.allclose),
+                    "max_abs": f"{st.max_abs:.6f}",
+                    "mean_abs": f"{st.mean_abs:.6f}",
+                    "p99_abs": f"{st.p99_abs:.6f}",
+                    "max_rel": f"{st.max_rel:.6f}",
+                    "nan_count": str(st.nan_count),
+                    "inf_count": str(st.inf_count),
+                }
+                rows.append(row)
 
-            row = {
-                "backend": backend,
-                "tokens": str(tokens),
-                "median_ms": f"{timing.median_ms:.6f}",
-                "mean_ms": f"{timing.mean_ms:.6f}",
-                "stdev_ms": f"{timing.stdev_ms:.6f}",
-                "p10_ms": f"{timing.p10_ms:.6f}",
-                "p90_ms": f"{timing.p90_ms:.6f}",
-                "cv": f"{timing.cv:.6f}",
-                "graph_iters": str(timing.graph_iters),
-                "num_replays": str(timing.num_replays),
-                "total_calls_per_sample": str(timing.total_calls_per_sample),
-                "suspicious": str(bool(timing.suspicious)),
-                "suspicious_reason": timing.suspicious_reason or "",
-                "allclose": str(st.allclose),
-                "max_abs": f"{st.max_abs:.6f}",
-                "mean_abs": f"{st.mean_abs:.6f}",
-                "p99_abs": f"{st.p99_abs:.6f}",
-                "max_rel": f"{st.max_rel:.6f}",
-                "nan_count": str(st.nan_count),
-                "inf_count": str(st.inf_count),
-            }
-            rows.append(row)
-
-            print(
-                f"[{backend:6s}] M={tokens:5d} median={timing.median_ms:8.4f} ms "
-                f"allclose={st.allclose} max_abs={st.max_abs:.6f} nan={st.nan_count} inf={st.inf_count}",
-                flush=True,
-            )
+                print(
+                    f"[{backend:6s}] M={tokens:5d} median={timing.median_ms:8.4f} ms "
+                    f"allclose={st.allclose} max_abs={st.max_abs:.6f} nan={st.nan_count} inf={st.inf_count}",
+                    flush=True,
+                )
+            except Exception as e:
+                print(
+                    f"[warn] backend={backend} tokens={tokens} failed: {type(e).__name__}: {e}",
+                    flush=True,
+                )
+                continue
 
         del data, out_ref
         torch.cuda.empty_cache()

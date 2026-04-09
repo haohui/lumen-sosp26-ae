@@ -1,7 +1,0 @@
-```json
-{
-  "critical_issue": "fused_moe_kernel_impl is declared __global__ but invoked from __global__ wrappers, causing HIPRTC compile failure.",
-  "why_it_matters": "ModelNew cannot launch the fused op at all, so forward always errors instead of matching reference outputs.",
-  "minimal_fix_hint": "Make fused_moe_kernel_impl a __device__ helper (or inline into entry kernels), not a called __global__ kernel."
-}
-```

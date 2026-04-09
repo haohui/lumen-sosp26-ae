@@ -1,7 +1,0 @@
-```json
-{
-  "critical_issue": "Uses fast approximate __expf in softmax recurrence, causing BF16 attention output mismatch versus PyTorch.",
-  "why_it_matters": "Attention probabilities are exponent-sensitive over long causal prefixes; approximation error accumulates, producing large output deviations beyond tolerance.",
-  "minimal_fix_hint": "Use expf (or higher-precision exp) for alpha/beta instead of __expf."
-}
-```

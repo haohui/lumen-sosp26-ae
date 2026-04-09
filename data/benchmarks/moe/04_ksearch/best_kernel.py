@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import os
 from pathlib import Path
 
 import torch
@@ -20,6 +21,7 @@ _sig = hashlib.sha1()
 for _p in (_SRC_MAIN, _SRC_CU, _SRC_H):
     _sig.update(_p.read_bytes())
 _EXT_NAME = f"ksearch_moe_fused_{_sig.hexdigest()[:12]}"
+os.environ["PYTORCH_ROCM_ARCH"] = "gfx942"
 
 _ksearch_ext = load(
     name=_EXT_NAME,
@@ -50,4 +52,3 @@ class Model(nn.Module):
         return _ksearch_ext.run(
             input_q, w1_q, w2_q, topk_weights, topk_ids, input_scale, fc1_scale, fc2_scale
         )
-

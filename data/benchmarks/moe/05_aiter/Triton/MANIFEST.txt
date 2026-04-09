@@ -1,9 +1,0 @@
-Triton backend artifacts for AITER DeepSeek blockscale MoE
-Sources copied from:
-- /data01/home/daifeng/aiter/aiter/ops/triton/moe_op.py
-- /data01/home/daifeng/aiter/aiter/ops/triton/moe_op_silu_fused.py
-- /data01/home/daifeng/aiter/aiter/ops/triton/_triton_kernels/moe_op.py
-- /data01/home/daifeng/aiter/aiter/ops/triton/_triton_kernels/moe_op_silu_fused.py
-Compiled cache selected (latest topk4):
-- fc1: BMQRTS4HHO5MWWHGYTGWNZ4EVIACRZOXMDQLJ7IHIMX6PFXXMN3Q/_moe_fc1_topk4_kernel.*
-- fc2: KEBQRGDZ7MFTNL23HGJ4JEMICRG5EUMW7HBXHR3XOCJ5K3GLEI4Q/_moe_fc2_topk4_kernel.*

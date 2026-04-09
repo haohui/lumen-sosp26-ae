@@ -1,5 +1,0 @@
-{
-  "critical_issue": "Invalid ROCm include path for device guard/context causes fused extension compilation failure.",
-  "why_it_matters": "The custom operator never builds, so forward cannot run at all, yielding no outputs versus the working PyTorch reference.",
-  "minimal_fix_hint": "Replace with valid PyTorch ROCm headers/guards (e.g., c10::hip::HIPGuard or ATen/cuda guard aliases)."
-}

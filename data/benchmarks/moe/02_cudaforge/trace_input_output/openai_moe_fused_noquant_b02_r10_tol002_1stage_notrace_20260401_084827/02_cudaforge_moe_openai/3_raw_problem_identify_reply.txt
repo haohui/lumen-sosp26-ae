@@ -1,7 +1,0 @@
-```json
-{
-  "critical_issue": "Kernel wrongly requires uint8 quant tensors; reference provides float8_e4m3fnuz, causing runtime failure.",
-  "why_it_matters": "ModelNew aborts before any MoE computation, so outputs never match the reference path that consumes FP8 tensors.",
-  "minimal_fix_hint": "Allow float8_e4m3fnuz for input_q/w1_q/w2_q and remove strict uint8 dtype TORCH_CHECKs."
-}
-```

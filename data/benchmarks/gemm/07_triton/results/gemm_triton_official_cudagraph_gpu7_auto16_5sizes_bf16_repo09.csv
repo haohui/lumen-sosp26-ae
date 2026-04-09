@@ -1,6 +1,0 @@
-gpu_count,backend,dtype,M,N,K,warmup,iters,graph_iters,l2_flush_mb,timer,timing_ms,tflops,status,note
-1,Triton-official-matmul,BF16,1024,1024,1024,5,30,1,256,cuda_graph_event,0.031149,68.942448,ok,python callable benchmark; max_abs_err=0.500000; max_rel_err=0.103286; atol=1.0; rtol=0.02; shared_input_seed=20260307
-1,Triton-official-matmul,BF16,2048,2048,2048,5,30,1,256,cuda_graph_event,0.068002,252.636459,ok,python callable benchmark; max_abs_err=1.000000; max_rel_err=0.172043; atol=1.0; rtol=0.02; shared_input_seed=20260308
-1,Triton-official-matmul,BF16,4096,4096,4096,5,30,1,256,cuda_graph_event,0.430842,319.000482,ok,python callable benchmark; max_abs_err=1.000000; max_rel_err=13.666667; atol=1.0; rtol=0.02; shared_input_seed=20260309
-1,Triton-official-matmul,BF16,8192,8192,8192,5,30,1,256,cuda_graph_event,3.160259,347.918230,ok,python callable benchmark; max_abs_err=2.000000; max_rel_err=3.200000; atol=1.0; rtol=0.02; shared_input_seed=20260310
-1,Triton-official-matmul,BF16,16384,16384,16384,5,30,1,256,cuda_graph_event,26.281816,334.683614,ok,python callable benchmark; max_abs_err=0.000000; max_rel_err=0.000000; atol=1.0; rtol=0.02; shared_input_seed=20260311

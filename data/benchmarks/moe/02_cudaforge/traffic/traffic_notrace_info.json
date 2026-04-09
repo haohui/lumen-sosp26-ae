@@ -1,6 +1,0 @@
-{
-  "trace_mode": "none",
-  "run": "openai_moe_fused_noquant_b02_r10_tol002_1stage_notrace_20260401_084827",
-  "reason": "no mitm traffic capture in this run",
-  "llm_io_dir": "llm_io"
-}

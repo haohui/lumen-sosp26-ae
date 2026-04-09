@@ -1,5 +1,0 @@
-2026-04-01 01:45:55,214 - worker_0 - INFO - Starting verification for worker 0
-2026-04-01 01:45:55,214 - worker_0 - INFO - Round 1/2
-2026-04-01 01:45:55,214 - worker_0 - INFO - Wrote kernel and test files
-2026-04-01 01:46:01,674 - worker_0 - INFO - Test passed
-2026-04-01 01:46:01,674 - worker_0 - INFO - Success! Kernel passed test in round 1

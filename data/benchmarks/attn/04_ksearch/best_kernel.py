@@ -15,6 +15,8 @@ _KERNEL = _THIS_DIR / "best_kernel.cu"
 
 def _build_extension():
     os.environ.setdefault("CXX", "hipcc")
+    # Pin architecture for deterministic ROCm extension builds in this artifact.
+    os.environ["PYTORCH_ROCM_ARCH"] = "gfx942"
     cache_key = hashlib.sha1(
         (
             str(_BINDING)
@@ -28,7 +30,7 @@ def _build_extension():
         name=module_name,
         sources=[str(_BINDING), str(_KERNEL)],
         extra_cflags=["-O3", "-std=c++17"],
-        extra_cuda_cflags=["-O3", "-std=c++17"],
+        extra_cuda_cflags=["-O3", "-std=c++17", "--offload-arch=gfx942"],
         extra_include_paths=[str(_THIS_DIR)],
         with_cuda=True,
         verbose=False,

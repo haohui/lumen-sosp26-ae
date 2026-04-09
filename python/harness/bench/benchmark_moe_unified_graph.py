@@ -660,7 +660,35 @@ def _run_aiter_backend_helper(
     if args.disable_cudagraph:
         cmd.append("--disable-cudagraph")
     print(f"\n[aiter_backends] helper={helper}")
-    subprocess.run(cmd, check=True)
+    # Ensure helper can import the shared timer module when invoked from nested paths.
+    env = os.environ.copy()
+    bench_dir = str(Path(__file__).resolve().parent)
+    py_path = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{bench_dir}:{py_path}" if py_path else bench_dir
+    try:
+        subprocess.run(cmd, check=True, env=env)
+    except subprocess.CalledProcessError as first_err:
+        # Known failure mode in source-mode aiter: stale enum/module ABI mismatch:
+        # "could not convert default argument 'activation: ActivationType' ..."
+        print(
+            "[warn] aiter helper failed on first attempt; trying auto-repair "
+            "(rebuild module_aiter_enum/module_moe_asm/module_moe_sorting)",
+            flush=True,
+        )
+        repair_py = (
+            "import pathlib\n"
+            "import aiter\n"
+            "jit = pathlib.Path(aiter.__file__).resolve().parent / 'jit'\n"
+            "for name in ('module_aiter_enum.so','module_moe_asm.so','module_moe_sorting.so'):\n"
+            "    p = jit / name\n"
+            "    if p.exists():\n"
+            "        p.unlink()\n"
+            "        print(f'[aiter_repair] removed {p}')\n"
+        )
+        subprocess.run([sys.executable, "-c", repair_py], check=True, env=env)
+        retry_env = env.copy()
+        retry_env["AITER_REBUILD"] = "2"
+        subprocess.run(cmd, check=True, env=retry_env)
 
     candidates = sorted(out_dir.glob(f"{prefix}_*.json"))
     if not candidates:
@@ -800,10 +828,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--suspicious-ratio", type=float, default=0.25)
     p.add_argument("--allow-suspicious-graph", action="store_true")
     default_baselines = [
-        moe_root / "01_kernelbench" / "output" / "best_kernel.py",
-        moe_root / "02_cudaforge" / "output" / "best_kernel.py",
-        moe_root / "03_kernelfalcon" / "output" / "best_kernel.py",
-        moe_root / "04_ksearch" / "output" / "best_kernel.py",
+        moe_root / "01_kernelbench" / "best_kernel.py",
+        moe_root / "02_cudaforge" / "best_kernel.py",
+        moe_root / "03_kernelfalcon" / "best_kernel.py",
+        moe_root / "04_ksearch" / "best_kernel.py",
     ]
     p.add_argument(
         "--baseline-kernel",
@@ -820,7 +848,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--reference-kernel",
         type=Path,
-        default=moe_root / "01_kernelbench" / "output" / "best_kernel.py",
+        default=moe_root / "01_kernelbench" / "best_kernel.py",
         help="Reference kernel used by correctness checks.",
     )
     p.add_argument("--correctness-atol", type=float, default=0.5)

@@ -6,7 +6,8 @@ This module keeps the kernel logic and autotune configs, and exposes a benchmark
 `matmul_bf16(a, b, out=...)` entry without running the original script's unit test/plot code.
 
 Compared with the baseline extraction, this variant applies AITER-style `remap_xcd` to
-the unified pid before grouped tile mapping on AMD backends.
+the unified pid before grouped tile mapping on AMD backends, and adds optional stagger-K
+start offset per output tile.
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ def _get_cuda_autotune_config():
         kwargs = dict(cfg.kwargs)
         kwargs["REMAP_XCD"] = 0
         kwargs["NUM_XCDS"] = 8
+        kwargs["STAGGER_K"] = 1
         out.append(triton.Config(kwargs, num_stages=cfg.num_stages, num_warps=cfg.num_warps))
     return out
 
@@ -81,10 +83,12 @@ def _get_hip_autotune_config():
     out = []
     for cfg in base:
         for remap_xcd in (0, 1):
-            kwargs = dict(cfg.kwargs)
-            kwargs["REMAP_XCD"] = remap_xcd
-            kwargs["NUM_XCDS"] = 8
-            out.append(triton.Config(kwargs, num_warps=cfg.num_warps, num_stages=cfg.num_stages))
+            for stagger_k in (1, 2, 4, 8):
+                kwargs = dict(cfg.kwargs)
+                kwargs["REMAP_XCD"] = remap_xcd
+                kwargs["NUM_XCDS"] = 8
+                kwargs["STAGGER_K"] = stagger_k
+                out.append(triton.Config(kwargs, num_warps=cfg.num_warps, num_stages=cfg.num_stages))
     return out
 
 
@@ -132,6 +136,7 @@ def matmul_kernel(
     GROUP_SIZE_M: tl.constexpr,
     REMAP_XCD: tl.constexpr,
     NUM_XCDS: tl.constexpr,
+    STAGGER_K: tl.constexpr,
     ACTIVATION: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
@@ -150,16 +155,31 @@ def matmul_kernel(
     offs_am = (pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
-    a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
-    b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
-
     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-    for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
-        a = tl.load(a_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
-        b = tl.load(b_ptrs, mask=offs_k[:, None] < K - k * BLOCK_SIZE_K, other=0.0)
-        accumulator = tl.dot(a, b, accumulator)
-        a_ptrs += BLOCK_SIZE_K * stride_ak
-        b_ptrs += BLOCK_SIZE_K * stride_bk
+    num_k_tiles = tl.cdiv(K, BLOCK_SIZE_K)
+    if STAGGER_K <= 1:
+        a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+        b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
+        for k in range(0, num_k_tiles):
+            a = tl.load(a_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
+            b = tl.load(b_ptrs, mask=offs_k[:, None] < K - k * BLOCK_SIZE_K, other=0.0)
+            accumulator = tl.dot(a, b, accumulator)
+            a_ptrs += BLOCK_SIZE_K * stride_ak
+            b_ptrs += BLOCK_SIZE_K * stride_bk
+    else:
+        # Start K-loop from a per-(pid_m,pid_n) offset, then wrap around.
+        # This de-phases CTA K-start points to reduce synchronized pressure.
+        tile_id_mn = pid_m * num_pid_n + pid_n
+        k_start_tile = tile_id_mn % STAGGER_K
+        for k in range(0, num_k_tiles):
+            k_tile = (k + k_start_tile) % num_k_tiles
+            k_base = k_tile * BLOCK_SIZE_K
+            offs_k_curr = k_base + offs_k
+            a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k_curr[None, :] * stride_ak)
+            b_ptrs = b_ptr + (offs_k_curr[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
+            a = tl.load(a_ptrs, mask=offs_k_curr[None, :] < K, other=0.0)
+            b = tl.load(b_ptrs, mask=offs_k_curr[:, None] < K, other=0.0)
+            accumulator = tl.dot(a, b, accumulator)
     if ACTIVATION == "leaky_relu":
         accumulator = leaky_relu(accumulator)
     c = accumulator.to(tl.bfloat16)
@@ -198,6 +218,11 @@ def _capture_best_config_meta() -> dict | None:
             meta["num_xcds"] = int(kwargs["NUM_XCDS"])
         except Exception:
             meta["num_xcds"] = kwargs["NUM_XCDS"]
+    if "STAGGER_K" in kwargs:
+        try:
+            meta["stagger_k"] = int(kwargs["STAGGER_K"])
+        except Exception:
+            meta["stagger_k"] = kwargs["STAGGER_K"]
     if "waves_per_eu" in kwargs:
         try:
             meta["waves_per_eu"] = int(kwargs["waves_per_eu"])
@@ -212,12 +237,13 @@ def get_last_launch_meta() -> dict | None:
 
 def matmul_bf16(a, b, out=None, activation=""):
     global _LAST_LAUNCH_META
-    assert a.shape[1] == b.shape[0], "Incompatible dimensions"
+    # A: [M, K], B: [N, K] -> C: [M, N] (compute A @ B^T)
+    assert a.shape[1] == b.shape[1], "Incompatible dimensions for A @ B^T"
     assert a.is_contiguous(), "Matrix A must be contiguous"
     if a.dtype != torch.bfloat16 or b.dtype != torch.bfloat16:
         raise RuntimeError("matmul_bf16 expects BF16 inputs")
     M, K = a.shape
-    _K, N = b.shape
+    N, _K = b.shape
     if out is None:
         out = torch.empty((M, N), device=a.device, dtype=torch.bfloat16)
     grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),)
@@ -230,8 +256,8 @@ def matmul_bf16(a, b, out=None, activation=""):
         K,
         a.stride(0),
         a.stride(1),
-        b.stride(0),
         b.stride(1),
+        b.stride(0),
         out.stride(0),
         out.stride(1),
         ACTIVATION=activation,

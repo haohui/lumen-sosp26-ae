@@ -21,6 +21,7 @@ PINNED_HIPBLASLT_VER="1.1.0"
 PINNED_HIPBLASLT_REALNAME="libhipblaslt.so.1.1.70101"
 PINNED_HIPBLASLT_SHA256="4d103e5573fcb1d3133d634c96c5c0a44232f15f76dcdb1195c8057e6b42a021"
 PINNED_HIPKITTENS_CDNA3_COMMIT="7d58fa1026b4"
+PINNED_AITER_COMMIT="6a0e7b26ccf33164785531212cc2ec2cde0b9243"
 
 REINSTALL_AITER=0
 REQUIRE_AITER=0
@@ -28,7 +29,11 @@ STRICT_VERSIONS=0
 SKIP_SMOKE=0
 DRY_RUN=0
 HIPKITTENS_REPO_URL="${HIPKITTENS_REPO_URL:-https://github.com/HazyResearch/HipKittens.git}"
-HIPKITTENS_SRC_CACHE_ROOT="${HIPKITTENS_SRC_CACHE_ROOT:-/tmp}"
+HIPKITTENS_SRC_CACHE_ROOT="${HIPKITTENS_SRC_CACHE_ROOT:-${REPO_ROOT}/logs/.setup_cache}"
+AITER_REPO_URL="${AITER_REPO_URL:-https://github.com/ROCm/aiter.git}"
+AITER_SRC_CACHE_ROOT="${AITER_SRC_CACHE_ROOT:-${REPO_ROOT}/logs/.setup_cache}"
+AITER_TAG="v${PINNED_AITER_VER}"
+AITER_SRC_DIR="${AITER_SRC_CACHE_ROOT}/aiter_${PINNED_AITER_VER}"
 
 MINI_DIR="${GEMM_ROOT}/08_hipketten/build_hipkittens_mini"
 UNIFIED_DIR="${GEMM_ROOT}/08_hipketten/build_hipkittens_unified"
@@ -42,8 +47,9 @@ Usage:
 Options:
   --python <bin>                  Python executable (default: python3 or $PYTHON_BIN)
   --reinstall-aiter               Force reinstall amd-aiter==0.1.10.post3 (pinned)
-  --require-aiter                 Fail setup if pinned/importable aiter is unavailable
+  --require-aiter                 Fail setup if pinned amd-aiter is unavailable
   --strict-versions               Fail setup if pinned torch/triton/ROCm stack mismatches
+  (AITER is installed from pinned source commit for reproducibility)
   (if HipKittens .so is missing, script auto-fetches pinned HipKittens source and recompiles)
   --skip-smoke                    Skip post-setup import/version checks
   --dry-run                       Print commands without executing
@@ -143,12 +149,66 @@ except Exception:
 PY
 }
 
+cleanup_external_aiter_pth() {
+  "${PYTHON_BIN}" - <<'PY'
+import glob
+import os
+import site
+
+target = "/workspace/aiter"
+for d in site.getsitepackages():
+    for p in glob.glob(os.path.join(d, "*.pth")):
+        try:
+            text = open(p, "r", encoding="utf-8", errors="ignore").read()
+        except Exception:
+            continue
+        if target not in text:
+            continue
+        lines = [ln for ln in text.splitlines() if target not in ln]
+        if lines:
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            print(f"[setup_env] rewrote pth: {p}")
+        else:
+            try:
+                os.remove(p)
+                print(f"[setup_env] removed pth: {p}")
+            except Exception:
+                pass
+PY
+}
+
 install_pinned_aiter() {
-  log "installing amd-aiter==${PINNED_AITER_VER} (current='${current_aiter_ver:-<none>}')"
+  log "installing amd-aiter==${PINNED_AITER_VER} from pinned commit ${PINNED_AITER_COMMIT} (current='${current_aiter_ver:-<none>}')"
+  cleanup_external_aiter_pth
   run_cmd "${PIP_CMD[@]}" install "${COMMON_PIP_ARGS[@]}" \
     pybind11 ninja packaging pandas psutil einops
+  log "installing from source: ${AITER_REPO_URL} @ ${PINNED_AITER_COMMIT} (tag ${AITER_TAG})"
+  run_cmd mkdir -p "${AITER_SRC_CACHE_ROOT}"
+  if [[ ! -d "${AITER_SRC_DIR}/.git" ]]; then
+    run_cmd git clone --recurse-submodules "${AITER_REPO_URL}" "${AITER_SRC_DIR}"
+  else
+    run_cmd git -C "${AITER_SRC_DIR}" fetch --tags --force "${AITER_REPO_URL}"
+  fi
+  run_cmd git -C "${AITER_SRC_DIR}" checkout -f "${PINNED_AITER_COMMIT}"
+  run_cmd git -C "${AITER_SRC_DIR}" reset --hard "${PINNED_AITER_COMMIT}"
+  # aiter build needs composable_kernel from submodule; missing it causes
+  # module_moe_sorting JIT compile failure (moe_sorting_api.hpp not found).
+  run_cmd git -C "${AITER_SRC_DIR}" submodule sync --recursive
+  run_cmd git -C "${AITER_SRC_DIR}" submodule update --init --recursive
+  local resolved_commit
+  resolved_commit="$(git -C "${AITER_SRC_DIR}" rev-parse HEAD)"
+  if [[ "${resolved_commit}" != "${PINNED_AITER_COMMIT}" ]]; then
+    die "aiter source commit mismatch: resolved=${resolved_commit}, expected=${PINNED_AITER_COMMIT}"
+  fi
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '[dry-run] '; printf '%q ' "${PIP_CMD[@]}" uninstall "${COMMON_PIP_ARGS[@]}" -y aiter amd-aiter; printf '\n'
+  else
+    "${PIP_CMD[@]}" uninstall "${COMMON_PIP_ARGS[@]}" -y aiter amd-aiter >/dev/null 2>&1 || true
+  fi
+  cleanup_external_aiter_pth
   if run_cmd "${PIP_CMD[@]}" install "${COMMON_PIP_ARGS[@]}" \
-    --upgrade "amd-aiter==${PINNED_AITER_VER}"; then
+    --upgrade --no-build-isolation "${AITER_SRC_DIR}"; then
     return 0
   fi
   return 1
@@ -164,9 +224,21 @@ if [[ "${REINSTALL_AITER}" -eq 1 ]]; then
     log "WARN: pinned amd-aiter install failed; continuing without required aiter"
   fi
 elif [[ "${current_aiter_ver}" == "${PINNED_AITER_VER}" ]]; then
-  log "amd-aiter already pinned at ${PINNED_AITER_VER}"
+  log "amd-aiter version matches (${PINNED_AITER_VER}); enforcing pinned source commit ${PINNED_AITER_COMMIT}"
+  if ! install_pinned_aiter; then
+    if [[ "${REQUIRE_AITER}" -eq 1 ]]; then
+      die "failed to enforce pinned source commit for amd-aiter==${PINNED_AITER_VER}"
+    fi
+    log "WARN: failed to enforce pinned source commit; existing amd-aiter may remain active"
+  fi
 elif [[ "${current_aiter_ver}" == importable:* ]]; then
-  log "amd-aiter metadata unavailable; using importable source (${current_aiter_ver#importable:})"
+  log "detected source/importable aiter (${current_aiter_ver#importable:}); trying pinned source install"
+  if ! install_pinned_aiter; then
+    if [[ "${REQUIRE_AITER}" -eq 1 ]]; then
+      die "failed to replace source aiter with required amd-aiter==${PINNED_AITER_VER}"
+    fi
+    log "WARN: pinned amd-aiter install failed; source aiter may still be active"
+  fi
 else
   if ! install_pinned_aiter; then
     if [[ "${REQUIRE_AITER}" -eq 1 ]]; then
@@ -178,11 +250,17 @@ fi
 
 current_aiter_ver="$(get_aiter_state)"
 if [[ "${REQUIRE_AITER}" -eq 1 ]]; then
-  if [[ "${current_aiter_ver}" != "${PINNED_AITER_VER}" && "${current_aiter_ver}" != importable:* ]]; then
+  if [[ "${current_aiter_ver}" != "${PINNED_AITER_VER}" ]]; then
     die "required aiter unavailable after setup (state='${current_aiter_ver:-<none>}')"
   fi
 elif [[ -z "${current_aiter_ver}" ]]; then
   log "WARN: aiter unavailable; AITER baselines will be skipped by benchmark scripts"
+fi
+if [[ "${current_aiter_ver}" == importable:* ]]; then
+  aiter_src="${current_aiter_ver#importable:}"
+  if [[ "${aiter_src}" == /workspace/* || "${aiter_src}" == /data01/* ]]; then
+    die "aiter resolved to external source path (${aiter_src}); this benchmark requires pinned wheel install"
+  fi
 fi
 
 verify_pinned_python_stack() {
@@ -238,10 +316,12 @@ if actual_triton != expected_triton:
         raise SystemExit(msg)
     print(f"[setup_env] WARN: {msg}", file=sys.stderr)
 if require_aiter:
-    if actual_aiter != expected_aiter and not str(actual_aiter).startswith("importable:"):
+    if actual_aiter != expected_aiter:
         raise SystemExit(f"amd-aiter version mismatch: expected {expected_aiter}, got {actual_aiter}")
 elif actual_aiter == "missing":
     print("[setup_env] WARN: amd-aiter unavailable; AITER baselines will be skipped", file=sys.stderr)
+elif str(actual_aiter).startswith("importable:/workspace/") or str(actual_aiter).startswith("importable:/data01/"):
+    raise SystemExit(f"setup_env disallows external-source aiter path: {actual_aiter}")
 if actual_hip != expected_hip:
     msg = f"torch HIP runtime mismatch: expected {expected_hip}, got {actual_hip}"
     if strict_versions:
@@ -476,8 +556,10 @@ except Exception:
         actual_aiter = f"importable:{pathlib.Path(getattr(aiter, '__file__', '')).as_posix()}"
     except Exception:
         actual_aiter = "missing"
-if require_aiter and actual_aiter != expected_aiter and not str(actual_aiter).startswith("importable:"):
+if require_aiter and actual_aiter != expected_aiter:
     raise AssertionError(f"amd-aiter mismatch: expected {expected_aiter}, got {actual_aiter}")
+if str(actual_aiter).startswith("importable:/workspace/") or str(actual_aiter).startswith("importable:/data01/"):
+    raise AssertionError(f"external-source aiter path is not allowed: {actual_aiter}")
 
 import torch
 import triton

@@ -145,13 +145,18 @@ def benchmark_with_cudagraph(
             warmup_calls += extra_calls
     torch.cuda.synchronize(device=device)
 
-    min_replays_23 = max(2, min(3, int(min_replays)))
-    max_replays_23 = max(2, min(3, int(max_replays)))
-    if max_replays_23 < min_replays_23:
-        max_replays_23 = min_replays_23
-    preferred_replays = 3 if max_replays_23 >= 3 else 2
-    num_replays = max(min_replays_23, min(preferred_replays, max_replays_23))
+    min_replays = max(1, int(min_replays))
+    max_replays = max(1, int(max_replays))
+    if max_replays < min_replays:
+        max_replays = min_replays
 
+    # "Long graph + bounded replay" policy:
+    # - Repeat budget is still controlled by min_measure_ms (repeat_ms).
+    # - We first estimate total calls needed to reach the budget.
+    # - Then we enlarge graph_iters so each replay contains a long graph,
+    #   while keeping replay count >= min_replays (commonly 5).
+    # This avoids tiny-graph/high-replay timing bias for very fast kernels.
+    effective_graph_iters = max(1, int(graph_iters))
     if fixed_repeat_calls is not None:
         desired_total_calls = max(1, int(fixed_repeat_calls))
     else:
@@ -160,8 +165,18 @@ def benchmark_with_cudagraph(
             desired_total_calls = int(math.ceil(float(max(1.0, min_measure_ms)) / est_call_ms))
             desired_total_calls = max(desired_total_calls, 1)
         else:
-            desired_total_calls = max(1, int(graph_iters) * num_replays)
-    effective_graph_iters = max(1, int(math.ceil(float(desired_total_calls) / float(num_replays))))
+            desired_total_calls = max(1, effective_graph_iters * min_replays)
+
+    if fixed_repeat_calls is None:
+        # Make graph as large as needed so replay count tends toward min_replays.
+        # graph_iters acts as a lower bound; auto policy can increase it.
+        effective_graph_iters = max(
+            effective_graph_iters,
+            int(math.ceil(float(desired_total_calls) / float(min_replays))),
+        )
+
+    num_replays = int(math.ceil(float(desired_total_calls) / float(effective_graph_iters)))
+    num_replays = max(min_replays, min(num_replays, max_replays))
 
     graph = torch.cuda.CUDAGraph()
     graph_stream = (

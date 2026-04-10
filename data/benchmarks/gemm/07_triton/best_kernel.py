@@ -29,68 +29,30 @@ def _load_source_module():
 
 
 _SRC = _load_source_module()
-_B_T_CACHE: dict[tuple, tuple[torch.Tensor, int]] = {}
-_OUT_CACHE: dict[tuple, torch.Tensor] = {}
-
-
-def _device_key(t: torch.Tensor) -> tuple[str, int | None]:
-    return (t.device.type, t.device.index)
-
-
-def _b_cache_key(b: torch.Tensor) -> tuple:
-    return (
-        _device_key(b),
-        b.dtype,
-        tuple(b.shape),
-        tuple(b.stride()),
-        int(b.data_ptr()),
-    )
-
-
-def _out_cache_key(a: torch.Tensor, b: torch.Tensor) -> tuple:
-    return (
-        _device_key(a),
-        a.dtype,
-        int(a.shape[0]),
-        int(b.shape[1]),
-    )
-
-
-def _get_b_nk_cached(b: torch.Tensor) -> torch.Tensor:
-    key = _b_cache_key(b)
-    ver = int(getattr(b, "_version", 0))
-    cached = _B_T_CACHE.get(key)
-    if cached is not None:
-        b_nk, cached_ver = cached
-        if cached_ver == ver:
-            return b_nk
-    b_nk = b.t().contiguous()
-    _B_T_CACHE[key] = (b_nk, ver)
-    return b_nk
-
-
-def _get_out_cached(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    key = _out_cache_key(a, b)
-    out = _OUT_CACHE.get(key)
-    if out is not None:
-        return out
-    out = torch.empty((a.shape[0], b.shape[1]), device=a.device, dtype=a.dtype)
-    _OUT_CACHE[key] = out
-    return out
+_CACHE: dict[tuple[int, int, int, str, str], tuple[torch.Tensor, torch.Tensor]] = {}
 
 
 def kernel_function(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """
     Triton baseline entry for benchmark_unified_graph.
-    The source kernel is an autotuned ABt implementation:
-    A:[M,K], Bsrc:[N,K] -> C=A@Bsrc^T.
-    Unified runner provides B as [K,N], so we transpose once before launch.
+    Keep this aligned with run_gemm_baselines_cudagraph.py:
+    - convert B(K,N) to B(N,K) once per input pair
+    - reuse output buffer between calls
+    - call matmul_bf16(a, b_nk, out=out)
     """
     if a.ndim != 2 or b.ndim != 2:
         raise ValueError("kernel_function expects 2D tensors")
     if a.shape[1] != b.shape[0]:
         raise ValueError(f"incompatible shapes: a={tuple(a.shape)}, b={tuple(b.shape)}")
-    b_nk = _get_b_nk_cached(b)
-    out = _get_out_cached(a, b)
+    m = int(a.shape[0])
+    n = int(b.shape[1])
+    key = (a.data_ptr(), b.data_ptr(), m, str(a.dtype), str(a.device))
+    cached = _CACHE.get(key)
+    if cached is None:
+        b_nk = b.t().contiguous()
+        out = torch.empty((m, n), device=a.device, dtype=a.dtype)
+        _CACHE[key] = (b_nk, out)
+    else:
+        b_nk, out = cached
     _SRC.matmul_bf16(a, b_nk, out=out)
     return out

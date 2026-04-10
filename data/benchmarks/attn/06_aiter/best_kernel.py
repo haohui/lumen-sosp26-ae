@@ -1,12 +1,5 @@
-import os
-import sys
 import torch
 import torch.nn as nn
-
-# Prefer local source checkouts when available.
-for _aiter_src in ("/workspace/aiter_v0.1.10.post3", "/workspace/aiter"):
-    if os.path.isdir(_aiter_src) and _aiter_src not in sys.path:
-        sys.path.insert(0, _aiter_src)
 
 try:
     # Current aiter layout.

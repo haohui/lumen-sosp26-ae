@@ -1,4 +1,8 @@
 # AITER GEMM Baseline
 
-This baseline is provided by the pinned `amd-aiter==0.1.10.post3` package and benchmark harness,
-so no local generated traffic/trace artifacts are kept in this folder.
+This baseline is provided by pinned `amd-aiter==0.1.10.post3`.
+
+- Entry script: `best_kernel.py`
+- Called by: `python/harness/bench/benchmark_gemm_unified_graph.py --run-aiter`
+
+No traffic/profiling artifacts are stored in this folder.

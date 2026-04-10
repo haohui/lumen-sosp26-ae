@@ -18,21 +18,22 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
-try:
-    from cudagraph_timer import CUDAGraphTimingResult, benchmark_with_cudagraph
-except Exception:
-    # Primary fallback for current layout: opt_kernel/perf_script/cudagraph_timer.py
-    perf_script_dir = THIS_DIR.parents[2] / "perf_script"
-    if str(perf_script_dir) not in sys.path:
-        sys.path.insert(0, str(perf_script_dir))
+REPO_ROOT = THIS_DIR.parents[4]
+_timer_import_error: Exception | None = None
+for _timer_dir in (
+    THIS_DIR,
+    REPO_ROOT / "python" / "harness" / "bench",
+):
+    if str(_timer_dir) not in sys.path:
+        sys.path.insert(0, str(_timer_dir))
     try:
         from cudagraph_timer import CUDAGraphTimingResult, benchmark_with_cudagraph
-    except Exception:
-        # Legacy fallback where timer lives in repo/script.
-        repo_script_dir = THIS_DIR.parents[3] / "script"
-        if str(repo_script_dir) not in sys.path:
-            sys.path.insert(0, str(repo_script_dir))
-        from cudagraph_timer import CUDAGraphTimingResult, benchmark_with_cudagraph
+        _timer_import_error = None
+        break
+    except Exception as e:
+        _timer_import_error = e
+else:
+    raise RuntimeError(f"Failed to import cudagraph_timer from repo-local paths: {_timer_import_error}")
 
 import moe_quant_ref
 

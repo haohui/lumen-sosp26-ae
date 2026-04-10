@@ -396,32 +396,31 @@ def run_python_kernel_baseline(
 
 def run_aiter_baseline(
     *,
+    aiter_kernel: Path,
     sizes: List[int],
     shared_inputs: Dict[int, SharedInputs],
     device: "torch.device",
+    dtype: "torch.dtype",
     args: argparse.Namespace,
 ) -> List[Dict[str, Any]]:
-    import aiter
-
     rows: List[Dict[str, Any]] = []
     name = "aiter"
-    print(f"\n[{name}]")
+    module = _load_module(aiter_kernel)
+    fn_model = _build_model_fn(module, device=device, dtype=dtype)
+    print(f"\n[{name}] {aiter_kernel}")
     for s in sizes:
         x = shared_inputs[s]
-        a = x.a_mk
-        b_t = x.b_kn.t().contiguous()  # aiter expects transposed B layout
-        y = torch.empty((s, s), device=device, dtype=torch.float32)
 
         def call() -> None:
-            aiter.gemm_a16w16_asm(a, b_t, y)
+            fn_model(x.a_mk, x.b_kn)
 
         try:
             timing = _time_one(call, device=device, args=args)
-            row = _make_row(baseline=name, kernel_path="aiter.gemm_a16w16_asm", size=s, timing=timing)
+            row = _make_row(baseline=name, kernel_path=str(aiter_kernel), size=s, timing=timing)
         except Exception as e:
             row = _make_row(
                 baseline=name,
-                kernel_path="aiter.gemm_a16w16_asm",
+                kernel_path=str(aiter_kernel),
                 size=s,
                 timing=None,
                 error=f"{type(e).__name__}: {e}",
@@ -592,6 +591,12 @@ def parse_args() -> argparse.Namespace:
         help="Keep suspicious graph results instead of treating them as errors.",
     )
     p.add_argument("--run-aiter", action="store_true")
+    p.add_argument(
+        "--aiter-kernel",
+        type=Path,
+        default=gemm_root / "05_aiter" / "best_kernel.py",
+        help="AITER GEMM baseline python entry.",
+    )
     p.add_argument("--run-hipblaslt", action="store_true")
     p.add_argument("--run-hipkittens", action="store_true")
     p.add_argument("--gemm-kernel-root", type=Path, default=gemm_root)
@@ -625,6 +630,9 @@ def main() -> None:
 
     py_kernels = _discover_python_files(args.gemm_kernel_root)
     cu_kernels = _discover_cu_files(args.gemm_kernel_root)
+    if args.run_aiter:
+        aiter_kernel_abs = args.aiter_kernel.resolve()
+        py_kernels = [p for p in py_kernels if p.resolve() != aiter_kernel_abs]
 
     effective_repeat_ms = args.repeat_ms if args.measure_ms is None else args.measure_ms
     mode = f"fixed_calls={args.repeat}" if args.repeat > 0 else f"auto_repeat_ms={effective_repeat_ms}"
@@ -650,7 +658,7 @@ def main() -> None:
         for p in cu_kernels:
             print(f"[cu-skip] {p} (raw .cu needs a dedicated wrapper/harness)")
         if args.run_aiter:
-            print("[dry-run] aiter enabled")
+            print(f"[dry-run] aiter enabled: {args.aiter_kernel}")
         if args.run_hipblaslt:
             print("[dry-run] hipblaslt enabled")
         if args.run_hipkittens:
@@ -671,9 +679,11 @@ def main() -> None:
         try:
             rows.extend(
                 run_aiter_baseline(
+                    aiter_kernel=args.aiter_kernel,
                     sizes=sizes,
                     shared_inputs=shared_inputs,
                     device=device,
+                    dtype=dtype,
                     args=args,
                 )
             )
@@ -754,6 +764,7 @@ def main() -> None:
                 "suspicious_ratio": args.suspicious_ratio,
                 "allow_suspicious_graph": args.allow_suspicious_graph,
                 "run_aiter": args.run_aiter,
+                "aiter_kernel": str(args.aiter_kernel),
                 "run_hipblaslt": args.run_hipblaslt,
                 "run_hipkittens": args.run_hipkittens,
                 "hipkittens_kernels_dir": str(args.hipkittens_kernels_dir),

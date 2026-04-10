@@ -633,8 +633,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--repeat-ms", type=float, default=5000.0)
     p.add_argument("--graph-iters", type=int, default=10)
     p.add_argument("--timer-trials", type=int, default=9)
-    p.add_argument("--min-replays", type=int, default=2)
-    p.add_argument("--max-replays", type=int, default=3)
+    p.add_argument("--min-replays", type=int, default=5)
+    p.add_argument("--max-replays", type=int, default=200000)
     p.add_argument("--out-dir", type=Path, default=None)
     p.add_argument(
         "--write-md",

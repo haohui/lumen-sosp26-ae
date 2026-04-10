@@ -6,7 +6,6 @@ import csv
 import datetime as dt
 import json
 import os
-import statistics
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,23 +70,6 @@ class DiffStats:
     allclose: bool
     nan_count: int
     inf_count: int
-
-
-@dataclass
-class EventTimingResult:
-    median_ms: float
-    mean_ms: float
-    stdev_ms: float
-    p10_ms: float
-    p90_ms: float
-    cv: float
-    graph_iters: int
-    num_replays: int
-    total_calls_per_sample: int
-    suspicious: bool
-    suspicious_reason: str
-    samples_ms: list[float]
-
 
 
 def _stats(a: torch.Tensor, b: torch.Tensor, atol: float, rtol: float) -> DiffStats:
@@ -166,20 +148,7 @@ def _run_timer(
     pre_capture_iters: int,
     min_replays: int,
     max_replays: int,
-    disable_cudagraph: bool,
-) -> CUDAGraphTimingResult | EventTimingResult:
-    if disable_cudagraph:
-        return _run_timer_event(
-            fn,
-            device=device,
-            warmup=warmup,
-            warmup_ms=warmup_ms,
-            trials=trials,
-            repeat_ms=repeat_ms,
-            min_replays=min_replays,
-            max_replays=max_replays,
-        )
-
+) -> CUDAGraphTimingResult:
     return benchmark_with_cudagraph(
         fn=fn,
         device=device,
@@ -192,86 +161,6 @@ def _run_timer(
         min_replays=min_replays,
         max_replays=max_replays,
         use_default_stream=True,
-        allow_suspicious=True,
-    )
-
-
-def _run_timer_event(
-    fn: Callable[[], None],
-    *,
-    device: torch.device,
-    warmup: int,
-    warmup_ms: float,
-    trials: int,
-    repeat_ms: float,
-    min_replays: int,
-    max_replays: int,
-) -> EventTimingResult:
-    warmup_calls = max(1, int(warmup))
-    for _ in range(warmup_calls):
-        fn()
-    torch.cuda.synchronize(device=device)
-
-    target_warmup_ms = max(0.0, float(warmup_ms))
-    if target_warmup_ms > 0.0:
-        elapsed_ms = 0.0
-        ev_warmup_start = torch.cuda.Event(enable_timing=True)
-        ev_warmup_end = torch.cuda.Event(enable_timing=True)
-        while elapsed_ms < target_warmup_ms:
-            ev_warmup_start.record()
-            fn()
-            ev_warmup_end.record()
-            torch.cuda.synchronize(device=device)
-            elapsed_ms += float(ev_warmup_start.elapsed_time(ev_warmup_end))
-            warmup_calls += 1
-
-    ev_start = torch.cuda.Event(enable_timing=True)
-    ev_end = torch.cuda.Event(enable_timing=True)
-    ev_start.record()
-    fn()
-    ev_end.record()
-    torch.cuda.synchronize(device=device)
-    probe_ms = float(ev_start.elapsed_time(ev_end))
-
-    base = max(1e-3, probe_ms)
-    replays = int(round(float(repeat_ms) / base))
-    replays = max(int(min_replays), replays)
-    replays = min(int(max_replays), replays)
-    replays = max(1, replays)
-
-    samples: list[float] = []
-    trial_count = max(1, int(trials))
-    for _ in range(trial_count):
-        ev_start.record()
-        for _ in range(replays):
-            fn()
-        ev_end.record()
-        torch.cuda.synchronize(device=device)
-        total_ms = float(ev_start.elapsed_time(ev_end))
-        samples.append(total_ms / float(replays))
-
-    samples_sorted = sorted(samples)
-    n = len(samples_sorted)
-    mean_ms = float(statistics.fmean(samples_sorted))
-    stdev_ms = float(statistics.pstdev(samples_sorted)) if n > 1 else 0.0
-    median_ms = float(statistics.median(samples_sorted))
-    p10_ms = float(samples_sorted[max(0, int(0.1 * (n - 1)))])
-    p90_ms = float(samples_sorted[min(n - 1, int(0.9 * (n - 1)))])
-    cv = float(stdev_ms / mean_ms) if mean_ms > 0 else 0.0
-
-    return EventTimingResult(
-        median_ms=median_ms,
-        mean_ms=mean_ms,
-        stdev_ms=stdev_ms,
-        p10_ms=p10_ms,
-        p90_ms=p90_ms,
-        cv=cv,
-        graph_iters=0,
-        num_replays=replays,
-        total_calls_per_sample=replays,
-        suspicious=False,
-        suspicious_reason="event_timer",
-        samples_ms=[float(x) for x in samples],
     )
 
 
@@ -294,9 +183,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pre-capture-iters", type=int, default=3)
     p.add_argument("--min-replays", type=int, default=100)
     p.add_argument("--max-replays", type=int, default=200000)
-    p.add_argument("--disable-cudagraph", action="store_true")
     p.add_argument("--atol", type=float, default=5e-2)
     p.add_argument("--rtol", type=float, default=5e-2)
+    p.add_argument(
+        "--check-correctness",
+        action="store_true",
+        help="enable correctness check against torch reference (disabled by default)",
+    )
     p.add_argument("--out-dir", type=str, default="")
     p.add_argument("--out-prefix", type=str, default="bench_aiter_backends_cudagraph")
     return p
@@ -345,17 +238,19 @@ def main() -> int:
 
         data = moe_quant_ref.make_inputs(tokens=tokens, cfg=cfg, device=device, seed=args.seed)
 
-        with torch.no_grad():
-            out_ref = ref_impl.forward(
-                data["input_q"],
-                data["w1_q"],
-                data["w2_q"],
-                data["topk_weights"],
-                data["topk_ids"],
-                data["input_scale"],
-                data["fc1_scale"],
-                data["fc2_scale"],
-            ).to(torch.bfloat16)
+        out_ref = None
+        if args.check_correctness:
+            with torch.no_grad():
+                out_ref = ref_impl.forward(
+                    data["input_q"],
+                    data["w1_q"],
+                    data["w2_q"],
+                    data["topk_weights"],
+                    data["topk_ids"],
+                    data["input_scale"],
+                    data["fc1_scale"],
+                    data["fc2_scale"],
+                ).to(torch.bfloat16)
 
         # Common route buffers for ASM/CK (same route format as reference)
         sorted_token_ids, sorted_weights, sorted_expert_ids, num_valid_ids = ref_impl._build_sorted_routes(
@@ -558,14 +453,29 @@ def main() -> int:
                     pre_capture_iters=args.pre_capture_iters,
                     min_replays=args.min_replays,
                     max_replays=args.max_replays,
-                    disable_cudagraph=args.disable_cudagraph,
                 )
 
                 # Refresh output once after timing (avoid stale buffer assumptions)
                 with torch.no_grad():
                     fn()
                     torch.cuda.synchronize(device=device)
-                st = _stats(out_ref, out_buf, atol=args.atol, rtol=args.rtol)
+                if args.check_correctness:
+                    st = _stats(out_ref, out_buf, atol=args.atol, rtol=args.rtol)
+                    allclose = str(st.allclose)
+                    max_abs = f"{st.max_abs:.6f}"
+                    mean_abs = f"{st.mean_abs:.6f}"
+                    p99_abs = f"{st.p99_abs:.6f}"
+                    max_rel = f"{st.max_rel:.6f}"
+                    nan_count = str(st.nan_count)
+                    inf_count = str(st.inf_count)
+                else:
+                    allclose = ""
+                    max_abs = ""
+                    mean_abs = ""
+                    p99_abs = ""
+                    max_rel = ""
+                    nan_count = ""
+                    inf_count = ""
 
                 row = {
                     "backend": backend,
@@ -581,21 +491,27 @@ def main() -> int:
                     "total_calls_per_sample": str(timing.total_calls_per_sample),
                     "suspicious": str(bool(timing.suspicious)),
                     "suspicious_reason": timing.suspicious_reason or "",
-                    "allclose": str(st.allclose),
-                    "max_abs": f"{st.max_abs:.6f}",
-                    "mean_abs": f"{st.mean_abs:.6f}",
-                    "p99_abs": f"{st.p99_abs:.6f}",
-                    "max_rel": f"{st.max_rel:.6f}",
-                    "nan_count": str(st.nan_count),
-                    "inf_count": str(st.inf_count),
+                    "allclose": allclose,
+                    "max_abs": max_abs,
+                    "mean_abs": mean_abs,
+                    "p99_abs": p99_abs,
+                    "max_rel": max_rel,
+                    "nan_count": nan_count,
+                    "inf_count": inf_count,
                 }
                 rows.append(row)
 
-                print(
-                    f"[{backend:6s}] M={tokens:5d} median={timing.median_ms:8.4f} ms "
-                    f"allclose={st.allclose} max_abs={st.max_abs:.6f} nan={st.nan_count} inf={st.inf_count}",
-                    flush=True,
-                )
+                if args.check_correctness:
+                    print(
+                        f"[{backend:6s}] M={tokens:5d} median={timing.median_ms:8.4f} ms "
+                        f"allclose={st.allclose} max_abs={st.max_abs:.6f} nan={st.nan_count} inf={st.inf_count}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[{backend:6s}] M={tokens:5d} median={timing.median_ms:8.4f} ms",
+                        flush=True,
+                    )
             except Exception as e:
                 print(
                     f"[warn] backend={backend} tokens={tokens} failed: {type(e).__name__}: {e}",
@@ -641,7 +557,6 @@ def main() -> int:
                         "pre_capture_iters": args.pre_capture_iters,
                         "min_replays": args.min_replays,
                         "max_replays": args.max_replays,
-                        "disable_cudagraph": bool(args.disable_cudagraph),
                         "atol": args.atol,
                         "rtol": args.rtol,
                     },

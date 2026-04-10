@@ -27,7 +27,6 @@ REINSTALL_AITER=0
 REQUIRE_AITER=0
 STRICT_VERSIONS=0
 SKIP_SMOKE=0
-DRY_RUN=0
 HIPKITTENS_REPO_URL="${HIPKITTENS_REPO_URL:-https://github.com/HazyResearch/HipKittens.git}"
 HIPKITTENS_SRC_CACHE_ROOT="${HIPKITTENS_SRC_CACHE_ROOT:-${REPO_ROOT}/logs/.setup_cache}"
 AITER_REPO_URL="${AITER_REPO_URL:-https://github.com/ROCm/aiter.git}"
@@ -52,7 +51,6 @@ Options:
   (AITER is installed from pinned source commit for reproducibility)
   (if HipKittens .so is missing, script auto-fetches pinned HipKittens source and recompiles)
   --skip-smoke                    Skip post-setup import/version checks
-  --dry-run                       Print commands without executing
   -h, --help                      Show this help
 USAGE
 }
@@ -67,13 +65,7 @@ die() {
 }
 
 run_cmd() {
-  if [[ "${DRY_RUN}" -eq 1 ]]; then
-    printf '[dry-run] '
-    printf '%q ' "$@"
-    printf '\n'
-  else
-    "$@"
-  fi
+  "$@"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -96,10 +88,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-smoke)
       SKIP_SMOKE=1
-      shift
-      ;;
-    --dry-run)
-      DRY_RUN=1
       shift
       ;;
     -h|--help)
@@ -201,11 +189,7 @@ install_pinned_aiter() {
   if [[ "${resolved_commit}" != "${PINNED_AITER_COMMIT}" ]]; then
     die "aiter source commit mismatch: resolved=${resolved_commit}, expected=${PINNED_AITER_COMMIT}"
   fi
-  if [[ "${DRY_RUN}" -eq 1 ]]; then
-    printf '[dry-run] '; printf '%q ' "${PIP_CMD[@]}" uninstall "${COMMON_PIP_ARGS[@]}" -y aiter amd-aiter; printf '\n'
-  else
-    "${PIP_CMD[@]}" uninstall "${COMMON_PIP_ARGS[@]}" -y aiter amd-aiter >/dev/null 2>&1 || true
-  fi
+  "${PIP_CMD[@]}" uninstall "${COMMON_PIP_ARGS[@]}" -y aiter amd-aiter >/dev/null 2>&1 || true
   cleanup_external_aiter_pth
   if run_cmd "${PIP_CMD[@]}" install "${COMMON_PIP_ARGS[@]}" \
     --upgrade --no-build-isolation "${AITER_SRC_DIR}"; then
@@ -394,10 +378,6 @@ verify_pinned_rocm_stack
 fetch_pinned_hipkittens_source() {
   command -v git >/dev/null 2>&1 || die "git not found; cannot fetch HipKittens source"
   local dst="${HIPKITTENS_SRC_CACHE_ROOT%/}/hipkittens_cdna3_${PINNED_HIPKITTENS_CDNA3_COMMIT}"
-  if [[ "${DRY_RUN}" -eq 1 ]]; then
-    printf '%s\n' "${dst}"
-    return 0
-  fi
   if [[ ! -d "${dst}/.git" ]]; then
     run_cmd rm -rf "${dst}"
     run_cmd git clone --filter=blob:none "${HIPKITTENS_REPO_URL}" "${dst}"

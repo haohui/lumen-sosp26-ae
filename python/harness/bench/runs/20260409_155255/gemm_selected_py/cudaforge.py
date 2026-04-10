@@ -1,1 +1,0 @@
-/data01/home/daifeng/lumen-sosp26-ae/data/benchmarks/gemm/02_cudaforge/best_kernel.py

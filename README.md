@@ -49,21 +49,12 @@ The experiments reported in the paper were run on a server with:
 
 ## Repository Layout
 
-The repository is organized so Python code lives under `python/`, while
-benchmark inputs and generated outputs live under `data/`:
+The repository is organized with benchmark code under `python/` and benchmark
+artifacts under `data/`:
 
-- `python/lumen_artifact/`: shared Python implementation used by benchmarking,
-  generation, and evaluation scripts. Common helpers, configuration loaders,
-  result parsing, and reusable benchmark utilities should live here.
-- `python/harness/bench/`: benchmarking entry points that import shared logic
-  from `python/lumen_artifact/`.
-- `python/harness/generation/`: generation drivers and thin entry-point scripts
-  that import shared logic from `python/lumen_artifact/`.
-- `data/benchmarks/gemm/`, `data/benchmarks/attn/`, `data/benchmarks/moe/`: kernel
-  implementations produced by Lumen and by baseline agentic systems for GEMM,
-  flash attention, and fused MoE.
-- `data/benchmarks/kernelbench/oracle/`: expert-optimized KernelBench reference
-  implementations.
-- `data/benchmarks/kernelbench/lumen/`: Lumen-generated KernelBench solutions,
-  including multiple optimization rounds when applicable.
-
+- `python/harness/bench/`: benchmark entry points and shared timing/runtime
+  helpers (`run_all.py`, domain benchmarks, CUDA Graph timer, setup script).
+- `data/benchmarks/gemm/`: GEMM baseline kernels and wrappers.
+- `data/benchmarks/attn/`: attention baseline kernels.
+- `data/benchmarks/moe/`: MoE baseline kernels and AITER wrapper/helper files.
+- `data/benchmarks/retime.md`: unified timing reference table.

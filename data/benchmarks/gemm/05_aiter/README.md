@@ -1,8 +1,9 @@
 # AITER GEMM Baseline
 
-This baseline is provided by pinned `amd-aiter==0.1.10.post3`.
+- Kernel entry: `best_kernel.py`
 
-- Entry script: `best_kernel.py`
-- Called by: `python/harness/bench/benchmark_gemm_unified_graph.py --run-aiter`
+Run via harness:
 
-No traffic/profiling artifacts are stored in this folder.
+```bash
+python3 python/harness/bench/benchmark_gemm_unified_graph.py --run-aiter
+```

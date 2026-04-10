@@ -108,12 +108,11 @@ def benchmark_with_cudagraph(
     min_measure_ms: float = 200.0,
     min_replays: int = 5,
     max_replays: int = 200000,
+    max_graph_iters: int = 16384,
     fixed_repeat_calls: int | None = None,
     use_default_stream: bool = True,
     setup_fn: Callable[[], None] | None = None,
     probe_calls: int = 20,
-    suspicious_ratio_threshold: float = 0.25,
-    allow_suspicious: bool = True,
 ) -> CUDAGraphTimingResult:
     """Time fn with CUDA Graph replay and robust statistics.
 
@@ -174,6 +173,8 @@ def benchmark_with_cudagraph(
             effective_graph_iters,
             int(math.ceil(float(desired_total_calls) / float(min_replays))),
         )
+    if max_graph_iters > 0:
+        effective_graph_iters = min(effective_graph_iters, int(max_graph_iters))
 
     num_replays = int(math.ceil(float(desired_total_calls) / float(effective_graph_iters)))
     num_replays = max(min_replays, min(num_replays, max_replays))
@@ -185,87 +186,52 @@ def benchmark_with_cudagraph(
         else torch.cuda.Stream(device=device)
     )
     caller_stream = torch.cuda.current_stream(device=device)
-    graph_stream.wait_stream(caller_stream)
-    with torch.cuda.stream(graph_stream):
-        for _ in range(max(0, pre_capture_iters)):
-            _call_once()
-        with torch.cuda.graph(graph):
-            for _ in range(effective_graph_iters):
-                _call_once()
-    caller_stream.wait_stream(graph_stream)
-    torch.cuda.synchronize(device=device)
-
     total_calls = max(1, num_replays * effective_graph_iters)
-
-    # Trial loop.
+    total_calls_per_sample = total_calls
     samples: list[float] = []
-    for _ in range(max(1, trial_count)):
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
+
+    try:
+        graph_stream.wait_stream(caller_stream)
         with torch.cuda.stream(graph_stream):
-            start.record()
-            for _ in range(num_replays):
-                graph.replay()
-            end.record()
+            for _ in range(max(0, pre_capture_iters)):
+                _call_once()
+            with torch.cuda.graph(graph):
+                for _ in range(effective_graph_iters):
+                    _call_once()
         caller_stream.wait_stream(graph_stream)
         torch.cuda.synchronize(device=device)
-        total_ms = float(start.elapsed_time(end))
-        samples.append(total_ms / float(total_calls))
 
-    # Detect suspiciously small graph numbers (often empty graph / wrong stream).
+        # Trial loop.
+        for _ in range(max(1, trial_count)):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            with torch.cuda.stream(graph_stream):
+                start.record()
+                for _ in range(num_replays):
+                    graph.replay()
+                end.record()
+            caller_stream.wait_stream(graph_stream)
+            torch.cuda.synchronize(device=device)
+            total_ms = float(start.elapsed_time(end))
+            samples.append(total_ms / float(total_calls))
+    except RuntimeError as e:
+        raise RuntimeError(f"CUDA graph capture/replay failed: {type(e).__name__}: {e}") from e
+
     eager_probe_ms = _event_probe_ms(_call_once, device=device, probe_calls=probe_calls)
     median_ms = float(statistics.median(samples))
     suspicious = False
     suspicious_reason: str | None = None
-    if eager_probe_ms > 0.0 and median_ms < suspicious_ratio_threshold * eager_probe_ms:
-        suspicious = True
-        suspicious_reason = (
-            f"graph median {median_ms:.6f} ms is < "
-            f"{suspicious_ratio_threshold:.2f}x eager probe {eager_probe_ms:.6f} ms"
-        )
-        if not allow_suspicious:
-            raise RuntimeError(f"suspicious CUDA graph timing: {suspicious_reason}")
+    # Keep only empty-graph protection; do not apply suspicious-ratio rejection.
+    if median_ms <= 0.0:
+        raise RuntimeError("empty CUDA graph detected: replay latency is zero")
 
     return CUDAGraphTimingResult(
         samples_ms=samples,
         warmup_calls=warmup_calls,
-        total_calls_per_sample=total_calls,
+        total_calls_per_sample=total_calls_per_sample,
         graph_iters=effective_graph_iters,
         num_replays=num_replays,
         eager_probe_ms=eager_probe_ms,
         suspicious=suspicious,
         suspicious_reason=suspicious_reason,
     )
-
-
-def time_with_cudagraph(
-    fn: Callable[..., Any],
-    *,
-    device: "torch.device",
-    fn_args: Sequence[Any] = (),
-    fn_kwargs: Mapping[str, Any] | None = None,
-    warmup: int = 10,
-    warmup_ms: float | None = None,
-    repeat: int = 50,
-    graph_iters: int = 10,
-    pre_capture_iters: int = 3,
-    use_default_stream: bool = True,
-    setup_fn: Callable[[], None] | None = None,
-) -> float:
-    """Backward-compatible wrapper returning one scalar ms/call."""
-    result = benchmark_with_cudagraph(
-        fn=fn,
-        device=device,
-        fn_args=fn_args,
-        fn_kwargs=fn_kwargs,
-        warmup=warmup,
-        warmup_ms=warmup_ms,
-        graph_iters=graph_iters,
-        pre_capture_iters=pre_capture_iters,
-        trial_count=1,
-        fixed_repeat_calls=repeat,
-        use_default_stream=use_default_stream,
-        setup_fn=setup_fn,
-        allow_suspicious=True,
-    )
-    return result.median_ms

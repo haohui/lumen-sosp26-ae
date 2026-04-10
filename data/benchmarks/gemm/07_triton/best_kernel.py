@@ -5,6 +5,7 @@ import importlib.util
 from pathlib import Path
 
 import torch
+import torch.nn as nn
 
 
 def _load_source_module():
@@ -31,28 +32,28 @@ def _load_source_module():
 _SRC = _load_source_module()
 _CACHE: dict[tuple[int, int, int, str, str], tuple[torch.Tensor, torch.Tensor]] = {}
 
-
 def kernel_function(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """
-    Triton baseline entry for benchmark_unified_graph.
-    Keep this aligned with run_gemm_baselines_cudagraph.py:
-    - convert B(K,N) to B(N,K) once per input pair
-    - reuse output buffer between calls
-    - call matmul_bf16(a, b_nk, out=out)
-    """
     if a.ndim != 2 or b.ndim != 2:
         raise ValueError("kernel_function expects 2D tensors")
-    if a.shape[1] != b.shape[0]:
+    m, k = a.shape
+    kb, n = b.shape
+    if kb != k:
         raise ValueError(f"incompatible shapes: a={tuple(a.shape)}, b={tuple(b.shape)}")
-    m = int(a.shape[0])
-    n = int(b.shape[1])
     key = (a.data_ptr(), b.data_ptr(), m, str(a.dtype), str(a.device))
     cached = _CACHE.get(key)
     if cached is None:
+        # Source kernel computes C=A@B^T and expects B in [N,K] layout.
         b_nk = b.t().contiguous()
         out = torch.empty((m, n), device=a.device, dtype=a.dtype)
         _CACHE[key] = (b_nk, out)
     else:
         b_nk, out = cached
-    _SRC.matmul_bf16(a, b_nk, out=out)
-    return out
+    return _SRC.matmul_bf16(a, b_nk, out=out)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        return kernel_function(a, b)

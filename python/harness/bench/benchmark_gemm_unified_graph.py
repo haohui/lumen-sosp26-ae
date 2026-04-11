@@ -135,6 +135,11 @@ def main() -> None:
     torch.manual_seed(args.seed)
     device = torch.device(args.device)
     dtype = parse_dtype(args.dtype)
+    if args.run_hipblaslt and dtype is not torch.bfloat16:
+        raise ValueError(
+            "--run-hipblaslt requires --dtype bf16; "
+            "hipblaslt_bf16_mm_out only supports bf16 inputs"
+        )
     shared = _build_shared_inputs(sizes=sizes, device=device, dtype=dtype, seed=args.seed)
 
     rows: List[Dict[str, Any]] = []

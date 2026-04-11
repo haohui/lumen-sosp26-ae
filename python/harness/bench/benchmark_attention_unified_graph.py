@@ -76,6 +76,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--json-out", type=Path, default=None)
 
     args = p.parse_args()
+    if not bool(args.causal):
+        raise ValueError(
+            "--non-causal is not supported by the bundled attention baselines; "
+            "use causal mode only"
+        )
     enable_default_flags(
         args,
         [

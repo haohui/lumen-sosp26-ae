@@ -43,7 +43,6 @@ DOMAIN_SPECS: Dict[str, DomainSpec] = {
         fixed_args=[
             "--dtype",
             "bf16",
-            "--run-aiter",
             "--run-hipblaslt",
             "--run-hipkittens",
             "--run-kernelbench",
@@ -69,7 +68,6 @@ DOMAIN_SPECS: Dict[str, DomainSpec] = {
             "--head-dim",
             "128",
             "--causal",
-            "--run-aiter",
             "--run-hipkittens",
             "--run-kernelfalcon",
             "--run-ksearch",
@@ -96,7 +94,6 @@ DOMAIN_SPECS: Dict[str, DomainSpec] = {
             "--run-cudaforge",
             "--run-kernelfalcon",
             "--run-ksearch",
-            "--run-aiter",
         ],
         json_name="moe.json",
     ),
@@ -105,6 +102,25 @@ DOMAIN_SPECS: Dict[str, DomainSpec] = {
 
 def _run(cmd: List[str]) -> None:
     subprocess.run(cmd, check=True)
+
+
+def _has_aiter(python_bin: str) -> bool:
+    probe = (
+        "import importlib.util; "
+        "spec = importlib.util.find_spec('aiter'); "
+        "print('1' if spec else '0')"
+    )
+    try:
+        cp = subprocess.run(
+            [python_bin, "-c", probe],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return cp.returncode == 0 and cp.stdout.strip() == "1"
+    except Exception:
+        return False
 
 
 def _resolve_cols(args: argparse.Namespace) -> Tuple[List[int], List[int], List[int]]:
@@ -141,9 +157,12 @@ def _with_optional_bindings(cmd: List[str], args: argparse.Namespace) -> List[st
     return out
 
 
-def _run_domain(args: argparse.Namespace, out_dir: Path, domain: str, cols: List[int]) -> Path:
+def _run_domain(args: argparse.Namespace, out_dir: Path, domain: str, cols: List[int], *, enable_aiter: bool) -> Path:
     spec = DOMAIN_SPECS[domain]
     out = out_dir / spec.json_name
+    run_flags = list(spec.fixed_args)
+    if enable_aiter and domain in ("gemm", "attention", "moe"):
+        run_flags.append("--run-aiter")
     cmd = [
         args.python,
         str(THIS_DIR / spec.script),
@@ -151,7 +170,7 @@ def _run_domain(args: argparse.Namespace, out_dir: Path, domain: str, cols: List
         args.device,
         spec.col_arg,
         ",".join(str(x) for x in cols),
-        *spec.fixed_args,
+        *run_flags,
         "--json-out",
         str(out),
         *_timer_args(args),
@@ -184,6 +203,13 @@ def main() -> int:
     args = parse_args()
     gemm_cols, attn_cols, moe_cols = _resolve_cols(args)
     cols_map = {"gemm": gemm_cols, "attention": attn_cols, "moe": moe_cols}
+    enable_aiter = _has_aiter(args.python)
+    if not enable_aiter:
+        print(
+            "[run_all] WARN: AITER is unavailable in this Python environment; "
+            "running without AITER baselines",
+            file=sys.stderr,
+        )
 
     with tempfile.TemporaryDirectory(prefix="bench_run_all_") as tmp:
         out_dir = Path(tmp)
@@ -192,7 +218,7 @@ def main() -> int:
         for domain in ("gemm", "attention", "moe"):
             if args.domain not in ("all", domain):
                 continue
-            ran[domain] = _run_domain(args, out_dir, domain, cols_map[domain])
+            ran[domain] = _run_domain(args, out_dir, domain, cols_map[domain], enable_aiter=enable_aiter)
 
         tables = {
             "gemm": blank(GEMM_ORDER, gemm_cols),

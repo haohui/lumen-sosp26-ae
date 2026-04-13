@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
@@ -136,10 +137,12 @@ def main() -> None:
     device = torch.device(args.device)
     dtype = parse_dtype(args.dtype)
     if args.run_hipblaslt and dtype is not torch.bfloat16:
-        raise ValueError(
-            "--run-hipblaslt requires --dtype bf16; "
-            "hipblaslt_bf16_mm_out only supports bf16 inputs"
+        print(
+            "[benchmark_gemm_unified_graph] WARN: skipping hipBLASLt because "
+            "--dtype is not bf16 (hipblaslt_bf16_mm_out is bf16-only)",
+            file=sys.stderr,
         )
+        args.run_hipblaslt = False
     shared = _build_shared_inputs(sizes=sizes, device=device, dtype=dtype, seed=args.seed)
 
     rows: List[Dict[str, Any]] = []

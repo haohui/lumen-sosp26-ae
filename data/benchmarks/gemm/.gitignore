@@ -1,0 +1,7 @@
+# Generated profiling/capture artifacts
+**/*.db
+**/*.pcap
+logs/
+
+# Generated build artifacts
+**/build_hipkittens_*/

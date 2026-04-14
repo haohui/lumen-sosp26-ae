@@ -1,222 +1,380 @@
-# <complete ModelNew code>
-import os
 import torch
 import torch.nn as nn
 from torch.utils.cpp_extension import load_inline
 
-_cpp_src = r"""
-torch::Tensor fa2_attention_bf16(torch::Tensor q, torch::Tensor k, torch::Tensor v);
-"""
-
-_hip_src = r"""
+source = r"""
 #include <torch/extension.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDAGuard.h>
+#include <ATen/ATen.h>
+#include <c10/hip/HIPStream.h>
+#include <hip/hip_runtime.h>
 #include <cmath>
-#include <cstdint>
+#include <limits>
 
-template<int BK>
-__global__ void fa2_bf16_kernel(
-    const at::BFloat16* __restrict__ q,
-    const at::BFloat16* __restrict__ k,
-    const at::BFloat16* __restrict__ v,
-    at::BFloat16* __restrict__ o,
-    int B, int S, int Hq, int Hk, int D, int groups, float scale
+__device__ __forceinline__ float wave_reduce_sum_64(float v) {
+    #pragma unroll
+    for (int offset = 32; offset > 0; offset >>= 1) {
+        v += __shfl_down(v, offset, 64);
+    }
+    return __shfl(v, 0, 64);
+}
+
+__global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_d64_kernel_w2(
+    const at::BFloat16* __restrict__ Q,
+    const at::BFloat16* __restrict__ K,
+    const at::BFloat16* __restrict__ V,
+    at::BFloat16* __restrict__ O,
+    int B, int Hq, int Hk, int S,
+    float scale
 ) {
-    const int tid = threadIdx.x;
-    const int linear = blockIdx.x;
+    const int tid = (int)threadIdx.x;
+    const int lane = tid & 63;
+    const int wave = tid >> 6; // 0..1
 
-    const int t = linear % S;
-    const int tmp = linear / S;
-    const int hq = tmp % Hq;
-    const int b = tmp / Hq;
-    if (b >= B) return;
+    const int i = (int)blockIdx.x * 2 + wave;
+    const int h = (int)blockIdx.y;
+    const int b = (int)blockIdx.z;
 
-    const int hk = hq / groups;
+    if (b >= B || h >= Hq || i >= S) return;
 
-    extern __shared__ float smem[];
-    float* red = smem;                  // [blockDim.x]
-    float* scores = smem + blockDim.x;  // [BK]
-    float* sc = scores + BK;            // [5] => m, l, m_new, alpha, tile_sum
+    const int kvh = (Hk == 1) ? 0 : (h % Hk);
 
-    const int64_t q_base = (((int64_t)b * S + t) * Hq + hq) * D;
-    const float qv = (tid < D) ? static_cast<float>(q[q_base + tid]) : 0.0f;
+    const long long q_base = (((long long)b * S + i) * Hq + h) * 64LL;
+    const long long kv_head_base = (((long long)b * S) * Hk + kvh) * 64LL;
+    const long long kv_stride = (long long)Hk * 64LL;
+
+    const float q = (float)Q[q_base + lane] * scale;
+
+    float m = -INFINITY;
+    float l = 0.0f;
     float acc = 0.0f;
 
-    if (tid == 0) {
-        sc[0] = -INFINITY; // m
-        sc[1] = 0.0f;      // l
-    }
-    __syncthreads();
+    const at::BFloat16* k_ptr = K + kv_head_base;
+    const at::BFloat16* v_ptr = V + kv_head_base;
 
-    for (int k0 = 0; k0 <= t; k0 += BK) {
-        int tile_n = (t + 1 - k0);
-        if (tile_n > BK) tile_n = BK;
+    int j = 0;
+    for (; j + 1 <= i; j += 2) {
+        float part0 = q * (float)k_ptr[lane];
+        float score0 = wave_reduce_sum_64(part0);
 
-        float tile_max = -INFINITY;
+        float m_new0 = fmaxf(m, score0);
+        float alpha0 = expf(m - m_new0);
+        float beta0  = expf(score0 - m_new0);
 
-        // Tiled QK
-        for (int kk = 0; kk < tile_n; ++kk) {
-            const int ks = k0 + kk;
-            const int64_t k_base = (((int64_t)b * S + ks) * Hk + hk) * D;
-            const float kv = (tid < D) ? static_cast<float>(k[k_base + tid]) : 0.0f;
+        l = l * alpha0 + beta0;
+        m = m_new0;
+        acc = acc * alpha0 + beta0 * (float)v_ptr[lane];
 
-            red[tid] = qv * kv;
-            __syncthreads();
+        k_ptr += kv_stride;
+        v_ptr += kv_stride;
 
-            for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
-                if (tid < stride) red[tid] += red[tid + stride];
-                __syncthreads();
-            }
+        float part1 = q * (float)k_ptr[lane];
+        float score1 = wave_reduce_sum_64(part1);
 
-            if (tid == 0) {
-                float s = red[0] * scale;
-                scores[kk] = s;
-                tile_max = fmaxf(tile_max, s);
-            }
-            __syncthreads();
-        }
+        float m_new1 = fmaxf(m, score1);
+        float alpha1 = expf(m - m_new1);
+        float beta1  = expf(score1 - m_new1);
 
-        // Online softmax update
-        if (tid == 0) {
-            const float m_prev = sc[0];
-            const float l_prev = sc[1];
-            const float m_new = fmaxf(m_prev, tile_max);
-            const float alpha = (isinf(m_prev) && m_prev < 0.0f) ? 0.0f : expf(m_prev - m_new);
+        l = l * alpha1 + beta1;
+        m = m_new1;
+        acc = acc * alpha1 + beta1 * (float)v_ptr[lane];
 
-            float tile_sum = 0.0f;
-            for (int kk = 0; kk < tile_n; ++kk) {
-                tile_sum += expf(scores[kk] - m_new);
-            }
-
-            sc[2] = m_new;
-            sc[3] = alpha;
-            sc[4] = tile_sum;
-            (void)l_prev;
-        }
-        __syncthreads();
-
-        const float m_new = sc[2];
-        const float alpha = sc[3];
-
-        // Tiled PV accumulation
-        if (tid < D) {
-            float tile_acc = 0.0f;
-            for (int kk = 0; kk < tile_n; ++kk) {
-                const int ks = k0 + kk;
-                const int64_t v_base = (((int64_t)b * S + ks) * Hk + hk) * D;
-                const float vv = static_cast<float>(v[v_base + tid]);
-                const float p = expf(scores[kk] - m_new);
-                tile_acc += p * vv;
-            }
-            acc = acc * alpha + tile_acc;
-        }
-
-        if (tid == 0) {
-            const float l_prev = sc[1];
-            const float l_new = l_prev * sc[3] + sc[4];
-            sc[0] = sc[2];
-            sc[1] = l_new;
-        }
-        __syncthreads();
+        k_ptr += kv_stride;
+        v_ptr += kv_stride;
     }
 
-    if (tid < D) {
-        const float l_final = sc[1];
-        const float outv = acc / l_final;
-        const int64_t o_base = (((int64_t)b * S + t) * Hq + hq) * D;
-        o[o_base + tid] = static_cast<at::BFloat16>(outv);
+    if (j <= i) {
+        float part = q * (float)k_ptr[lane];
+        float score = wave_reduce_sum_64(part);
+
+        float m_new = fmaxf(m, score);
+        float alpha = expf(m - m_new);
+        float beta  = expf(score - m_new);
+
+        l = l * alpha + beta;
+        acc = acc * alpha + beta * (float)v_ptr[lane];
+    }
+
+    O[q_base + lane] = (at::BFloat16)(acc / l);
+}
+
+__global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_d128_kernel_w2(
+    const at::BFloat16* __restrict__ Q,
+    const at::BFloat16* __restrict__ K,
+    const at::BFloat16* __restrict__ V,
+    at::BFloat16* __restrict__ O,
+    int B, int Hq, int Hk, int S,
+    float scale
+) {
+    const int tid = (int)threadIdx.x;
+    const int lane = tid & 63;
+    const int wave = tid >> 6; // 0..1
+
+    const int i = (int)blockIdx.x * 2 + wave;
+    const int h = (int)blockIdx.y;
+    const int b = (int)blockIdx.z;
+
+    if (b >= B || h >= Hq || i >= S) return;
+
+    const int kvh = (Hk == 1) ? 0 : (h % Hk);
+
+    const long long q_base = (((long long)b * S + i) * Hq + h) * 128LL;
+    const long long kv_head_base = (((long long)b * S) * Hk + kvh) * 128LL;
+    const long long kv_stride = (long long)Hk * 128LL;
+
+    const int d0 = lane;
+    const int d1 = lane + 64;
+
+    const float q0 = (float)Q[q_base + d0] * scale;
+    const float q1 = (float)Q[q_base + d1] * scale;
+
+    float m = -INFINITY;
+    float l = 0.0f;
+    float acc0 = 0.0f;
+    float acc1 = 0.0f;
+
+    const at::BFloat16* k_ptr = K + kv_head_base;
+    const at::BFloat16* v_ptr = V + kv_head_base;
+
+    int j = 0;
+    for (; j + 1 <= i; j += 2) {
+        float part0 = q0 * (float)k_ptr[d0] + q1 * (float)k_ptr[d1];
+        float score0 = wave_reduce_sum_64(part0);
+
+        float m_new0 = fmaxf(m, score0);
+        float alpha0 = expf(m - m_new0);
+        float beta0  = expf(score0 - m_new0);
+
+        l = l * alpha0 + beta0;
+        m = m_new0;
+        acc0 = acc0 * alpha0 + beta0 * (float)v_ptr[d0];
+        acc1 = acc1 * alpha0 + beta0 * (float)v_ptr[d1];
+
+        k_ptr += kv_stride;
+        v_ptr += kv_stride;
+
+        float part1 = q0 * (float)k_ptr[d0] + q1 * (float)k_ptr[d1];
+        float score1 = wave_reduce_sum_64(part1);
+
+        float m_new1 = fmaxf(m, score1);
+        float alpha1 = expf(m - m_new1);
+        float beta1  = expf(score1 - m_new1);
+
+        l = l * alpha1 + beta1;
+        m = m_new1;
+        acc0 = acc0 * alpha1 + beta1 * (float)v_ptr[d0];
+        acc1 = acc1 * alpha1 + beta1 * (float)v_ptr[d1];
+
+        k_ptr += kv_stride;
+        v_ptr += kv_stride;
+    }
+
+    if (j <= i) {
+        float part = q0 * (float)k_ptr[d0] + q1 * (float)k_ptr[d1];
+        float score = wave_reduce_sum_64(part);
+
+        float m_new = fmaxf(m, score);
+        float alpha = expf(m - m_new);
+        float beta  = expf(score - m_new);
+
+        l = l * alpha + beta;
+        acc0 = acc0 * alpha + beta * (float)v_ptr[d0];
+        acc1 = acc1 * alpha + beta * (float)v_ptr[d1];
+    }
+
+    float inv_l = 1.0f / l;
+    O[q_base + d0] = (at::BFloat16)(acc0 * inv_l);
+    O[q_base + d1] = (at::BFloat16)(acc1 * inv_l);
+}
+
+template<bool TWO_DIMS>
+__global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_generic_kernel_w2(
+    const at::BFloat16* __restrict__ Q,
+    const at::BFloat16* __restrict__ K,
+    const at::BFloat16* __restrict__ V,
+    at::BFloat16* __restrict__ O,
+    int B, int Hq, int Hk, int S, int D,
+    float scale
+) {
+    const int tid = (int)threadIdx.x;
+    const int lane = tid & 63;
+    const int wave = tid >> 6; // 0..1
+
+    const int i = (int)blockIdx.x * 2 + wave;
+    const int h = (int)blockIdx.y;
+    const int b = (int)blockIdx.z;
+
+    if (b >= B || h >= Hq || i >= S) return;
+
+    const int kvh = (Hk == 1) ? 0 : (h % Hk);
+
+    const long long q_base = (((long long)b * S + i) * Hq + h) * (long long)D;
+    const long long kv_head_base = (((long long)b * S) * Hk + kvh) * (long long)D;
+    const long long kv_stride = (long long)Hk * (long long)D;
+
+    const int d0 = lane;
+    const bool a0 = (d0 < D);
+    const float q0 = a0 ? ((float)Q[q_base + d0] * scale) : 0.0f;
+
+    int d1 = 0;
+    bool a1 = false;
+    float q1 = 0.0f;
+    if constexpr (TWO_DIMS) {
+        d1 = lane + 64;
+        a1 = (d1 < D);
+        q1 = a1 ? ((float)Q[q_base + d1] * scale) : 0.0f;
+    }
+
+    float m = -INFINITY;
+    float l = 0.0f;
+    float acc0 = 0.0f;
+    float acc1 = 0.0f;
+
+    const at::BFloat16* k_ptr = K + kv_head_base;
+    const at::BFloat16* v_ptr = V + kv_head_base;
+
+    int j = 0;
+    for (; j + 1 <= i; j += 2) {
+        float part0 = 0.0f;
+        if (a0) part0 += q0 * (float)k_ptr[d0];
+        if constexpr (TWO_DIMS) { if (a1) part0 += q1 * (float)k_ptr[d1]; }
+
+        float score0 = wave_reduce_sum_64(part0);
+
+        float m_new0 = fmaxf(m, score0);
+        float alpha0 = expf(m - m_new0);
+        float beta0  = expf(score0 - m_new0);
+
+        l = l * alpha0 + beta0;
+        m = m_new0;
+        if (a0) acc0 = acc0 * alpha0 + beta0 * (float)v_ptr[d0];
+        if constexpr (TWO_DIMS) { if (a1) acc1 = acc1 * alpha0 + beta0 * (float)v_ptr[d1]; }
+
+        k_ptr += kv_stride;
+        v_ptr += kv_stride;
+
+        float part1 = 0.0f;
+        if (a0) part1 += q0 * (float)k_ptr[d0];
+        if constexpr (TWO_DIMS) { if (a1) part1 += q1 * (float)k_ptr[d1]; }
+
+        float score1 = wave_reduce_sum_64(part1);
+
+        float m_new1 = fmaxf(m, score1);
+        float alpha1 = expf(m - m_new1);
+        float beta1  = expf(score1 - m_new1);
+
+        l = l * alpha1 + beta1;
+        m = m_new1;
+        if (a0) acc0 = acc0 * alpha1 + beta1 * (float)v_ptr[d0];
+        if constexpr (TWO_DIMS) { if (a1) acc1 = acc1 * alpha1 + beta1 * (float)v_ptr[d1]; }
+
+        k_ptr += kv_stride;
+        v_ptr += kv_stride;
+    }
+
+    if (j <= i) {
+        float part = 0.0f;
+        if (a0) part += q0 * (float)k_ptr[d0];
+        if constexpr (TWO_DIMS) { if (a1) part += q1 * (float)k_ptr[d1]; }
+
+        float score = wave_reduce_sum_64(part);
+
+        float m_new = fmaxf(m, score);
+        float alpha = expf(m - m_new);
+        float beta  = expf(score - m_new);
+
+        l = l * alpha + beta;
+        if (a0) acc0 = acc0 * alpha + beta * (float)v_ptr[d0];
+        if constexpr (TWO_DIMS) { if (a1) acc1 = acc1 * alpha + beta * (float)v_ptr[d1]; }
+    }
+
+    float inv_l = 1.0f / l;
+    if (a0) O[q_base + d0] = (at::BFloat16)(acc0 * inv_l);
+    if constexpr (TWO_DIMS) {
+        if (a1) O[q_base + d1] = (at::BFloat16)(acc1 * inv_l);
     }
 }
 
-torch::Tensor fa2_attention_bf16(torch::Tensor q, torch::Tensor k, torch::Tensor v) {
-    TORCH_CHECK(q.is_cuda() && k.is_cuda() && v.is_cuda(), "q/k/v must be CUDA(HIP) tensors");
-    TORCH_CHECK(q.scalar_type() == at::kBFloat16, "q must be torch.bfloat16");
-    TORCH_CHECK(k.scalar_type() == at::kBFloat16, "k must be torch.bfloat16");
-    TORCH_CHECK(v.scalar_type() == at::kBFloat16, "v must be torch.bfloat16");
-    TORCH_CHECK(q.dim() == 4 && k.dim() == 4 && v.dim() == 4, "q/k/v must be [B,S,H,D]");
+torch::Tensor sdpa_causal_bf16(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
+    TORCH_CHECK(Q.is_cuda(), "Q must be a HIP tensor");
+    TORCH_CHECK(K.is_cuda(), "K must be a HIP tensor");
+    TORCH_CHECK(V.is_cuda(), "V must be a HIP tensor");
 
-    auto q_ = q.contiguous();
-    auto k_ = k.contiguous();
-    auto v_ = v.contiguous();
+    TORCH_CHECK(Q.dtype() == torch::kBFloat16, "Q must be bfloat16");
+    TORCH_CHECK(K.dtype() == torch::kBFloat16, "K must be bfloat16");
+    TORCH_CHECK(V.dtype() == torch::kBFloat16, "V must be bfloat16");
 
-    const int B = (int)q_.size(0);
-    const int S = (int)q_.size(1);
-    const int Hq = (int)q_.size(2);
-    const int D = (int)q_.size(3);
+    TORCH_CHECK(Q.dim() == 4, "Q must be [B, S, Hq, D]");
+    TORCH_CHECK(K.dim() == 4, "K must be [B, S, Hk, D]");
+    TORCH_CHECK(V.dim() == 4, "V must be [B, S, Hk, D]");
 
-    TORCH_CHECK(k_.size(0) == B && v_.size(0) == B, "Batch mismatch");
-    TORCH_CHECK(k_.size(1) == S && v_.size(1) == S, "Sequence mismatch");
-    TORCH_CHECK(k_.size(3) == D && v_.size(3) == D, "Head dim mismatch");
+    const int64_t B  = Q.size(0);
+    const int64_t S  = Q.size(1);
+    const int64_t Hq = Q.size(2);
+    const int64_t D  = Q.size(3);
 
-    const int Hk = (int)k_.size(2);
-    const int Hv = (int)v_.size(2);
-    TORCH_CHECK(Hk == Hv, "K/V head count mismatch");
-    TORCH_CHECK(Hq % Hk == 0, "Hq must be divisible by Hk");
-    TORCH_CHECK(D > 0 && D <= 256, "Supported head_dim in this kernel: 1..256");
+    TORCH_CHECK(K.size(0) == B && V.size(0) == B, "Batch mismatch");
+    TORCH_CHECK(K.size(1) == S && V.size(1) == S, "Sequence mismatch");
+    TORCH_CHECK(K.size(3) == D && V.size(3) == D, "Head-dim mismatch");
 
-    const int groups = Hq / Hk;
-    auto out = torch::empty({B, S, Hq, D}, q_.options());
+    const int64_t Hk = K.size(2);
+    TORCH_CHECK(V.size(2) == Hk, "K/V head mismatch");
+    TORCH_CHECK(Hk >= 1, "Hk must be >= 1");
+    TORCH_CHECK(D > 0 && D <= 128, "This kernel supports 1 <= D <= 128");
+    TORCH_CHECK(S >= 1, "S must be >= 1");
+    TORCH_CHECK(Hq >= 1 && B >= 1, "B/Hq must be >= 1");
 
-    int threads = 1;
-    while (threads < D) threads <<= 1;
-    if (threads < 64) threads = 64;
-    if (threads > 256) threads = 256;
+    auto Qc = Q.contiguous();
+    auto Kc = K.contiguous();
+    auto Vc = V.contiguous();
+    auto O  = torch::empty_like(Qc);
 
-    constexpr int BK = 64;
-    const int64_t total = (int64_t)B * S * Hq;
-    dim3 grid((unsigned int)total);
-    dim3 block(threads);
-    const size_t shmem = (threads + BK + 5) * sizeof(float);
+    constexpr int BLOCK = 128; // 2 wavefronts per block
+    dim3 block(BLOCK);
+    dim3 grid((unsigned int)((S + 1) / 2), (unsigned int)Hq, (unsigned int)B);
 
     const float scale = 1.0f / std::sqrt((float)D);
 
-    c10::cuda::CUDAGuard device_guard(q_.device());
-    auto stream = at::cuda::getCurrentCUDAStream();
+    const at::BFloat16* Qp = reinterpret_cast<const at::BFloat16*>(Qc.data_ptr<at::BFloat16>());
+    const at::BFloat16* Kp = reinterpret_cast<const at::BFloat16*>(Kc.data_ptr<at::BFloat16>());
+    const at::BFloat16* Vp = reinterpret_cast<const at::BFloat16*>(Vc.data_ptr<at::BFloat16>());
+    at::BFloat16* Op = reinterpret_cast<at::BFloat16*>(O.data_ptr<at::BFloat16>());
 
-    fa2_bf16_kernel<BK><<<grid, block, shmem, stream>>>(
-        q_.data_ptr<at::BFloat16>(),
-        k_.data_ptr<at::BFloat16>(),
-        v_.data_ptr<at::BFloat16>(),
-        out.data_ptr<at::BFloat16>(),
-        B, S, Hq, Hk, D, groups, scale
-    );
+    hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
+    if (D == 64) {
+        sdpa_causal_bf16_d64_kernel_w2<<<grid, block, 0, stream>>>(Qp, Kp, Vp, Op, (int)B, (int)Hq, (int)Hk, (int)S, scale);
+    } else if (D == 128) {
+        sdpa_causal_bf16_d128_kernel_w2<<<grid, block, 0, stream>>>(Qp, Kp, Vp, Op, (int)B, (int)Hq, (int)Hk, (int)S, scale);
+    } else if (D <= 64) {
+        sdpa_causal_bf16_generic_kernel_w2<false><<<grid, block, 0, stream>>>(Qp, Kp, Vp, Op, (int)B, (int)Hq, (int)Hk, (int)S, (int)D, scale);
+    } else {
+        sdpa_causal_bf16_generic_kernel_w2<true><<<grid, block, 0, stream>>>(Qp, Kp, Vp, Op, (int)B, (int)Hq, (int)Hk, (int)S, (int)D, scale);
+    }
 
-    return out;
+    auto err = hipGetLastError();
+    TORCH_CHECK(err == hipSuccess, "sdpa_causal_bf16 kernel launch failed: ", hipGetErrorString(err));
+
+    return O;
 }
 """
 
-_fa2_ext = load_inline(
-    name="fa2_bshd_bf16_rocm_ext",
-    cpp_sources=_cpp_src,
-    cuda_sources=_hip_src,
-    functions=["fa2_attention_bf16"],
+cpp_src = r"""
+torch::Tensor sdpa_causal_bf16(torch::Tensor Q, torch::Tensor K, torch::Tensor V);
+"""
+
+_sdpa_ext = load_inline(
+    name="sdpa_causal_bf16_mi300x_wave64_w2_ext",
+    cpp_sources=cpp_src,
+    cuda_sources=source,
+    functions=["sdpa_causal_bf16"],
+    verbose=False,
     extra_cflags=["-O3"],
     extra_cuda_cflags=["-O3"],
-    verbose=False,
 )
 
 class ModelNew(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(ModelNew, self).__init__()
+        self.sdpa = _sdpa_ext
 
     def forward(self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor) -> torch.Tensor:
-        return _fa2_ext.fa2_attention_bf16(Q, K, V)
-
-
-batch_size = 16
-num_q_heads = 8
-num_kv_heads = 1
-sequence_length = int(os.getenv("ATTN_SEQ_LEN", "1024"))
-head_dim = 128
-supported_sequence_lengths = (1024, 2048, 4096, 8192, 16384)
-
-def get_inputs():
-    device = "cuda"
-    Q = torch.randn(batch_size, sequence_length, num_q_heads, head_dim, device=device, dtype=torch.bfloat16)
-    K = torch.randn(batch_size, sequence_length, num_kv_heads, head_dim, device=device, dtype=torch.bfloat16)
-    V = torch.randn(batch_size, sequence_length, num_kv_heads, head_dim, device=device, dtype=torch.bfloat16)
-    return [Q, K, V]
-
-def get_init_inputs():
-    return []
+        return self.sdpa.sdpa_causal_bf16(Q, K, V)

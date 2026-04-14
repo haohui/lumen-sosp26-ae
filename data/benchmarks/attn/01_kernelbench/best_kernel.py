@@ -4,210 +4,266 @@ import torch
 import torch.nn as nn
 from torch.utils.cpp_extension import load_inline
 
-# Use HIP compiler on AMD GPUs
-os.environ["CXX"] = "hipcc"
+os.environ.setdefault("CXX", "hipcc")
 
-hip_flash_attn_cpp = r"""
+causal_attn_cpp_source = r"""
 #include <torch/extension.h>
-#include <hip/hip_runtime.h>
+#include <ATen/ATen.h>
 #include <c10/hip/HIPStream.h>
-#include <vector>
+#include <hip/hip_runtime.h>
 #include <cmath>
 #include <cstdint>
 
-static __device__ __forceinline__ float bf16_to_float(uint16_t x) {
-    uint32_t u = ((uint32_t)x) << 16;
-    return __uint_as_float(u);
+__device__ __forceinline__ float bf16_to_float_u16(const uint16_t x) {
+    union {
+        uint32_t u;
+        float f;
+    } v;
+    v.u = static_cast<uint32_t>(x) << 16;
+    return v.f;
 }
 
-static __device__ __forceinline__ uint16_t float_to_bf16_rn(float x) {
-    uint32_t u = __float_as_uint(x);
-    uint32_t lsb = (u >> 16) & 1;
-    uint32_t bias = 0x7fff + lsb;
-    u += bias;
-    return (uint16_t)(u >> 16);
+__device__ __forceinline__ uint16_t float_to_bf16_u16_rn(const float x) {
+    union {
+        uint32_t u;
+        float f;
+    } v;
+    v.f = x;
+    uint32_t lsb = (v.u >> 16) & 1u;
+    uint32_t rounding_bias = 0x7FFFu + lsb;
+    return static_cast<uint16_t>((v.u + rounding_bias) >> 16);
 }
 
-constexpr int WARP_SIZE_ = 64;   // AMD wavefront
-constexpr int BLOCK_M_   = 4;    // queries per block
-constexpr int BLOCK_N_   = 32;   // keys per tile
+__device__ __forceinline__ float wave_reduce_sum(float val) {
+    // AMD wavefront: 64 lanes
+    val += __shfl_xor(val, 32);
+    val += __shfl_xor(val, 16);
+    val += __shfl_xor(val, 8);
+    val += __shfl_xor(val, 4);
+    val += __shfl_xor(val, 2);
+    val += __shfl_xor(val, 1);
+    return val;
+}
 
-__global__ void flash_attn_fwd_bf16_kernel(
-    const uint16_t* __restrict__ q,   // [B,S,Hq,D]
-    const uint16_t* __restrict__ k,   // [B,S,Hk,D]
-    const uint16_t* __restrict__ v,   // [B,S,Hk,D]
-    uint16_t* __restrict__ out,       // [B,S,Hq,D]
-    int B, int S, int Hq, int Hk, int D, float scale
+__global__ void causal_attn_bf16_kernel(
+    const uint16_t* __restrict__ Q,
+    const uint16_t* __restrict__ K,
+    const uint16_t* __restrict__ V,
+    uint16_t* __restrict__ O,
+    int B,
+    int S,
+    int Hq,
+    int Hkv,
+    int D,
+    float scale,
+    int groups
 ) {
-    int tid = threadIdx.x;
-    int warp_id = tid / WARP_SIZE_;
-    int lane = tid % WARP_SIZE_;
+    constexpr int WAVE = 64;
+    const int tid = static_cast<int>(threadIdx.x);
+    const int lane = tid & (WAVE - 1);
+    const int warp_id = tid / WAVE;
+    const int num_warps = static_cast<int>(blockDim.x) / WAVE;
 
-    int b = blockIdx.z;
-    int h = blockIdx.y;
-    int q_start = blockIdx.x * BLOCK_M_;
-    int q_idx = q_start + warp_id;
-    bool q_valid = (q_idx < S);
+    const int bh = static_cast<int>(blockIdx.x);
+    const int q_idx = static_cast<int>(blockIdx.y);
 
-    int max_q = q_start + BLOCK_M_ - 1;
-    if (max_q >= S) max_q = S - 1;
+    if (q_idx >= S) return;
+    const int b = bh / Hq;
+    const int h = bh % Hq;
+    if (b >= B) return;
 
-    int kv_h = h % Hk;
+    const int kv_h = h / groups;
+
+    const int64_t q_base = (((int64_t)b * S + q_idx) * Hq + h) * D;
+
+    const int d0 = lane;
+    const int d1 = lane + WAVE;
+    const int d2 = lane + 2 * WAVE;
+    const int d3 = lane + 3 * WAVE;
+
+    const float q0 = (d0 < D) ? bf16_to_float_u16(Q[q_base + d0]) : 0.0f;
+    const float q1 = (d1 < D) ? bf16_to_float_u16(Q[q_base + d1]) : 0.0f;
+    const float q2 = (d2 < D) ? bf16_to_float_u16(Q[q_base + d2]) : 0.0f;
+    const float q3 = (d3 < D) ? bf16_to_float_u16(Q[q_base + d3]) : 0.0f;
+
+    float m = -1.0e30f;
+    float l = 0.0f;
+    float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f, acc3 = 0.0f;
+
+    for (int k_idx = warp_id; k_idx <= q_idx; k_idx += num_warps) {
+        const int64_t k_base = (((int64_t)b * S + k_idx) * Hkv + kv_h) * D;
+
+        float dot = 0.0f;
+        if (d0 < D) dot += q0 * bf16_to_float_u16(K[k_base + d0]);
+        if (d1 < D) dot += q1 * bf16_to_float_u16(K[k_base + d1]);
+        if (d2 < D) dot += q2 * bf16_to_float_u16(K[k_base + d2]);
+        if (d3 < D) dot += q3 * bf16_to_float_u16(K[k_base + d3]);
+
+        dot = wave_reduce_sum(dot);
+        const float score = __shfl(dot, 0) * scale;
+
+        float vv0 = 0.0f, vv1 = 0.0f, vv2 = 0.0f, vv3 = 0.0f;
+        if (d0 < D) vv0 = bf16_to_float_u16(V[k_base + d0]);
+        if (d1 < D) vv1 = bf16_to_float_u16(V[k_base + d1]);
+        if (d2 < D) vv2 = bf16_to_float_u16(V[k_base + d2]);
+        if (d3 < D) vv3 = bf16_to_float_u16(V[k_base + d3]);
+
+        if (score > m) {
+            const float alpha = expf(m - score);
+            l = l * alpha + 1.0f;
+            acc0 = acc0 * alpha + vv0;
+            acc1 = acc1 * alpha + vv1;
+            acc2 = acc2 * alpha + vv2;
+            acc3 = acc3 * alpha + vv3;
+            m = score;
+        } else {
+            const float w = expf(score - m);
+            l += w;
+            acc0 += w * vv0;
+            acc1 += w * vv1;
+            acc2 += w * vv2;
+            acc3 += w * vv3;
+        }
+    }
 
     extern __shared__ float smem[];
-    float* k_tile = smem;                      // [BLOCK_N_, D]
-    float* v_tile = smem + BLOCK_N_ * D;       // [BLOCK_N_, D]
+    float* s_acc = smem;                               // num_warps * D
+    float* s_m = s_acc + num_warps * D;               // num_warps
+    float* s_l = s_m + num_warps;                     // num_warps
+    float* s_global = s_l + num_warps;                // 2 floats: global_m, global_l
 
-    int d0 = lane;
-    int d1 = lane + WARP_SIZE_;
+    if (d0 < D) s_acc[warp_id * D + d0] = acc0;
+    if (d1 < D) s_acc[warp_id * D + d1] = acc1;
+    if (d2 < D) s_acc[warp_id * D + d2] = acc2;
+    if (d3 < D) s_acc[warp_id * D + d3] = acc3;
 
-    float q0 = 0.0f, q1 = 0.0f;
-    if (q_valid) {
-        int64_t q_base = (((int64_t)b * S + q_idx) * Hq + h) * D;
-        if (d0 < D) q0 = bf16_to_float(q[q_base + d0]) * scale;
-        if (d1 < D) q1 = bf16_to_float(q[q_base + d1]) * scale;
+    if (lane == 0) {
+        s_m[warp_id] = m;
+        s_l[warp_id] = l;
     }
 
-    float m = -INFINITY;
-    float l = 0.0f;
-    float acc0 = 0.0f, acc1 = 0.0f;
+    __syncthreads();
 
-    for (int n_start = 0; n_start <= max_q; n_start += BLOCK_N_) {
-        int elems = BLOCK_N_ * D;
-        for (int idx = tid; idx < elems; idx += blockDim.x) {
-            int n = idx / D;
-            int d = idx - n * D;
-            int k_idx = n_start + n;
-
-            float kval = 0.0f, vval = 0.0f;
-            if (k_idx < S) {
-                int64_t kv_base = (((int64_t)b * S + k_idx) * Hk + kv_h) * D;
-                kval = bf16_to_float(k[kv_base + d]);
-                vval = bf16_to_float(v[kv_base + d]);
-            }
-            k_tile[idx] = kval;
-            v_tile[idx] = vval;
+    if (tid == 0) {
+        float global_m = -1.0e30f;
+        for (int w = 0; w < num_warps; ++w) {
+            if (s_m[w] > global_m) global_m = s_m[w];
         }
-        __syncthreads();
 
-        int n_lim = BLOCK_N_;
-        if (n_start + n_lim > S) n_lim = S - n_start;
+        float global_l = 0.0f;
+        for (int w = 0; w < num_warps; ++w) {
+            global_l += s_l[w] * expf(s_m[w] - global_m);
+        }
 
-        for (int n = 0; n < n_lim; ++n) {
-            int k_idx = n_start + n;
-            bool valid = q_valid && (k_idx <= q_idx);
+        s_global[0] = global_m;
+        s_global[1] = global_l;
+    }
 
-            float score = -INFINITY;
-            if (valid) {
-                float part = 0.0f;
-                if (d0 < D) part += q0 * k_tile[n * D + d0];
-                if (d1 < D) part += q1 * k_tile[n * D + d1];
+    __syncthreads();
 
-                for (int offset = WARP_SIZE_ / 2; offset > 0; offset >>= 1) {
-                    part += __shfl_down(part, offset, WARP_SIZE_);
+    if (warp_id == 0) {
+        const float global_m = s_global[0];
+        const float global_l = s_global[1];
+
+        if (global_l > 0.0f) {
+            for (int d = lane; d < D; d += WAVE) {
+                float acc = 0.0f;
+                for (int w = 0; w < num_warps; ++w) {
+                    acc += s_acc[w * D + d] * expf(s_m[w] - global_m);
                 }
-                score = __shfl(part, 0, WARP_SIZE_);
+                const float out_f = acc / global_l;
+                O[q_base + d] = float_to_bf16_u16_rn(out_f);
             }
-
-            float m_new = valid ? fmaxf(m, score) : m;
-            float alpha = 0.0f;
-            if (m_new > -INFINITY) {
-                alpha = (m > -INFINITY) ? expf(m - m_new) : 0.0f;
+        } else {
+            for (int d = lane; d < D; d += WAVE) {
+                O[q_base + d] = float_to_bf16_u16_rn(0.0f);
             }
-            float p = valid ? expf(score - m_new) : 0.0f;
-            float l_new = l * alpha + p;
-
-            float vv0 = (valid && d0 < D) ? v_tile[n * D + d0] : 0.0f;
-            float vv1 = (valid && d1 < D) ? v_tile[n * D + d1] : 0.0f;
-
-            acc0 = acc0 * alpha + p * vv0;
-            acc1 = acc1 * alpha + p * vv1;
-
-            m = m_new;
-            l = l_new;
         }
-        __syncthreads();
-    }
-
-    if (q_valid) {
-        float inv_l = (l > 0.0f) ? (1.0f / l) : 0.0f;
-        int64_t out_base = (((int64_t)b * S + q_idx) * Hq + h) * D;
-        if (d0 < D) out[out_base + d0] = float_to_bf16_rn(acc0 * inv_l);
-        if (d1 < D) out[out_base + d1] = float_to_bf16_rn(acc1 * inv_l);
     }
 }
 
-torch::Tensor flash_attn_bf16_hip(torch::Tensor q, torch::Tensor k, torch::Tensor v) {
-    TORCH_CHECK(q.is_cuda() && k.is_cuda() && v.is_cuda(), "flash_attn_bf16_hip: tensors must be on HIP device");
-    TORCH_CHECK(q.scalar_type() == at::kBFloat16, "Q must be bf16");
-    TORCH_CHECK(k.scalar_type() == at::kBFloat16, "K must be bf16");
-    TORCH_CHECK(v.scalar_type() == at::kBFloat16, "V must be bf16");
-    TORCH_CHECK(q.dim() == 4 && k.dim() == 4 && v.dim() == 4, "Q/K/V must be 4D [B,S,H,D]");
+torch::Tensor causal_attention_bf16_hip(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
+    TORCH_CHECK(Q.is_cuda() && K.is_cuda() && V.is_cuda(), "Q/K/V must be HIP tensors");
+    TORCH_CHECK(Q.scalar_type() == at::kBFloat16, "Q must be bfloat16");
+    TORCH_CHECK(K.scalar_type() == at::kBFloat16, "K must be bfloat16");
+    TORCH_CHECK(V.scalar_type() == at::kBFloat16, "V must be bfloat16");
+    TORCH_CHECK(Q.dim() == 4 && K.dim() == 4 && V.dim() == 4, "Q/K/V must be [B, S, H, D]");
+    TORCH_CHECK(Q.is_contiguous() && K.is_contiguous() && V.is_contiguous(), "Q/K/V must be contiguous");
 
-    auto q_c = q.contiguous();
-    auto k_c = k.contiguous();
-    auto v_c = v.contiguous();
+    const int64_t B64 = Q.size(0);
+    const int64_t S64 = Q.size(1);
+    const int64_t Hq64 = Q.size(2);
+    const int64_t D64 = Q.size(3);
 
-    int64_t B  = q_c.size(0);
-    int64_t S  = q_c.size(1);
-    int64_t Hq = q_c.size(2);
-    int64_t D  = q_c.size(3);
+    TORCH_CHECK(K.size(0) == B64 && V.size(0) == B64, "B mismatch");
+    TORCH_CHECK(K.size(1) == S64 && V.size(1) == S64, "S mismatch");
+    TORCH_CHECK(K.size(3) == D64 && V.size(3) == D64, "D mismatch");
+    TORCH_CHECK(K.size(2) == V.size(2), "K/V head mismatch");
 
-    TORCH_CHECK(k_c.size(0) == B && v_c.size(0) == B, "B mismatch");
-    TORCH_CHECK(k_c.size(1) == S && v_c.size(1) == S, "S mismatch");
-    TORCH_CHECK(k_c.size(3) == D && v_c.size(3) == D, "D mismatch");
+    const int64_t Hkv64 = K.size(2);
+    TORCH_CHECK(Hq64 % Hkv64 == 0, "Hq must be divisible by Hkv");
+    TORCH_CHECK(D64 <= 256, "Head dim D > 256 is not supported by this kernel");
 
-    int64_t Hk = k_c.size(2);
-    TORCH_CHECK(v_c.size(2) == Hk, "K/V head mismatch");
-    TORCH_CHECK(Hq % Hk == 0, "Hq must be divisible by Hk");
-    TORCH_CHECK(D <= 128, "Current kernel supports D <= 128");
-    TORCH_CHECK(
-        S == 1024 || S == 2048 || S == 4096 || S == 8192 || S == 16384,
-        "Supported S: {1024, 2048, 4096, 8192, 16384}"
+    const int B = static_cast<int>(B64);
+    const int S = static_cast<int>(S64);
+    const int Hq = static_cast<int>(Hq64);
+    const int Hkv = static_cast<int>(Hkv64);
+    const int D = static_cast<int>(D64);
+    const int groups = Hq / Hkv;
+
+    auto O = torch::empty_like(Q);
+
+    const dim3 block(256, 1, 1);           // 4 wavefronts
+    const dim3 grid(static_cast<unsigned int>(B * Hq),
+                    static_cast<unsigned int>(S),
+                    1u);
+    const int num_warps = 4;
+    const size_t shared_bytes = static_cast<size_t>(
+        (num_warps * D + 2 * num_warps + 2) * sizeof(float)
     );
 
-    auto out = torch::empty_like(q_c);
-
-    const uint16_t* q_ptr = reinterpret_cast<const uint16_t*>(q_c.data_ptr<at::BFloat16>());
-    const uint16_t* k_ptr = reinterpret_cast<const uint16_t*>(k_c.data_ptr<at::BFloat16>());
-    const uint16_t* v_ptr = reinterpret_cast<const uint16_t*>(v_c.data_ptr<at::BFloat16>());
-    uint16_t* out_ptr = reinterpret_cast<uint16_t*>(out.data_ptr<at::BFloat16>());
-
-    float scale = 1.0f / std::sqrt((float)D);
-
-    dim3 block(BLOCK_M_ * WARP_SIZE_, 1, 1);
-    dim3 grid((S + BLOCK_M_ - 1) / BLOCK_M_, Hq, B);
-    size_t shmem_bytes = (size_t)(2 * BLOCK_N_ * D * sizeof(float));
+    const float scale = 1.0f / std::sqrt(static_cast<float>(D));
     hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
 
-    flash_attn_fwd_bf16_kernel<<<grid, block, shmem_bytes, stream>>>(
-        q_ptr, k_ptr, v_ptr, out_ptr,
-        (int)B, (int)S, (int)Hq, (int)Hk, (int)D, scale
+    hipLaunchKernelGGL(
+        causal_attn_bf16_kernel,
+        grid,
+        block,
+        shared_bytes,
+        stream,
+        reinterpret_cast<const uint16_t*>(Q.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const uint16_t*>(K.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const uint16_t*>(V.data_ptr<at::BFloat16>()),
+        reinterpret_cast<uint16_t*>(O.data_ptr<at::BFloat16>()),
+        B, S, Hq, Hkv, D, scale, groups
     );
 
     hipError_t err = hipGetLastError();
-    TORCH_CHECK(err == hipSuccess, "flash_attn_fwd_bf16_kernel launch failed: ", hipGetErrorString(err));
+    TORCH_CHECK(err == hipSuccess, "causal_attn_bf16_kernel launch failed: ", hipGetErrorString(err));
 
-    return out;
+    return O;
 }
 """
 
-flash_attn_ext = load_inline(
-    name="flash_attn_bf16_hip_ext",
-    cpp_sources=hip_flash_attn_cpp,
-    functions=["flash_attn_bf16_hip"],
+causal_attn_ext = load_inline(
+    name="causal_attn_bf16_hip_ext_v1",
+    cpp_sources=causal_attn_cpp_source,
+    functions=["causal_attention_bf16_hip"],
     extra_cflags=["-O3"],
     verbose=False,
 )
 
+
 class ModelNew(nn.Module):
     def __init__(self):
         super(ModelNew, self).__init__()
-        self.flash_attn_ext = flash_attn_ext
+        self.attn = causal_attn_ext
 
     def forward(self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor) -> torch.Tensor:
-        # Input/output layout strictly preserved as [B, S, H, D]
-        return self.flash_attn_ext.flash_attn_bf16_hip(Q, K, V)
+        # External and internal layout kept as [B, S, H, D].
+        return self.attn.causal_attention_bf16_hip(
+            Q.contiguous(), K.contiguous(), V.contiguous()
+        )
 
 
 batch_size = 16
@@ -217,31 +273,34 @@ sequence_length = int(os.getenv("ATTN_SEQ_LEN", "1024"))
 head_dim = 128
 supported_sequence_lengths = (1024, 2048, 4096, 8192, 16384)
 
+
 def get_inputs():
     Q = torch.randn(batch_size, sequence_length, num_q_heads, head_dim, dtype=torch.bfloat16, device="cuda")
     K = torch.randn(batch_size, sequence_length, num_kv_heads, head_dim, dtype=torch.bfloat16, device="cuda")
     V = torch.randn(batch_size, sequence_length, num_kv_heads, head_dim, dtype=torch.bfloat16, device="cuda")
     return [Q, K, V]
 
+
 def get_init_inputs():
     return []
 
+
 ANTI_HACK_MANIFEST = {
     "forbidden_api_used": [],
-    "main_compute_kernels": ["flash_attn_fwd_bf16_kernel"],
+    "main_compute_kernels": ["causal_attn_bf16_kernel"],
     "fallback_path": False,
 }
 
 PERF_MANIFEST = {
     "launch_config": {
-        "grid": "((S + BLOCK_M - 1)//BLOCK_M, Hq, B)",
-        "block": "(BLOCK_M * 64, 1, 1)",
+        "grid": "(B*Hq, S, 1)",
+        "block": "(256, 1, 1)",
         "num_warps": 4,
     },
     "tile_sizes": {
-        "BLOCK_M": 4,
-        "BLOCK_N": 32,
-        "BLOCK_K": 128,
+        "BLOCK_M": 1,                 # one query position per block
+        "BLOCK_N": "warp-strided keys across 4 wavefronts",
+        "BLOCK_K": 128,               # typical head_dim for this model
     },
-    "expected_parallelism": "Each block uses 4 wavefronts (256 threads). Wavefronts process multiple query rows cooperatively; K/V tiles are loaded cooperatively into shared memory and reused across wavefronts."
+    "expected_parallelism": "Each [B,H,query] row is computed cooperatively by 4 wavefronts (256 threads), with keys partitioned across wavefronts and reduced in shared memory.",
 }

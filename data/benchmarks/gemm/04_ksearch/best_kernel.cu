@@ -7,29 +7,31 @@
 #define __has_builtin(x) 0
 #endif
 
+#if defined(__HIP_DEVICE_COMPILE__) && __has_builtin(__builtin_amdgcn_mfma_f32_16x16x16bf16_1k)
+#define KSEARCH_HAS_MFMA_BF16 1
+#else
+#define KSEARCH_HAS_MFMA_BF16 0
+#endif
+
 namespace {
-constexpr int BM = 64;
-constexpr int BN = 64;
-constexpr int BK = 16;
-constexpr int TM = 4;
-constexpr int TN = 4;
-constexpr int THREADS_X = BN / TN;  // 16
-constexpr int THREADS_Y = BM / TM;  // 16
-constexpr int THREADS_PER_BLOCK = THREADS_X * THREADS_Y;  // 256
+constexpr int TILE_M = 16;
+constexpr int TILE_N = 16;
+constexpr int TILE_K = 16;
+constexpr int TILE_ELEMS = TILE_N * TILE_K;
+constexpr int WAVE_SIZE = 64;
 
-constexpr int SBM = 16;
-constexpr int SBN = 32;
-constexpr int SBK = 8;
-constexpr int STM = 2;
-constexpr int STN = 2;
-constexpr int STHREADS_X = SBN / STN;  // 16
-constexpr int STHREADS_Y = SBM / STM;  // 8
-constexpr int STHREADS_PER_BLOCK = STHREADS_X * STHREADS_Y;  // 128
+constexpr int TILES_N_PER_BLOCK_BASE = 4;
+constexpr int BLOCK_N_BASE = TILE_N * TILES_N_PER_BLOCK_BASE;
+constexpr int BLOCK_THREADS_BASE = WAVE_SIZE;
 
-static_assert(BM % TM == 0, "BM must be divisible by TM");
-static_assert(BN % TN == 0, "BN must be divisible by TN");
-static_assert(SBM % STM == 0, "SBM must be divisible by STM");
-static_assert(SBN % STN == 0, "SBN must be divisible by STN");
+constexpr int WAVES_PER_BLOCK_BALANCED = 2;
+constexpr int TILES_N_PER_WAVE = 4;
+constexpr int TILES_N_PER_BLOCK_BALANCED = WAVES_PER_BLOCK_BALANCED * TILES_N_PER_WAVE;
+constexpr int BLOCK_N_BALANCED = TILE_N * TILES_N_PER_BLOCK_BALANCED;
+constexpr int BLOCK_THREADS_BALANCED = WAVE_SIZE * WAVES_PER_BLOCK_BALANCED;
+
+using fp32x4 = float __attribute__((ext_vector_type(4)));
+using i16x4 = int16_t __attribute__((ext_vector_type(4)));
 
 __device__ __forceinline__ float bf16_to_float(uint16_t x) {
   union {
@@ -52,308 +54,766 @@ __device__ __forceinline__ uint16_t float_to_bf16_rn(float x) {
   return static_cast<uint16_t>(v.u >> 16);
 }
 
-using fp32x4 = float __attribute__((ext_vector_type(4)));
-using i16x4 = int16_t __attribute__((ext_vector_type(4)));
+__device__ __forceinline__ void scalar_fallback_tile(
+    const uint16_t* __restrict__ A,
+    const uint16_t* __restrict__ B,
+    uint16_t* __restrict__ C,
+    int64_t M,
+    int64_t N,
+    int64_t K,
+    int lane,
+    int64_t block_m,
+    int64_t block_n) {
+  const int row = lane & 15;
+  const int col_group = lane >> 4;
 
-__device__ __forceinline__ void mfma_touch(uint16_t a0, uint16_t a1, uint16_t b0, uint16_t b1) {
-#if defined(__HIP_DEVICE_COMPILE__) && __has_builtin(__builtin_amdgcn_mfma_f32_16x16x16bf16_1k)
-  fp32x4 acc = {0.0f, 0.0f, 0.0f, 0.0f};
-  i16x4 va = {static_cast<int16_t>(a0), static_cast<int16_t>(a1), 0, 0};
-  i16x4 vb = {static_cast<int16_t>(b0), static_cast<int16_t>(b1), 0, 0};
-  acc = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(va, vb, acc, 0, 0, 0);
-  volatile float sink = acc[0];
-  (void)sink;
-#else
-  (void)a0;
-  (void)a1;
-  (void)b0;
-  (void)b1;
-#endif
-}
+  const int64_t gm = block_m + row;
+  const int64_t gn0 = block_n + col_group * 4 + 0;
+  const int64_t gn1 = block_n + col_group * 4 + 1;
+  const int64_t gn2 = block_n + col_group * 4 + 2;
+  const int64_t gn3 = block_n + col_group * 4 + 3;
 
-__device__ __forceinline__ void compute_tile(
-    const float* __restrict__ As,
-    const float* __restrict__ Bs,
-    float acc[TM][TN],
-    int local_row_base,
-    int local_col_base) {
-#pragma unroll
-  for (int kk = 0; kk < BK; ++kk) {
-    float a_frag[TM];
-    float b_frag[TN];
+  float s0 = 0.0f;
+  float s1 = 0.0f;
+  float s2 = 0.0f;
+  float s3 = 0.0f;
 
-#pragma unroll
-    for (int i = 0; i < TM; ++i) {
-      a_frag[i] = As[(local_row_base + i) * BK + kk];
-    }
-#pragma unroll
-    for (int j = 0; j < TN; ++j) {
-      b_frag[j] = Bs[kk * BN + (local_col_base + j)];
-    }
-
-#pragma unroll
-    for (int i = 0; i < TM; ++i) {
-#pragma unroll
-      for (int j = 0; j < TN; ++j) {
-        acc[i][j] += a_frag[i] * b_frag[j];
-      }
+  if (gm < M) {
+    for (int64_t k = 0; k < K; ++k) {
+      const float a = bf16_to_float(A[gm * K + k]);
+      if (gn0 < N) s0 += a * bf16_to_float(B[gn0 * K + k]);
+      if (gn1 < N) s1 += a * bf16_to_float(B[gn1 * K + k]);
+      if (gn2 < N) s2 += a * bf16_to_float(B[gn2 * K + k]);
+      if (gn3 < N) s3 += a * bf16_to_float(B[gn3 * K + k]);
     }
   }
-}
 
-__device__ __forceinline__ void compute_tile_small(
-    const float* __restrict__ As,
-    const float* __restrict__ Bs,
-    float acc[STM][STN],
-    int local_row_base,
-    int local_col_base) {
-#pragma unroll
-  for (int kk = 0; kk < SBK; ++kk) {
-    float a_frag[STM];
-    float b_frag[STN];
-
-#pragma unroll
-    for (int i = 0; i < STM; ++i) {
-      a_frag[i] = As[(local_row_base + i) * SBK + kk];
-    }
-#pragma unroll
-    for (int j = 0; j < STN; ++j) {
-      b_frag[j] = Bs[kk * SBN + (local_col_base + j)];
-    }
-
-#pragma unroll
-    for (int i = 0; i < STM; ++i) {
-#pragma unroll
-      for (int j = 0; j < STN; ++j) {
-        acc[i][j] += a_frag[i] * b_frag[j];
-      }
-    }
+  if (gm < M) {
+    if (gn0 < N) C[gm * N + gn0] = float_to_bf16_rn(s0);
+    if (gn1 < N) C[gm * N + gn1] = float_to_bf16_rn(s1);
+    if (gn2 < N) C[gm * N + gn2] = float_to_bf16_rn(s2);
+    if (gn3 < N) C[gm * N + gn3] = float_to_bf16_rn(s3);
   }
 }
 }  // namespace
 
-__global__ __launch_bounds__(THREADS_PER_BLOCK) void gemm_bf16_var_mnk_kernel(
+__global__ __launch_bounds__(BLOCK_THREADS_BASE) void gemm_bf16_var_mnk_kernel(
     const uint16_t* __restrict__ A,
     const uint16_t* __restrict__ B,
     uint16_t* __restrict__ C,
     int64_t M,
     int64_t N,
     int64_t K) {
-  const int tx = threadIdx.x;
-  const int ty = threadIdx.y;
-  const int tid = ty * THREADS_X + tx;
+  const int lane = static_cast<int>(threadIdx.x);
+  if (lane >= WAVE_SIZE) return;
 
-  const int64_t block_m = static_cast<int64_t>(blockIdx.y) * BM;
-  const int64_t block_n = static_cast<int64_t>(blockIdx.x) * BN;
+  const int row = lane & 15;
+  const int k_group = lane >> 4;
+  const int base = row * TILE_K + k_group * 4;
 
-  const int local_row_base = ty * TM;
-  const int local_col_base = tx * TN;
+  const int64_t block_m = static_cast<int64_t>(blockIdx.y) * TILE_M;
+  const int64_t block_n = static_cast<int64_t>(blockIdx.x) * BLOCK_N_BASE;
 
-  __shared__ float As[BM * BK];
-  __shared__ float Bs[BK * BN];
+#if KSEARCH_HAS_MFMA_BF16
+  __shared__ uint16_t As[TILE_M * TILE_K];
+  __shared__ uint16_t Bs0[TILE_N * TILE_K];
+  __shared__ uint16_t Bs1[TILE_N * TILE_K];
+  __shared__ uint16_t Bs2[TILE_N * TILE_K];
+  __shared__ uint16_t Bs3[TILE_N * TILE_K];
 
-  float acc[TM][TN];
+  i16x4 a_cal;
+  i16x4 b_cal;
 #pragma unroll
-  for (int i = 0; i < TM; ++i) {
-#pragma unroll
-    for (int j = 0; j < TN; ++j) {
-      acc[i][j] = 0.0f;
-    }
+  for (int i = 0; i < 4; ++i) {
+    const int kk = k_group * 4 + i;
+    const uint16_t a_bits = (row == kk) ? static_cast<uint16_t>(0x3f80u) : static_cast<uint16_t>(0u);
+    const uint16_t b_bits = float_to_bf16_rn(static_cast<float>(kk * 16 + row));
+    a_cal[i] = static_cast<int16_t>(a_bits);
+    b_cal[i] = static_cast<int16_t>(b_bits);
   }
 
-  if (BK >= 2) {
-    mfma_touch(0, 0, 0, 0);
+  fp32x4 map_acc = {0.0f, 0.0f, 0.0f, 0.0f};
+  map_acc = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_cal, b_cal, map_acc, 0, 0, 0);
+
+  int out_m[4];
+  int out_n[4];
+  bool local_valid = true;
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+    const int v = __float2int_rn(map_acc[i]);
+    if (static_cast<unsigned>(v) >= 256u) {
+      local_valid = false;
+    }
+    out_m[i] = v >> 4;
+    out_n[i] = v & 15;
   }
 
-  const bool full_m = (block_m + BM) <= M;
-  const bool full_n = (block_n + BN) <= N;
+  if (!__all(local_valid ? 1 : 0)) {
+    scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, block_n + 0 * TILE_N);
+    scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, block_n + 1 * TILE_N);
+    scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, block_n + 2 * TILE_N);
+    scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, block_n + 3 * TILE_N);
+    return;
+  }
 
-  if (full_m && full_n) {
-    int64_t k0 = 0;
-    for (; k0 + BK <= K; k0 += BK) {
-      for (int idx = tid; idx < BM * BK; idx += THREADS_PER_BLOCK) {
-        const int r = idx / BK;
-        const int kk = idx - r * BK;
-        As[idx] = bf16_to_float(A[(block_m + r) * K + (k0 + kk)]);
-      }
+  fp32x4 acc0 = {0.0f, 0.0f, 0.0f, 0.0f};
+  fp32x4 acc1 = {0.0f, 0.0f, 0.0f, 0.0f};
+  fp32x4 acc2 = {0.0f, 0.0f, 0.0f, 0.0f};
+  fp32x4 acc3 = {0.0f, 0.0f, 0.0f, 0.0f};
 
-      for (int idx = tid; idx < BN * BK; idx += THREADS_PER_BLOCK) {
-        const int c = idx / BK;
-        const int kk = idx - c * BK;
-        Bs[kk * BN + c] = bf16_to_float(B[(block_n + c) * K + (k0 + kk)]);
+  const bool full_mn = (block_m + TILE_M <= M) && (block_n + BLOCK_N_BASE <= N);
+  const int64_t k_full = (K / TILE_K) * TILE_K;
+
+  if (full_mn) {
+    for (int64_t k0 = 0; k0 < k_full; k0 += TILE_K) {
+#pragma unroll
+      for (int t = lane; t < TILE_M * TILE_K; t += WAVE_SIZE) {
+        const int r = t >> 4;
+        const int kk = t & 15;
+        const int64_t gk = k0 + kk;
+        As[t] = A[(block_m + r) * K + gk];
+        Bs0[t] = B[(block_n + r) * K + gk];
+        Bs1[t] = B[(block_n + TILE_N + r) * K + gk];
+        Bs2[t] = B[(block_n + 2 * TILE_N + r) * K + gk];
+        Bs3[t] = B[(block_n + 3 * TILE_N + r) * K + gk];
       }
 
       __syncthreads();
-      compute_tile(As, Bs, acc, local_row_base, local_col_base);
-      __syncthreads();
+
+      i16x4 a_frag = {
+          static_cast<int16_t>(As[base + 0]),
+          static_cast<int16_t>(As[base + 1]),
+          static_cast<int16_t>(As[base + 2]),
+          static_cast<int16_t>(As[base + 3])};
+
+      i16x4 b0_frag = {
+          static_cast<int16_t>(Bs0[base + 0]),
+          static_cast<int16_t>(Bs0[base + 1]),
+          static_cast<int16_t>(Bs0[base + 2]),
+          static_cast<int16_t>(Bs0[base + 3])};
+
+      i16x4 b1_frag = {
+          static_cast<int16_t>(Bs1[base + 0]),
+          static_cast<int16_t>(Bs1[base + 1]),
+          static_cast<int16_t>(Bs1[base + 2]),
+          static_cast<int16_t>(Bs1[base + 3])};
+
+      i16x4 b2_frag = {
+          static_cast<int16_t>(Bs2[base + 0]),
+          static_cast<int16_t>(Bs2[base + 1]),
+          static_cast<int16_t>(Bs2[base + 2]),
+          static_cast<int16_t>(Bs2[base + 3])};
+
+      i16x4 b3_frag = {
+          static_cast<int16_t>(Bs3[base + 0]),
+          static_cast<int16_t>(Bs3[base + 1]),
+          static_cast<int16_t>(Bs3[base + 2]),
+          static_cast<int16_t>(Bs3[base + 3])};
+
+      acc0 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b0_frag, acc0, 0, 0, 0);
+      acc1 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b1_frag, acc1, 0, 0, 0);
+      acc2 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b2_frag, acc2, 0, 0, 0);
+      acc3 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b3_frag, acc3, 0, 0, 0);
     }
 
-    if (k0 < K) {
-      for (int idx = tid; idx < BM * BK; idx += THREADS_PER_BLOCK) {
-        const int r = idx / BK;
-        const int kk = idx - r * BK;
-        const int64_t gk = k0 + kk;
-        float v = 0.0f;
-        if (gk < K) {
-          v = bf16_to_float(A[(block_m + r) * K + gk]);
-        }
-        As[idx] = v;
-      }
+    if (k_full < K) {
+#pragma unroll
+      for (int t = lane; t < TILE_M * TILE_K; t += WAVE_SIZE) {
+        const int r = t >> 4;
+        const int kk = t & 15;
+        const int64_t gk = k_full + kk;
 
-      for (int idx = tid; idx < BN * BK; idx += THREADS_PER_BLOCK) {
-        const int c = idx / BK;
-        const int kk = idx - c * BK;
-        const int64_t gk = k0 + kk;
-        float v = 0.0f;
+        uint16_t av = 0;
+        uint16_t b0v = 0;
+        uint16_t b1v = 0;
+        uint16_t b2v = 0;
+        uint16_t b3v = 0;
         if (gk < K) {
-          v = bf16_to_float(B[(block_n + c) * K + gk]);
+          av = A[(block_m + r) * K + gk];
+          b0v = B[(block_n + r) * K + gk];
+          b1v = B[(block_n + TILE_N + r) * K + gk];
+          b2v = B[(block_n + 2 * TILE_N + r) * K + gk];
+          b3v = B[(block_n + 3 * TILE_N + r) * K + gk];
         }
-        Bs[kk * BN + c] = v;
+        As[t] = av;
+        Bs0[t] = b0v;
+        Bs1[t] = b1v;
+        Bs2[t] = b2v;
+        Bs3[t] = b3v;
       }
 
       __syncthreads();
-      compute_tile(As, Bs, acc, local_row_base, local_col_base);
-      __syncthreads();
+
+      i16x4 a_frag = {
+          static_cast<int16_t>(As[base + 0]),
+          static_cast<int16_t>(As[base + 1]),
+          static_cast<int16_t>(As[base + 2]),
+          static_cast<int16_t>(As[base + 3])};
+
+      i16x4 b0_frag = {
+          static_cast<int16_t>(Bs0[base + 0]),
+          static_cast<int16_t>(Bs0[base + 1]),
+          static_cast<int16_t>(Bs0[base + 2]),
+          static_cast<int16_t>(Bs0[base + 3])};
+
+      i16x4 b1_frag = {
+          static_cast<int16_t>(Bs1[base + 0]),
+          static_cast<int16_t>(Bs1[base + 1]),
+          static_cast<int16_t>(Bs1[base + 2]),
+          static_cast<int16_t>(Bs1[base + 3])};
+
+      i16x4 b2_frag = {
+          static_cast<int16_t>(Bs2[base + 0]),
+          static_cast<int16_t>(Bs2[base + 1]),
+          static_cast<int16_t>(Bs2[base + 2]),
+          static_cast<int16_t>(Bs2[base + 3])};
+
+      i16x4 b3_frag = {
+          static_cast<int16_t>(Bs3[base + 0]),
+          static_cast<int16_t>(Bs3[base + 1]),
+          static_cast<int16_t>(Bs3[base + 2]),
+          static_cast<int16_t>(Bs3[base + 3])};
+
+      acc0 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b0_frag, acc0, 0, 0, 0);
+      acc1 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b1_frag, acc1, 0, 0, 0);
+      acc2 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b2_frag, acc2, 0, 0, 0);
+      acc3 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b3_frag, acc3, 0, 0, 0);
+    }
+
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const int64_t gm = block_m + out_m[i];
+      const int64_t gn0 = block_n + out_n[i];
+      C[gm * N + (gn0 + 0 * TILE_N)] = float_to_bf16_rn(acc0[i]);
+      C[gm * N + (gn0 + 1 * TILE_N)] = float_to_bf16_rn(acc1[i]);
+      C[gm * N + (gn0 + 2 * TILE_N)] = float_to_bf16_rn(acc2[i]);
+      C[gm * N + (gn0 + 3 * TILE_N)] = float_to_bf16_rn(acc3[i]);
     }
   } else {
-    for (int64_t k0 = 0; k0 < K; k0 += BK) {
-      for (int idx = tid; idx < BM * BK; idx += THREADS_PER_BLOCK) {
-        const int r = idx / BK;
-        const int kk = idx - r * BK;
+    for (int64_t k0 = 0; k0 < k_full; k0 += TILE_K) {
+#pragma unroll
+      for (int t = lane; t < TILE_M * TILE_K; t += WAVE_SIZE) {
+        const int r = t >> 4;
+        const int kk = t & 15;
+
         const int64_t gm = block_m + r;
+        const int64_t gn0 = block_n + r;
+        const int64_t gn1 = block_n + TILE_N + r;
+        const int64_t gn2 = block_n + 2 * TILE_N + r;
+        const int64_t gn3 = block_n + 3 * TILE_N + r;
         const int64_t gk = k0 + kk;
-        float v = 0.0f;
-        if (gm < M && gk < K) {
-          v = bf16_to_float(A[gm * K + gk]);
-        }
-        As[idx] = v;
-      }
 
-      for (int idx = tid; idx < BN * BK; idx += THREADS_PER_BLOCK) {
-        const int c = idx / BK;
-        const int kk = idx - c * BK;
-        const int64_t gn = block_n + c;
-        const int64_t gk = k0 + kk;
-        float v = 0.0f;
-        if (gn < N && gk < K) {
-          v = bf16_to_float(B[gn * K + gk]);
-        }
-        Bs[kk * BN + c] = v;
+        uint16_t av = 0;
+        if (gm < M) av = A[gm * K + gk];
+        As[t] = av;
+
+        uint16_t b0v = 0;
+        if (gn0 < N) b0v = B[gn0 * K + gk];
+        Bs0[t] = b0v;
+
+        uint16_t b1v = 0;
+        if (gn1 < N) b1v = B[gn1 * K + gk];
+        Bs1[t] = b1v;
+
+        uint16_t b2v = 0;
+        if (gn2 < N) b2v = B[gn2 * K + gk];
+        Bs2[t] = b2v;
+
+        uint16_t b3v = 0;
+        if (gn3 < N) b3v = B[gn3 * K + gk];
+        Bs3[t] = b3v;
       }
 
       __syncthreads();
-      compute_tile(As, Bs, acc, local_row_base, local_col_base);
+
+      i16x4 a_frag = {
+          static_cast<int16_t>(As[base + 0]),
+          static_cast<int16_t>(As[base + 1]),
+          static_cast<int16_t>(As[base + 2]),
+          static_cast<int16_t>(As[base + 3])};
+
+      i16x4 b0_frag = {
+          static_cast<int16_t>(Bs0[base + 0]),
+          static_cast<int16_t>(Bs0[base + 1]),
+          static_cast<int16_t>(Bs0[base + 2]),
+          static_cast<int16_t>(Bs0[base + 3])};
+
+      i16x4 b1_frag = {
+          static_cast<int16_t>(Bs1[base + 0]),
+          static_cast<int16_t>(Bs1[base + 1]),
+          static_cast<int16_t>(Bs1[base + 2]),
+          static_cast<int16_t>(Bs1[base + 3])};
+
+      i16x4 b2_frag = {
+          static_cast<int16_t>(Bs2[base + 0]),
+          static_cast<int16_t>(Bs2[base + 1]),
+          static_cast<int16_t>(Bs2[base + 2]),
+          static_cast<int16_t>(Bs2[base + 3])};
+
+      i16x4 b3_frag = {
+          static_cast<int16_t>(Bs3[base + 0]),
+          static_cast<int16_t>(Bs3[base + 1]),
+          static_cast<int16_t>(Bs3[base + 2]),
+          static_cast<int16_t>(Bs3[base + 3])};
+
+      acc0 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b0_frag, acc0, 0, 0, 0);
+      acc1 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b1_frag, acc1, 0, 0, 0);
+      acc2 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b2_frag, acc2, 0, 0, 0);
+      acc3 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b3_frag, acc3, 0, 0, 0);
+    }
+
+    if (k_full < K) {
+#pragma unroll
+      for (int t = lane; t < TILE_M * TILE_K; t += WAVE_SIZE) {
+        const int r = t >> 4;
+        const int kk = t & 15;
+
+        const int64_t gm = block_m + r;
+        const int64_t gn0 = block_n + r;
+        const int64_t gn1 = block_n + TILE_N + r;
+        const int64_t gn2 = block_n + 2 * TILE_N + r;
+        const int64_t gn3 = block_n + 3 * TILE_N + r;
+        const int64_t gk = k_full + kk;
+
+        uint16_t av = 0;
+        if (gm < M && gk < K) av = A[gm * K + gk];
+        As[t] = av;
+
+        uint16_t b0v = 0;
+        if (gn0 < N && gk < K) b0v = B[gn0 * K + gk];
+        Bs0[t] = b0v;
+
+        uint16_t b1v = 0;
+        if (gn1 < N && gk < K) b1v = B[gn1 * K + gk];
+        Bs1[t] = b1v;
+
+        uint16_t b2v = 0;
+        if (gn2 < N && gk < K) b2v = B[gn2 * K + gk];
+        Bs2[t] = b2v;
+
+        uint16_t b3v = 0;
+        if (gn3 < N && gk < K) b3v = B[gn3 * K + gk];
+        Bs3[t] = b3v;
+      }
+
       __syncthreads();
+
+      i16x4 a_frag = {
+          static_cast<int16_t>(As[base + 0]),
+          static_cast<int16_t>(As[base + 1]),
+          static_cast<int16_t>(As[base + 2]),
+          static_cast<int16_t>(As[base + 3])};
+
+      i16x4 b0_frag = {
+          static_cast<int16_t>(Bs0[base + 0]),
+          static_cast<int16_t>(Bs0[base + 1]),
+          static_cast<int16_t>(Bs0[base + 2]),
+          static_cast<int16_t>(Bs0[base + 3])};
+
+      i16x4 b1_frag = {
+          static_cast<int16_t>(Bs1[base + 0]),
+          static_cast<int16_t>(Bs1[base + 1]),
+          static_cast<int16_t>(Bs1[base + 2]),
+          static_cast<int16_t>(Bs1[base + 3])};
+
+      i16x4 b2_frag = {
+          static_cast<int16_t>(Bs2[base + 0]),
+          static_cast<int16_t>(Bs2[base + 1]),
+          static_cast<int16_t>(Bs2[base + 2]),
+          static_cast<int16_t>(Bs2[base + 3])};
+
+      i16x4 b3_frag = {
+          static_cast<int16_t>(Bs3[base + 0]),
+          static_cast<int16_t>(Bs3[base + 1]),
+          static_cast<int16_t>(Bs3[base + 2]),
+          static_cast<int16_t>(Bs3[base + 3])};
+
+      acc0 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b0_frag, acc0, 0, 0, 0);
+      acc1 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b1_frag, acc1, 0, 0, 0);
+      acc2 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b2_frag, acc2, 0, 0, 0);
+      acc3 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b3_frag, acc3, 0, 0, 0);
+    }
+
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const int64_t gm = block_m + out_m[i];
+      const int64_t gn0 = block_n + out_n[i];
+      if (gm < M) {
+        if (gn0 + 0 * TILE_N < N) C[gm * N + (gn0 + 0 * TILE_N)] = float_to_bf16_rn(acc0[i]);
+        if (gn0 + 1 * TILE_N < N) C[gm * N + (gn0 + 1 * TILE_N)] = float_to_bf16_rn(acc1[i]);
+        if (gn0 + 2 * TILE_N < N) C[gm * N + (gn0 + 2 * TILE_N)] = float_to_bf16_rn(acc2[i]);
+        if (gn0 + 3 * TILE_N < N) C[gm * N + (gn0 + 3 * TILE_N)] = float_to_bf16_rn(acc3[i]);
+      }
     }
   }
 
-  if (full_m && full_n) {
-#pragma unroll
-    for (int i = 0; i < TM; ++i) {
-      const int64_t gm = block_m + local_row_base + i;
-#pragma unroll
-      for (int j = 0; j < TN; ++j) {
-        const int64_t gn = block_n + local_col_base + j;
-        C[gm * N + gn] = float_to_bf16_rn(acc[i][j]);
-      }
-    }
-  } else {
-#pragma unroll
-    for (int i = 0; i < TM; ++i) {
-      const int64_t gm = block_m + local_row_base + i;
-      if (gm >= M) continue;
-#pragma unroll
-      for (int j = 0; j < TN; ++j) {
-        const int64_t gn = block_n + local_col_base + j;
-        if (gn >= N) continue;
-        C[gm * N + gn] = float_to_bf16_rn(acc[i][j]);
-      }
-    }
-  }
+#else
+  scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, block_n + 0 * TILE_N);
+  scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, block_n + 1 * TILE_N);
+  scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, block_n + 2 * TILE_N);
+  scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, block_n + 3 * TILE_N);
+#endif
 }
 
-__global__ __launch_bounds__(STHREADS_PER_BLOCK) void gemm_bf16_var_mnk_small_kernel(
+__global__ __launch_bounds__(BLOCK_THREADS_BALANCED) void gemm_bf16_var_mnk_balanced_kernel(
     const uint16_t* __restrict__ A,
     const uint16_t* __restrict__ B,
     uint16_t* __restrict__ C,
     int64_t M,
     int64_t N,
     int64_t K) {
-  const int tx = threadIdx.x;
-  const int ty = threadIdx.y;
-  const int tid = ty * STHREADS_X + tx;
+  const int tid = static_cast<int>(threadIdx.x);
+  if (tid >= BLOCK_THREADS_BALANCED) return;
 
-  const int local_row_base = ty * STM;
-  const int local_col_base = tx * STN;
+  const int lane = tid & (WAVE_SIZE - 1);
+  const int wave = tid / WAVE_SIZE;
 
-  __shared__ float As[SBM * SBK];
-  __shared__ float Bs[SBK * SBN];
+  const int row = lane & 15;
+  const int k_group = lane >> 4;
+  const int base = row * TILE_K + k_group * 4;
 
-  if (SBK >= 2) {
-    mfma_touch(0, 0, 0, 0);
+  const int64_t block_m = static_cast<int64_t>(blockIdx.y) * TILE_M;
+  const int64_t block_n = static_cast<int64_t>(blockIdx.x) * BLOCK_N_BALANCED;
+  const int64_t wave_block_n = block_n + static_cast<int64_t>(wave) * (TILES_N_PER_WAVE * TILE_N);
+
+#if KSEARCH_HAS_MFMA_BF16
+  __shared__ uint16_t As[TILE_M * TILE_K];
+  __shared__ uint16_t Bs[TILES_N_PER_BLOCK_BALANCED * TILE_ELEMS];
+  __shared__ int map_valid_block;
+
+  i16x4 a_cal;
+  i16x4 b_cal;
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+    const int kk = k_group * 4 + i;
+    const uint16_t a_bits = (row == kk) ? static_cast<uint16_t>(0x3f80u) : static_cast<uint16_t>(0u);
+    const uint16_t b_bits = float_to_bf16_rn(static_cast<float>(kk * 16 + row));
+    a_cal[i] = static_cast<int16_t>(a_bits);
+    b_cal[i] = static_cast<int16_t>(b_bits);
   }
 
-  const int64_t tiles_m = (M + SBM - 1) / SBM;
-  const int64_t tiles_n = (N + SBN - 1) / SBN;
-  const int64_t total_tiles = tiles_m * tiles_n;
+  fp32x4 map_acc = {0.0f, 0.0f, 0.0f, 0.0f};
+  map_acc = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_cal, b_cal, map_acc, 0, 0, 0);
 
-  for (int64_t tile = static_cast<int64_t>(blockIdx.x); tile < total_tiles; tile += static_cast<int64_t>(gridDim.x)) {
-    const int64_t tile_m = tile / tiles_n;
-    const int64_t tile_n = tile - tile_m * tiles_n;
-    const int64_t block_m = tile_m * SBM;
-    const int64_t block_n = tile_n * SBN;
+  int out_m[4];
+  int out_n[4];
+  bool local_valid = true;
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+    const int v = __float2int_rn(map_acc[i]);
+    if (static_cast<unsigned>(v) >= 256u) {
+      local_valid = false;
+    }
+    out_m[i] = v >> 4;
+    out_n[i] = v & 15;
+  }
 
-    float acc[STM][STN];
-#pragma unroll
-    for (int i = 0; i < STM; ++i) {
-#pragma unroll
-      for (int j = 0; j < STN; ++j) {
-        acc[i][j] = 0.0f;
+  if (tid == 0) map_valid_block = 1;
+  __syncthreads();
+  if (!local_valid) atomicExch(&map_valid_block, 0);
+  __syncthreads();
+
+  if (map_valid_block == 0) {
+    scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, wave_block_n + 0 * TILE_N);
+    scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, wave_block_n + 1 * TILE_N);
+    scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, wave_block_n + 2 * TILE_N);
+    scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, wave_block_n + 3 * TILE_N);
+    return;
+  }
+
+  fp32x4 acc0 = {0.0f, 0.0f, 0.0f, 0.0f};
+  fp32x4 acc1 = {0.0f, 0.0f, 0.0f, 0.0f};
+  fp32x4 acc2 = {0.0f, 0.0f, 0.0f, 0.0f};
+  fp32x4 acc3 = {0.0f, 0.0f, 0.0f, 0.0f};
+
+  const int wave_tile_base = wave * TILES_N_PER_WAVE * TILE_ELEMS;
+  const int64_t k_full = (K / TILE_K) * TILE_K;
+  const bool full_mn = (block_m + TILE_M <= M) && (block_n + BLOCK_N_BALANCED <= N);
+
+  if (full_mn) {
+    for (int64_t k0 = 0; k0 < k_full; k0 += TILE_K) {
+      for (int t = tid; t < TILE_M * TILE_K; t += BLOCK_THREADS_BALANCED) {
+        const int r = t >> 4;
+        const int kk = t & 15;
+        const int64_t gk = k0 + kk;
+        As[t] = A[(block_m + r) * K + gk];
       }
+
+      for (int t = tid; t < TILES_N_PER_BLOCK_BALANCED * TILE_ELEMS; t += BLOCK_THREADS_BALANCED) {
+        const int tile = t / TILE_ELEMS;
+        const int rem = t - tile * TILE_ELEMS;
+        const int r = rem >> 4;
+        const int kk = rem & 15;
+        const int64_t gn = block_n + static_cast<int64_t>(tile * TILE_N + r);
+        const int64_t gk = k0 + kk;
+        Bs[t] = B[gn * K + gk];
+      }
+
+      __syncthreads();
+
+      i16x4 a_frag = {
+          static_cast<int16_t>(As[base + 0]),
+          static_cast<int16_t>(As[base + 1]),
+          static_cast<int16_t>(As[base + 2]),
+          static_cast<int16_t>(As[base + 3])};
+
+      i16x4 b0_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 3])};
+
+      i16x4 b1_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 3])};
+
+      i16x4 b2_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 3])};
+
+      i16x4 b3_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 3])};
+
+      acc0 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b0_frag, acc0, 0, 0, 0);
+      acc1 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b1_frag, acc1, 0, 0, 0);
+      acc2 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b2_frag, acc2, 0, 0, 0);
+      acc3 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b3_frag, acc3, 0, 0, 0);
+
+      __syncthreads();
     }
 
-    for (int64_t k0 = 0; k0 < K; k0 += SBK) {
-      for (int idx = tid; idx < SBM * SBK; idx += STHREADS_PER_BLOCK) {
-        const int r = idx / SBK;
-        const int kk = idx - r * SBK;
+    if (k_full < K) {
+      for (int t = tid; t < TILE_M * TILE_K; t += BLOCK_THREADS_BALANCED) {
+        const int r = t >> 4;
+        const int kk = t & 15;
+        const int64_t gk = k_full + kk;
+        uint16_t av = 0;
+        if (gk < K) {
+          av = A[(block_m + r) * K + gk];
+        }
+        As[t] = av;
+      }
+
+      for (int t = tid; t < TILES_N_PER_BLOCK_BALANCED * TILE_ELEMS; t += BLOCK_THREADS_BALANCED) {
+        const int tile = t / TILE_ELEMS;
+        const int rem = t - tile * TILE_ELEMS;
+        const int r = rem >> 4;
+        const int kk = rem & 15;
+        const int64_t gn = block_n + static_cast<int64_t>(tile * TILE_N + r);
+        const int64_t gk = k_full + kk;
+        uint16_t bv = 0;
+        if (gk < K) {
+          bv = B[gn * K + gk];
+        }
+        Bs[t] = bv;
+      }
+
+      __syncthreads();
+
+      i16x4 a_frag = {
+          static_cast<int16_t>(As[base + 0]),
+          static_cast<int16_t>(As[base + 1]),
+          static_cast<int16_t>(As[base + 2]),
+          static_cast<int16_t>(As[base + 3])};
+
+      i16x4 b0_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 3])};
+
+      i16x4 b1_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 3])};
+
+      i16x4 b2_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 3])};
+
+      i16x4 b3_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 3])};
+
+      acc0 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b0_frag, acc0, 0, 0, 0);
+      acc1 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b1_frag, acc1, 0, 0, 0);
+      acc2 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b2_frag, acc2, 0, 0, 0);
+      acc3 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b3_frag, acc3, 0, 0, 0);
+    }
+
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const int64_t gm = block_m + out_m[i];
+      const int64_t gn = wave_block_n + out_n[i];
+      C[gm * N + (gn + 0 * TILE_N)] = float_to_bf16_rn(acc0[i]);
+      C[gm * N + (gn + 1 * TILE_N)] = float_to_bf16_rn(acc1[i]);
+      C[gm * N + (gn + 2 * TILE_N)] = float_to_bf16_rn(acc2[i]);
+      C[gm * N + (gn + 3 * TILE_N)] = float_to_bf16_rn(acc3[i]);
+    }
+  } else {
+    for (int64_t k0 = 0; k0 < k_full; k0 += TILE_K) {
+      for (int t = tid; t < TILE_M * TILE_K; t += BLOCK_THREADS_BALANCED) {
+        const int r = t >> 4;
+        const int kk = t & 15;
         const int64_t gm = block_m + r;
         const int64_t gk = k0 + kk;
-        float v = 0.0f;
-        if (gm < M && gk < K) {
-          v = bf16_to_float(A[gm * K + gk]);
+        uint16_t av = 0;
+        if (gm < M) {
+          av = A[gm * K + gk];
         }
-        As[idx] = v;
+        As[t] = av;
       }
 
-      for (int idx = tid; idx < SBN * SBK; idx += STHREADS_PER_BLOCK) {
-        const int c = idx / SBK;
-        const int kk = idx - c * SBK;
-        const int64_t gn = block_n + c;
+      for (int t = tid; t < TILES_N_PER_BLOCK_BALANCED * TILE_ELEMS; t += BLOCK_THREADS_BALANCED) {
+        const int tile = t / TILE_ELEMS;
+        const int rem = t - tile * TILE_ELEMS;
+        const int r = rem >> 4;
+        const int kk = rem & 15;
+        const int64_t gn = block_n + static_cast<int64_t>(tile * TILE_N + r);
         const int64_t gk = k0 + kk;
-        float v = 0.0f;
-        if (gn < N && gk < K) {
-          v = bf16_to_float(B[gn * K + gk]);
+        uint16_t bv = 0;
+        if (gn < N) {
+          bv = B[gn * K + gk];
         }
-        Bs[kk * SBN + c] = v;
+        Bs[t] = bv;
       }
 
       __syncthreads();
-      compute_tile_small(As, Bs, acc, local_row_base, local_col_base);
+
+      i16x4 a_frag = {
+          static_cast<int16_t>(As[base + 0]),
+          static_cast<int16_t>(As[base + 1]),
+          static_cast<int16_t>(As[base + 2]),
+          static_cast<int16_t>(As[base + 3])};
+
+      i16x4 b0_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 3])};
+
+      i16x4 b1_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 3])};
+
+      i16x4 b2_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 3])};
+
+      i16x4 b3_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 3])};
+
+      acc0 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b0_frag, acc0, 0, 0, 0);
+      acc1 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b1_frag, acc1, 0, 0, 0);
+      acc2 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b2_frag, acc2, 0, 0, 0);
+      acc3 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b3_frag, acc3, 0, 0, 0);
+
       __syncthreads();
     }
 
+    if (k_full < K) {
+      for (int t = tid; t < TILE_M * TILE_K; t += BLOCK_THREADS_BALANCED) {
+        const int r = t >> 4;
+        const int kk = t & 15;
+        const int64_t gm = block_m + r;
+        const int64_t gk = k_full + kk;
+        uint16_t av = 0;
+        if (gm < M && gk < K) {
+          av = A[gm * K + gk];
+        }
+        As[t] = av;
+      }
+
+      for (int t = tid; t < TILES_N_PER_BLOCK_BALANCED * TILE_ELEMS; t += BLOCK_THREADS_BALANCED) {
+        const int tile = t / TILE_ELEMS;
+        const int rem = t - tile * TILE_ELEMS;
+        const int r = rem >> 4;
+        const int kk = rem & 15;
+        const int64_t gn = block_n + static_cast<int64_t>(tile * TILE_N + r);
+        const int64_t gk = k_full + kk;
+        uint16_t bv = 0;
+        if (gn < N && gk < K) {
+          bv = B[gn * K + gk];
+        }
+        Bs[t] = bv;
+      }
+
+      __syncthreads();
+
+      i16x4 a_frag = {
+          static_cast<int16_t>(As[base + 0]),
+          static_cast<int16_t>(As[base + 1]),
+          static_cast<int16_t>(As[base + 2]),
+          static_cast<int16_t>(As[base + 3])};
+
+      i16x4 b0_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 0 * TILE_ELEMS + base + 3])};
+
+      i16x4 b1_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 1 * TILE_ELEMS + base + 3])};
+
+      i16x4 b2_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 2 * TILE_ELEMS + base + 3])};
+
+      i16x4 b3_frag = {
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 0]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 1]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 2]),
+          static_cast<int16_t>(Bs[wave_tile_base + 3 * TILE_ELEMS + base + 3])};
+
+      acc0 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b0_frag, acc0, 0, 0, 0);
+      acc1 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b1_frag, acc1, 0, 0, 0);
+      acc2 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b2_frag, acc2, 0, 0, 0);
+      acc3 = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(a_frag, b3_frag, acc3, 0, 0, 0);
+    }
+
 #pragma unroll
-    for (int i = 0; i < STM; ++i) {
-      const int64_t gm = block_m + local_row_base + i;
-      if (gm >= M) continue;
-#pragma unroll
-      for (int j = 0; j < STN; ++j) {
-        const int64_t gn = block_n + local_col_base + j;
-        if (gn >= N) continue;
-        C[gm * N + gn] = float_to_bf16_rn(acc[i][j]);
+    for (int i = 0; i < 4; ++i) {
+      const int64_t gm = block_m + out_m[i];
+      const int64_t gn = wave_block_n + out_n[i];
+      if (gm < M) {
+        if (gn + 0 * TILE_N < N) C[gm * N + (gn + 0 * TILE_N)] = float_to_bf16_rn(acc0[i]);
+        if (gn + 1 * TILE_N < N) C[gm * N + (gn + 1 * TILE_N)] = float_to_bf16_rn(acc1[i]);
+        if (gn + 2 * TILE_N < N) C[gm * N + (gn + 2 * TILE_N)] = float_to_bf16_rn(acc2[i]);
+        if (gn + 3 * TILE_N < N) C[gm * N + (gn + 3 * TILE_N)] = float_to_bf16_rn(acc3[i]);
       }
     }
   }
+
+#else
+  scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, wave_block_n + 0 * TILE_N);
+  scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, wave_block_n + 1 * TILE_N);
+  scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, wave_block_n + 2 * TILE_N);
+  scalar_fallback_tile(A, B, C, M, N, K, lane, block_m, wave_block_n + 3 * TILE_N);
+#endif
 }
 
 hipError_t ksearch_launch_gemm_bf16_var_mnk(
@@ -367,23 +827,21 @@ hipError_t ksearch_launch_gemm_bf16_var_mnk(
     int64_t M,
     int64_t N,
     int64_t K) {
-  const bool tiny_output = (M > 0 && N > 0 && (M * N) <= 4096);
-  const bool rectangular_small = (M <= 32 || N <= 32);
+  gemm_bf16_var_mnk_kernel<<<grid, block, shared_mem, stream>>>(A, B, C, M, N, K);
+  return hipGetLastError();
+}
 
-  if (tiny_output || rectangular_small) {
-    const int64_t tiles_m = (M + SBM - 1) / SBM;
-    const int64_t tiles_n = (N + SBN - 1) / SBN;
-    const int64_t total_tiles = tiles_m * tiles_n;
-    uint32_t persistent_blocks = static_cast<uint32_t>(total_tiles < 8 ? total_tiles : 8);
-    if (persistent_blocks == 0) {
-      return hipSuccess;
-    }
-    dim3 small_grid(persistent_blocks, 1, 1);
-    dim3 small_block(STHREADS_X, STHREADS_Y, 1);
-    gemm_bf16_var_mnk_small_kernel<<<small_grid, small_block, 0, stream>>>(A, B, C, M, N, K);
-  } else {
-    gemm_bf16_var_mnk_kernel<<<grid, block, shared_mem, stream>>>(A, B, C, M, N, K);
-  }
-
+hipError_t ksearch_launch_gemm_bf16_var_mnk_balanced(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    const uint16_t* A,
+    const uint16_t* B,
+    uint16_t* C,
+    int64_t M,
+    int64_t N,
+    int64_t K) {
+  gemm_bf16_var_mnk_balanced_kernel<<<grid, block, shared_mem, stream>>>(A, B, C, M, N, K);
   return hipGetLastError();
 }

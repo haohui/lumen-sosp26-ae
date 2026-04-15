@@ -1,18 +1,27 @@
 #include <torch/extension.h>
-#include <c10/hip/HIPStream.h>
 #include <hip/hip_runtime.h>
+#include <c10/hip/HIPStream.h>
 
 #include <cstdint>
 
 #include "kernel.h"
+#ifndef TILE_K
+#define TILE_K 16
+#endif
 
 namespace py = pybind11;
 
 namespace {
-constexpr int BM = 64;
-constexpr int BN = 64;
-constexpr int TM = 4;
-constexpr int TN = 4;
+constexpr int TILE_M = 16;
+constexpr int TILE_N = 16;
+
+constexpr int TILES_N_PER_BLOCK_BASE = 4;
+constexpr int BLOCK_N_BASE = TILE_N * TILES_N_PER_BLOCK_BASE;
+constexpr int BLOCK_THREADS_BASE = 64;
+
+constexpr int TILES_N_PER_BLOCK_BALANCED = 8;
+constexpr int BLOCK_N_BALANCED = TILE_N * TILES_N_PER_BLOCK_BALANCED;
+constexpr int BLOCK_THREADS_BALANCED = 128;
 }  // namespace
 
 static inline void check_hip(hipError_t err, const char* msg) {
@@ -66,16 +75,30 @@ torch::Tensor run(torch::Tensor A, torch::Tensor B) {
   const uint16_t* B_ptr = reinterpret_cast<const uint16_t*>(B_bf16.data_ptr<c10::BFloat16>());
   uint16_t* C_ptr = reinterpret_cast<uint16_t*>(C.data_ptr<c10::BFloat16>());
 
-  dim3 block(BN / TN, BM / TM, 1);
-  dim3 grid(
-      static_cast<uint32_t>((N + BN - 1) / BN),
-      static_cast<uint32_t>((M + BM - 1) / BM),
-      1);
+  const bool use_balanced = (M >= 64) && (N >= BLOCK_N_BALANCED) && (K >= (2 * TILE_K));
 
-  hipStream_t stream = c10::hip::getCurrentHIPStream();
-  check_hip(
-      ksearch_launch_gemm_bf16_var_mnk(grid, block, 0, stream, A_ptr, B_ptr, C_ptr, M, N, K),
-      "ksearch_launch_gemm_bf16_var_mnk failed");
+  hipStream_t stream = c10::hip::getCurrentHIPStream(device_index).stream();
+  if (use_balanced) {
+    dim3 block(BLOCK_THREADS_BALANCED, 1, 1);
+    dim3 grid(
+        static_cast<uint32_t>((N + BLOCK_N_BALANCED - 1) / BLOCK_N_BALANCED),
+        static_cast<uint32_t>((M + TILE_M - 1) / TILE_M),
+        1);
+
+    check_hip(
+        ksearch_launch_gemm_bf16_var_mnk_balanced(grid, block, 0, stream, A_ptr, B_ptr, C_ptr, M, N, K),
+        "ksearch_launch_gemm_bf16_var_mnk_balanced failed");
+  } else {
+    dim3 block(BLOCK_THREADS_BASE, 1, 1);
+    dim3 grid(
+        static_cast<uint32_t>((N + BLOCK_N_BASE - 1) / BLOCK_N_BASE),
+        static_cast<uint32_t>((M + TILE_M - 1) / TILE_M),
+        1);
+
+    check_hip(
+        ksearch_launch_gemm_bf16_var_mnk(grid, block, 0, stream, A_ptr, B_ptr, C_ptr, M, N, K),
+        "ksearch_launch_gemm_bf16_var_mnk failed");
+  }
 
   return C;
 }

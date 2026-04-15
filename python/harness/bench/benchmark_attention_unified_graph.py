@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+from typing import Any, Dict, List
+
+from attn_runtime import SharedInputs, attention_tflops, build_shared_inputs
+from common import (
+    add_common_runtime_args,
+    add_timer_args,
+    apply_cpu_affinity,
+    apply_visible_devices,
+    build_csv_row,
+    build_model_fn,
+    enable_default_flags,
+    load_module,
+    maybe_write_csv,
+    now_utc,
+    parse_dtype,
+    parse_int_csv,
+    time_call,
+    timing_fields,
+    validate_device_local_index,
+)
+
+try:
+    import torch
+except Exception:
+    torch = None
+
+
+def _row(*, baseline: str, kernel_path: str, seq_len: int, args: argparse.Namespace, timing) -> Dict[str, Any]:
+    return {
+        "baseline": baseline,
+        "kernel_path": kernel_path,
+        "seq_len": seq_len,
+        "batch_size": args.batch_size,
+        "num_q_heads": args.num_q_heads,
+        "head_dim": args.head_dim,
+        "causal": bool(args.causal),
+        **timing_fields(
+            timing,
+            tflops_median=attention_tflops(
+                batch_size=args.batch_size,
+                seq_len=seq_len,
+                num_q_heads=args.num_q_heads,
+                head_dim=args.head_dim,
+                causal=bool(args.causal),
+                ms=timing.median_ms,
+            ),
+        ),
+    }
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Attention benchmark with CUDA Graph timing")
+    add_common_runtime_args(p)
+    p.set_defaults(seed=20260314)
+    p.add_argument("--dtype", type=str, default="bf16", choices=["bf16", "fp16"])
+    p.add_argument("--seq-lens", type=str, default="1024,2048,4096,8192,16384")
+    p.add_argument("--batch-size", type=int, default=16)
+    p.add_argument("--num-q-heads", type=int, default=8)
+    p.add_argument("--num-kv-heads", type=int, default=1)
+    p.add_argument("--head-dim", type=int, default=128)
+    p.add_argument("--causal", dest="causal", action="store_true", default=True)
+    p.add_argument("--non-causal", dest="causal", action="store_false")
+    add_timer_args(p)
+
+    p.add_argument("--run-aiter", action="store_true")
+    p.add_argument("--run-triton", action="store_true")
+    p.add_argument("--run-kernelfalcon", action="store_true")
+    p.add_argument("--run-ksearch", action="store_true")
+    p.add_argument("--run-kernelbench", action="store_true")
+    p.add_argument("--run-cudaforge", action="store_true")
+
+    p.add_argument("--csv-out", type=Path, default=None)
+    p.add_argument("--run-id", type=str, default="")
+
+    args = p.parse_args()
+    if not bool(args.causal):
+        raise ValueError(
+            "--non-causal is not supported by the bundled attention baselines; "
+            "use causal mode only"
+        )
+    enable_default_flags(
+        args,
+        [
+            "run_aiter",
+            "run_triton",
+            "run_kernelfalcon",
+            "run_ksearch",
+            "run_kernelbench",
+            "run_cudaforge",
+        ],
+    )
+    return args
+
+
+def main() -> None:
+    args = parse_args()
+    visible = apply_visible_devices(args.hip_visible_devices)
+    apply_cpu_affinity(args.cpu_cores)
+    validate_device_local_index(args.device, visible)
+
+    repo_root = Path(__file__).resolve().parents[3]
+    attn_root = repo_root / "data" / "benchmarks" / "attn"
+    baseline_defs: List[tuple[str, Path, bool]] = [
+        ("aiter", attn_root / "06_aiter" / "best_kernel.py", args.run_aiter),
+        ("triton", attn_root / "05_triton" / "best_kernel.py", args.run_triton),
+        ("kernelfalcon", attn_root / "03_kernelfalcon" / "best_kernel.py", args.run_kernelfalcon),
+        ("ksearch", attn_root / "04_ksearch" / "best_kernel.py", args.run_ksearch),
+        ("kernelbench", attn_root / "01_kernelbench" / "best_kernel.py", args.run_kernelbench),
+        ("cudaforge", attn_root / "02_cudaforge" / "best_kernel.py", args.run_cudaforge),
+    ]
+
+    seq_lens = parse_int_csv(args.seq_lens, name="seq-lens")
+
+    if torch is None:
+        raise RuntimeError("torch is required")
+
+    torch.manual_seed(args.seed)
+    device = torch.device(args.device)
+    dtype = parse_dtype(args.dtype)
+    shared = build_shared_inputs(
+        seq_lens=seq_lens,
+        batch_size=args.batch_size,
+        num_q_heads=args.num_q_heads,
+        num_kv_heads=args.num_kv_heads,
+        head_dim=args.head_dim,
+        device=device,
+        dtype=dtype,
+        seed=args.seed,
+    )
+
+    timestamp = now_utc()
+    rows: List[Dict[str, Any]] = []
+    csv_rows: List[Dict[str, Any]] = []
+    enabled = [(n, p) for (n, p, on) in baseline_defs if on]
+    for name, path in enabled:
+        mod = load_module(path)
+        fn = build_model_fn(mod, device=device, dtype=dtype)
+        for s in seq_lens:
+            x = shared[s]
+            timing = time_call(lambda: fn(x.q_bshd, x.k_bshd, x.v_bshd), device=device, args=args)
+            row = _row(baseline=name, kernel_path=str(path), seq_len=s, args=args, timing=timing)
+            rows.append(row)
+            csv_rows.append(
+                build_csv_row(
+                    domain="attention",
+                    baseline=name,
+                    workload=s,
+                    mean_ms=timing.mean_ms,
+                    tflops=attention_tflops(
+                        batch_size=args.batch_size,
+                        seq_len=s,
+                        num_q_heads=args.num_q_heads,
+                        head_dim=args.head_dim,
+                        causal=bool(args.causal),
+                        ms=timing.mean_ms,
+                    ),
+                    status=row["status"],
+                    kernel_entry=str(path),
+                    timestamp_utc=timestamp,
+                    run_id=args.run_id,
+                )
+            )
+    maybe_write_csv(csv_out=args.csv_out, rows=csv_rows)
+
+
+if __name__ == "__main__":
+    main()

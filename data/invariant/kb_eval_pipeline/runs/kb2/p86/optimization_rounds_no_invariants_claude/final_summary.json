@@ -1,0 +1,19 @@
+{
+  "problem_id": "p86",
+  "problem_name": "p86",
+  "updated_at_utc": "2026-04-10T09:24:32Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 14.7,
+    "ref_runtime_us": 0.279,
+    "speedup": 0.018979591836734696
+  },
+  "best_correct_round": {
+    "round": 2,
+    "runtime_us": 14.7,
+    "ref_runtime_us": 0.279,
+    "speedup": 0.018979591836734696
+  }
+}

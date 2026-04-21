@@ -1,0 +1,19 @@
+{
+  "problem_id": "p66",
+  "problem_name": "p66",
+  "updated_at_utc": "2026-04-09T06:02:33Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 5.51,
+    "ref_runtime_us": 0.263,
+    "speedup": 0.04773139745916516
+  },
+  "best_correct_round": {
+    "round": 1,
+    "runtime_us": 5.46,
+    "ref_runtime_us": 0.271,
+    "speedup": 0.04963369963369964
+  }
+}

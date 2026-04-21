@@ -1,0 +1,19 @@
+{
+  "problem_id": "p88",
+  "problem_name": "p88",
+  "updated_at_utc": "2026-03-31T12:22:26Z",
+  "final_output": {
+    "round": 3,
+    "correctness": null,
+    "compiled": null,
+    "runtime_us": null,
+    "ref_runtime_us": null,
+    "speedup": null
+  },
+  "best_correct_round": {
+    "round": null,
+    "runtime_us": null,
+    "ref_runtime_us": null,
+    "speedup": null
+  }
+}

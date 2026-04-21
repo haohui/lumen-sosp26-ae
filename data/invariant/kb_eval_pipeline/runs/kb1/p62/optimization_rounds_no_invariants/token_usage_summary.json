@@ -1,0 +1,41 @@
+{
+  "totals": {
+    "input_tokens": 1148175,
+    "cached_input_tokens": 1060608,
+    "output_tokens": 22170,
+    "reasoning_output_tokens": 10600,
+    "total_tokens": 1170345
+  },
+  "rounds": [
+    {
+      "round": 0,
+      "input_tokens": null,
+      "cached_input_tokens": null,
+      "output_tokens": null,
+      "reasoning_output_tokens": null,
+      "total_tokens": null,
+      "provider": null,
+      "captured_at": null
+    },
+    {
+      "round": 1,
+      "input_tokens": 267186,
+      "cached_input_tokens": 229120,
+      "output_tokens": 6142,
+      "reasoning_output_tokens": 2740,
+      "total_tokens": 273328,
+      "provider": "codex-session-log",
+      "captured_at": "2026-04-01T09:31:36.125Z"
+    },
+    {
+      "round": 2,
+      "input_tokens": 880989,
+      "cached_input_tokens": 831488,
+      "output_tokens": 16028,
+      "reasoning_output_tokens": 7860,
+      "total_tokens": 897017,
+      "provider": "codex-session-log",
+      "captured_at": "2026-04-01T09:37:12.540Z"
+    }
+  ]
+}

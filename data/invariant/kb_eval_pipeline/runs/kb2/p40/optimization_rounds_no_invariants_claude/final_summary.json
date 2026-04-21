@@ -1,0 +1,19 @@
+{
+  "problem_id": "p40",
+  "problem_name": "p40",
+  "updated_at_utc": "2026-04-10T04:11:39Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 3.23,
+    "ref_runtime_us": 1.13,
+    "speedup": 0.3498452012383901
+  },
+  "best_correct_round": {
+    "round": 2,
+    "runtime_us": 3.2,
+    "ref_runtime_us": 1.14,
+    "speedup": 0.35624999999999996
+  }
+}

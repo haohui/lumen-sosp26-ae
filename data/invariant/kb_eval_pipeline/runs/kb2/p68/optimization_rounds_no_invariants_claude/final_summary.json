@@ -1,0 +1,19 @@
+{
+  "problem_id": "p68",
+  "problem_name": "p68",
+  "updated_at_utc": "2026-04-11T02:06:30Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 1.48,
+    "ref_runtime_us": 0.24,
+    "speedup": 0.16216216216216217
+  },
+  "best_correct_round": {
+    "round": 3,
+    "runtime_us": 1.48,
+    "ref_runtime_us": 0.24,
+    "speedup": 0.16216216216216217
+  }
+}

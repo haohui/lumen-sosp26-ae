@@ -1,0 +1,19 @@
+{
+  "problem_id": "p80",
+  "problem_name": "p80",
+  "updated_at_utc": "2026-03-31T12:29:19Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 0.00597,
+    "ref_runtime_us": 0.449,
+    "speedup": 75.20938023450587
+  },
+  "best_correct_round": {
+    "round": 2,
+    "runtime_us": 0.00558,
+    "ref_runtime_us": 0.441,
+    "speedup": 79.03225806451613
+  }
+}

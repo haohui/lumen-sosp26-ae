@@ -1,0 +1,19 @@
+{
+  "problem_id": "p53",
+  "problem_name": "p53",
+  "updated_at_utc": "2026-04-01T21:35:27Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 5.73,
+    "ref_runtime_us": 0.549,
+    "speedup": 0.09581151832460733
+  },
+  "best_correct_round": {
+    "round": 3,
+    "runtime_us": 5.73,
+    "ref_runtime_us": 0.549,
+    "speedup": 0.09581151832460733
+  }
+}

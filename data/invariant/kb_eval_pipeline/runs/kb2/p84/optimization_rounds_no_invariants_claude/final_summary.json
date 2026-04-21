@@ -1,0 +1,19 @@
+{
+  "problem_id": "p84",
+  "problem_name": "p84",
+  "updated_at_utc": "2026-04-10T20:01:00Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 3390.0,
+    "ref_runtime_us": 0.322,
+    "speedup": 9.498525073746313e-05
+  },
+  "best_correct_round": {
+    "round": 3,
+    "runtime_us": 3390.0,
+    "ref_runtime_us": 0.322,
+    "speedup": 9.498525073746313e-05
+  }
+}

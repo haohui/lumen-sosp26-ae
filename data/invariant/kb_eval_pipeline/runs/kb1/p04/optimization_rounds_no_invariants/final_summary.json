@@ -1,0 +1,19 @@
+{
+  "problem_id": "p04",
+  "problem_name": "p04",
+  "updated_at_utc": "2026-03-30T12:56:07Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 1.2,
+    "ref_runtime_us": 1.14,
+    "speedup": 0.95
+  },
+  "best_correct_round": {
+    "round": 1,
+    "runtime_us": 1.18,
+    "ref_runtime_us": 1.15,
+    "speedup": 0.9745762711864406
+  }
+}

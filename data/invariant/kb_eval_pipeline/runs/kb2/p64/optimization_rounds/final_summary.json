@@ -1,0 +1,19 @@
+{
+  "problem_id": "p64",
+  "problem_name": "p64",
+  "updated_at_utc": "2026-03-31T10:46:30Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 60.7,
+    "ref_runtime_us": 0.333,
+    "speedup": 0.005485996705107084
+  },
+  "best_correct_round": {
+    "round": 2,
+    "runtime_us": 61.3,
+    "ref_runtime_us": 0.337,
+    "speedup": 0.005497553017944535
+  }
+}

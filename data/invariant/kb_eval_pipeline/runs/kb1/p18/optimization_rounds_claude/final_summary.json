@@ -1,0 +1,19 @@
+{
+  "problem_id": "p18",
+  "problem_name": "p18",
+  "updated_at_utc": "2026-04-01T14:45:03Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 2.16,
+    "ref_runtime_us": 0.676,
+    "speedup": 0.31296296296296294
+  },
+  "best_correct_round": {
+    "round": 3,
+    "runtime_us": 2.16,
+    "ref_runtime_us": 0.676,
+    "speedup": 0.31296296296296294
+  }
+}

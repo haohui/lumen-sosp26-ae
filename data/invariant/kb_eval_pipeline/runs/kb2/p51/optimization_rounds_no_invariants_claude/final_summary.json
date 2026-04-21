@@ -1,0 +1,19 @@
+{
+  "problem_id": "p51",
+  "problem_name": "p51",
+  "updated_at_utc": "2026-04-09T08:50:00Z",
+  "final_output": {
+    "round": 3,
+    "correctness": true,
+    "compiled": true,
+    "runtime_us": 0.591,
+    "ref_runtime_us": 0.613,
+    "speedup": 1.0372250423011844
+  },
+  "best_correct_round": {
+    "round": 3,
+    "runtime_us": 0.591,
+    "ref_runtime_us": 0.613,
+    "speedup": 1.0372250423011844
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "totals": {
+    "input_tokens": 2334014,
+    "cached_input_tokens": 2211200,
+    "output_tokens": 32978,
+    "reasoning_output_tokens": 14767,
+    "total_tokens": 2366992
+  },
+  "rounds": [
+    {
+      "round": 0,
+      "input_tokens": null,
+      "cached_input_tokens": null,
+      "output_tokens": null,
+      "reasoning_output_tokens": null,
+      "total_tokens": null,
+      "provider": null,
+      "captured_at": null
+    },
+    {
+      "round": 1,
+      "input_tokens": 1695411,
+      "cached_input_tokens": 1615488,
+      "output_tokens": 19630,
+      "reasoning_output_tokens": 11523,
+      "total_tokens": 1715041,
+      "provider": "codex-session-log",
+      "captured_at": "2026-03-30T12:56:16.457Z"
+    },
+    {
+      "round": 2,
+      "input_tokens": 313096,
+      "cached_input_tokens": 295424,
+      "output_tokens": 7799,
+      "reasoning_output_tokens": 1586,
+      "total_tokens": 320895,
+      "provider": "codex-session-log",
+      "captured_at": "2026-03-30T12:59:12.005Z"
+    },
+    {
+      "round": 3,
+      "input_tokens": 325507,
+      "cached_input_tokens": 300288,
+      "output_tokens": 5549,
+      "reasoning_output_tokens": 1658,
+      "total_tokens": 331056,
+      "provider": "codex-session-log",
+      "captured_at": "2026-03-30T13:01:48.412Z"
+    }
+  ]
+}

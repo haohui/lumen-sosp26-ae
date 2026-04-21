@@ -1,0 +1,41 @@
+{
+  "totals": {
+    "input_tokens": 1737079,
+    "cached_input_tokens": 1175616,
+    "output_tokens": 26024,
+    "reasoning_output_tokens": 0,
+    "total_tokens": 2938719
+  },
+  "rounds": [
+    {
+      "round": 0,
+      "input_tokens": null,
+      "cached_input_tokens": null,
+      "output_tokens": null,
+      "reasoning_output_tokens": null,
+      "total_tokens": null,
+      "provider": null,
+      "captured_at": null
+    },
+    {
+      "round": 1,
+      "input_tokens": 1573802,
+      "cached_input_tokens": 1068672,
+      "output_tokens": 21661,
+      "reasoning_output_tokens": 0,
+      "total_tokens": 2664135,
+      "provider": "claude-session-log",
+      "captured_at": "2026-04-10T10:36:36.566Z"
+    },
+    {
+      "round": 2,
+      "input_tokens": 163277,
+      "cached_input_tokens": 106944,
+      "output_tokens": 4363,
+      "reasoning_output_tokens": 0,
+      "total_tokens": 274584,
+      "provider": "claude-session-log",
+      "captured_at": "2026-04-10T10:38:54.404Z"
+    }
+  ]
+}

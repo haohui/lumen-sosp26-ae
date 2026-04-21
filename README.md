@@ -66,4 +66,6 @@ benchmark inputs and generated outputs live under `data/`:
   implementations.
 - `data/benchmarks/kernelbench/lumen/`: Lumen-generated KernelBench solutions,
   including multiple optimization rounds when applicable.
-
+- `data/invariant/`: artifact-evaluation assets for the MFMA invariant ablation,
+  including the vendored `kb_eval_pipeline/` workspace, prompt templates, and
+  compact experiment `runs/`.

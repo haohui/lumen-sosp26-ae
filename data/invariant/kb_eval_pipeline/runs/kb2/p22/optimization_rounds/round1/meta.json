@@ -1,0 +1,44 @@
+{
+  "problem_id": "p22",
+  "problem_name": "p22",
+  "stage": "optimization_loop_eval",
+  "error": "Output mismatch",
+  "optimization_loop": {
+    "status": "eval_failed",
+    "round": 1,
+    "source_round_name": "round0",
+    "source_round_path": "kb_eval_pipeline/runs/kb2/p22/optimization_rounds/round0",
+    "candidate_input_path": "candidate_input.py",
+    "prompt_path": "prompt.txt",
+    "allowed_hint_numbers": [
+      1
+    ],
+    "allowed_hint_titles": [
+      "Prompt 1"
+    ],
+    "prompt_mode": "sequential",
+    "agent": "codex",
+    "model": "gpt-5.4",
+    "effort": "medium",
+    "agent_exit_code": 0,
+    "agent_trace_path": "agent_trace.jsonl",
+    "agent_session_id": "019efe14-42a8-7ad2-8d98-d4a1858f2098",
+    "sandbox_bypassed": true,
+    "started_at_utc": "2026-06-25T09:20:00Z",
+    "finished_at_utc": "2026-06-25T09:28:34Z",
+    "error": "Output mismatch",
+    "case_path": "case.txt",
+    "eval_config_path": "eval_config.json",
+    "harness_events_path": "harness_events.jsonl",
+    "output_model_path": "output_model_new.py"
+  },
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "compiled": true,
+  "correctness": false,
+  "runtime_us": null,
+  "ref_runtime_us": 0.362,
+  "speedup": null,
+  "new_ms": null,
+  "ref_ms": 0.00036199999999999996
+}

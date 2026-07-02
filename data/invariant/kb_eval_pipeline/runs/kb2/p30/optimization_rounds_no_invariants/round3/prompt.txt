@@ -1,0 +1,28 @@
+Read the starting kernel from /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3/candidate_input.py.
+Write the final optimized kernel only to /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3/output_model_new.py.
+Do not modify /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3/candidate_input.py.
+
+## 3: Prompt 3
+
+Utilize range in S.amdgpu.raw_buffer_load_x4 / S.amdgpu.raw_buffer_store_* to remove the explicit branches guarding OOB access. The range is in the units of bytes. When range is set, S.amdgpu.raw_buffer_load_x4() returns 0 for OOB elements, and S.amdgpu.raw_buffer_store*() discards the OOB writes. The computations and LDS access still work with 0, and the OOB writes are discarded, therefore the optimization is safe. Removing the branches in the loop is more beneficial compared to reducing extra computations and LDS access.
+
+Evaluation command for this round:
+- The fixed round-local case list is /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3/case.txt. It contains exactly one line: /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python3 /workspace/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3/case.txt --output /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3.
+You may read test and evaluation output files only if they are inside /workspace/kb_eval_pipeline/runs/kb2/p30/optimization_rounds_no_invariants/round3.
+Do not read files outside those allowed locations.
+
+Stop when this round's prompt requirement is implemented and correctness passes. Do not continue iterating on unrelated micro-optimizations.

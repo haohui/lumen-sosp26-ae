@@ -1,0 +1,44 @@
+{
+  "problem_id": "p05",
+  "problem_name": "p05",
+  "stage": "optimization_loop_eval",
+  "error": "OK",
+  "optimization_loop": {
+    "status": "completed",
+    "round": 3,
+    "source_round_name": "round2",
+    "source_round_path": "kb_eval_pipeline/runs/kb1/p05/optimization_rounds/round2",
+    "candidate_input_path": "candidate_input.py",
+    "prompt_path": "prompt.txt",
+    "allowed_hint_numbers": [
+      3
+    ],
+    "allowed_hint_titles": [
+      "Prompt 3"
+    ],
+    "prompt_mode": "sequential",
+    "agent": "codex",
+    "model": "gpt-5.4",
+    "effort": "medium",
+    "agent_exit_code": 0,
+    "agent_trace_path": "agent_trace.jsonl",
+    "agent_session_id": "019efd84-2460-7922-818d-c48c43ed21b0",
+    "sandbox_bypassed": true,
+    "started_at_utc": "2026-06-25T06:42:35Z",
+    "finished_at_utc": "2026-06-25T06:52:18Z",
+    "error": null,
+    "case_path": "case.txt",
+    "eval_config_path": "eval_config.json",
+    "harness_events_path": "harness_events.jsonl",
+    "output_model_path": "output_model_new.py"
+  },
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "compiled": true,
+  "correctness": true,
+  "runtime_us": 3.99,
+  "ref_runtime_us": 1.13,
+  "speedup": 0.2832080200501253,
+  "new_ms": 0.0039900000000000005,
+  "ref_ms": 0.00113
+}

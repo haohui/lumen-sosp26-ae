@@ -1,0 +1,28 @@
+{
+  "problem_id": "p15",
+  "problem_name": "p15",
+  "stage": "optimization_loop_seed",
+  "error": "OK",
+  "optimization_loop": {
+    "status": "seeded",
+    "round": 0,
+    "source_round_name": "round0",
+    "source_round_path": "kb_eval_pipeline/runs/kb1/p15/round0",
+    "candidate_input_path": "candidate_input.py",
+    "prompt_path": null,
+    "allowed_hint_numbers": [],
+    "allowed_hint_titles": [],
+    "agent": "seed-copy",
+    "requested_agent": "codex",
+    "model": null,
+    "effort": null,
+    "agent_exit_code": null,
+    "started_at_utc": null,
+    "finished_at_utc": "2026-06-25T08:40:54Z",
+    "error": null,
+    "eval_config_path": "eval_config.json",
+    "output_model_path": "output_model_new.py"
+  },
+  "has_prompt": false,
+  "has_output_model_new": true
+}

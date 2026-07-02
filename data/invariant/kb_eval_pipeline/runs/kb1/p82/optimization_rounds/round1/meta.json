@@ -1,0 +1,42 @@
+{
+  "problem_id": "p82",
+  "problem_name": "p82",
+  "stage": "optimization_loop_eval",
+  "error": "OK",
+  "optimization_loop": {
+    "status": "completed",
+    "round": 1,
+    "source_round_name": "round0",
+    "source_round_path": "kb_eval_pipeline/runs/kb1/p82/optimization_rounds/round0",
+    "candidate_input_path": "candidate_input.py",
+    "prompt_path": "prompt.txt",
+    "allowed_hint_numbers": [
+      1
+    ],
+    "allowed_hint_titles": [
+      "Prompt 1"
+    ],
+    "prompt_mode": "sequential",
+    "agent": "codex",
+    "model": null,
+    "effort": null,
+    "agent_exit_code": 0,
+    "agent_trace_path": "agent_trace.jsonl",
+    "agent_session_id": "019d489f-d5d3-7db1-b9e7-95ca90bd9d6a",
+    "sandbox_bypassed": true,
+    "started_at_utc": "2026-04-01T10:38:47Z",
+    "finished_at_utc": "2026-04-01T10:46:27Z",
+    "error": null,
+    "eval_config_path": "eval_config.json",
+    "output_model_path": "output_model_new.py"
+  },
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "compiled": true,
+  "correctness": true,
+  "runtime_us": null,
+  "ref_runtime_us": null,
+  "speedup": null,
+  "new_ms": null,
+  "ref_ms": null
+}

@@ -1,0 +1,44 @@
+Read the starting kernel from /workspace/kb_eval_pipeline/runs/kb1/p56/optimization_rounds/round2/candidate_input.py.
+Write the final optimized kernel only to /workspace/kb_eval_pipeline/runs/kb1/p56/optimization_rounds/round2/output_model_new.py.
+Do not modify /workspace/kb_eval_pipeline/runs/kb1/p56/optimization_rounds/round2/candidate_input.py.
+
+## 2: Prompt 2
+
+optimize the substrate kernel in /workspace/kb_eval_pipeline/runs/kb1/p56/optimization_rounds/round2/output_model_new.py
+
+Implement Split-K reduction for the MFMA Conv2D kernel with `SPLIT_K_SLICES = 2`. Keep the existing `128 x 128` output tile, 4-wave block, and per-wave `S.amdgpu.mfma_32x32x8_bf16_f32` execution unchanged. Extend the launch grid in `x` by `SPLIT_K_SLICES`, let each split compute a partial fp32 accumulation for the same `(group_m, group_n)` tile, and reduce the partial sums into a shared fp32 workspace with `S.amdgpu.buffer_atomic_add_f32`. After all split-K partial sums are written, run a second kernel that converts the fp32 workspace back to the final bf16 NCHW output.
+
+Split-K invariants:
+  Block decomposition invariant:
+  `linear_block_id = tile_block_id * SPLIT_K_SLICES + split_k_id`, where `tile_block_id` selects the same `(group_m, group_n)` tile as the baseline kernel and `split_k_id in [0, SPLIT_K_SLICES)` only chooses the K-slice. Do not change M/N tile ownership when adding split-K.
+
+  Channel partition invariant:
+  `c_per_split = ceil_div(in_channels, SPLIT_K_SLICES)`, `c_start = split_k_id * c_per_split`, `c_end = min(in_channels, c_start + c_per_split)`. The split ranges must be contiguous, disjoint, channel-aligned, and their union must cover `[0, in_channels)`.
+
+  K linearization invariant:
+  Inside the split kernel, flatten K as `k_idx = c * kernel_area + kh * kernel_w + kw`, so `c = k_idx // kernel_area`, `spatial = k_idx % kernel_area`, `kh = spatial // kernel_w`, and `kw = spatial % kernel_w`. Do not use the old `c = k_idx % in_channels` mapping; split boundaries must stay channel-aligned.
+
+  Operand layout invariant:
+  Read the input and weights directly as NCHW / OIHW tensors, i.e. `input[batch, c, h, w]` and `weight[out_channel, c, kh, kw]`. Do not rely on NHWC / OHWI pre-permutation once split-K is introduced.
+
+  Accumulator/output invariant:
+  Per-split MFMA math remains fp32, and no split may write bf16 output directly. All splits must reduce into a fp32 workspace with GEMM-major indexing `linear_idx = row * gemm_n + col`, where `row = batch * hw_out + hw_idx` and `col = out_channel`.
+
+  Finalization invariant:
+  The final bf16 output keeps the original NCHW layout. A separate store kernel must remap the fp32 GEMM-major workspace back to `out[batch, out_channel, hw_idx]` only after the split reductions are complete.
+
+MFMA and writeback invariants:
+  Keep the existing MFMA lane mapping and accumulator-to-output mapping unchanged. For every wave tile, `col = tile_col_base + (lane % 32)` and `row = tile_row_base + 8 * (acc_idx // 4) + 4 * (lane // 32) + (acc_idx % 4)`. Split-K changes reduction ownership, not the MFMA fragment layout.
+
+Preserve the 4-way writeback regrouping before the atomic add. `row_local` must map to `writeback_group = (row_local // 64) * 2 + ((row_local % 32) // 16)` and `group_row = (row_local % 16) + 16 * ((row_local % 64) // 32)`. The inverse mapping used by the atomic writeback pass must reconstruct the same `row_local`. Do not invent a different regrouping if you still stage through shared memory.
+
+Notes:
+
+1. The current snapshot of the repo under /workspace/substrate has MFMA examples in `/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py`.
+- Run `python -m pytest /workspace/substrate/test/examples/conv2d/amdgpu/test_conv2d_asym.py`
+- Make the optimized path cudagraph-safe: never build descriptor / metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+- Do not use torch native compute anywhere in `output_model_new.py` to perform convolution, multiplication, or linear algebra, including fallback branches.
+- The optimized kernel must actually issue MFMA instructions in the substrate kernel; a solution that does not use MFMA is not acceptable.
+- Do not use git to try to find any old files!!!
+
+Stop when this round's prompt requirement is implemented and correctness passes. Do not continue iterating on unrelated micro-optimizations.

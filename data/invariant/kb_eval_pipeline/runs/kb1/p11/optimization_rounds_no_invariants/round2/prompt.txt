@@ -1,0 +1,28 @@
+Read the starting kernel from /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2/candidate_input.py.
+Write the final optimized kernel only to /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2/output_model_new.py.
+Do not modify /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2/candidate_input.py.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+Evaluation command for this round:
+- The fixed round-local case list is /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2/case.txt. It contains exactly one line: /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python3 /workspace/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2.
+You may read test and evaluation output files only if they are inside /workspace/kb_eval_pipeline/runs/kb1/p11/optimization_rounds_no_invariants/round2.
+Do not read files outside those allowed locations.
+
+Stop when this round's prompt requirement is implemented and correctness passes. Do not continue iterating on unrelated micro-optimizations.

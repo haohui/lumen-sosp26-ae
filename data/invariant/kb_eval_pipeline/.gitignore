@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.so
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# Excluded source dump.
+lumen-sosp26-ae/
+
+# Do not commit gpucore artifacts if they are regenerated locally.
+*gpucore*
+*GPUCore*
+*gpu_core*
+*GPU_CORE*
+
+# Large or external dependencies should not be committed here.
+third_party/
+opt_kernel/attention-d128-openai/05_HipKittens/kernels/triton_cache_capture_*/

@@ -9,6 +9,9 @@ description = "Artifact evaluation repository for Lumen"
 readme = "README.md"
 requires-python = ">=3.12"
 
+[project.scripts]
+lumen-codex-run = "lumen.tools.codex_runner:main"
+
 [tool.setuptools.package-dir]
 "" = "python"
 

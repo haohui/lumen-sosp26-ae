@@ -1,0 +1,62 @@
+# Problem source. Use "huggingface" for online KernelBench.
+dataset_src: huggingface
+
+# HuggingFace dataset id.
+dataset_name: ScalingIntelligence/KernelBench
+
+# KernelBench level to generate.
+level: 1
+
+# Inclusive problem range [start, end].
+subset: [1, 1]
+
+# Optional explicit problem IDs. Empty means use subset.
+problem_ids: ""
+
+# Output directory for this generation run.
+run_dir: runs/lumen_kernelbench_demo
+
+# Agent backend registered in lumen_artifact.session.
+backend: claude
+
+# Per-agent-call timeout in seconds.
+timeout_seconds: 600
+
+# Maximum generation attempts per problem.
+max_retries: 3
+
+# Model name sent to the backend.
+model: deepseek-v4-pro
+
+# LLM endpoint sent to the backend.
+endpoint: https://cloud.infini-ai.com/maas
+
+# API key sent to the backend. Leave empty to inherit from the environment.
+api_key: ""
+
+# Number of generation workers.
+num_workers: 1
+
+# GPU IDs assigned round-robin for eval.
+gpu_ids: "0"
+
+# Target numeric precision included in the KernelBench prompt.
+precision: bf16
+
+# Save backend trace for each round.
+save_trajectory: true
+
+# Allow Claude Code to use the bundled Substrate example skills.
+use_example_skills: true
+
+# Number of correctness trials.
+eval_num_correct_trials: 5
+
+# Number of performance trials.
+eval_num_perf_trials: 10
+
+# KernelBench timing method.
+eval_timing_method: cudagraph
+
+# GPU architecture passed to KernelBench eval_config.json.
+gpu_arch: gfx942

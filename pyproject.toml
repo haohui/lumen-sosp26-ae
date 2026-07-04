@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Artifact evaluation repository for Lumen"
 readme = "README.md"
 requires-python = ">=3.12"
+dependencies = [
+    "PyYAML>=6.0",
+]
 
 [project.scripts]
 lumen-codex-run = "lumen.tools.codex_runner:main"

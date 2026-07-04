@@ -1,26 +1,136 @@
 #!/usr/bin/env python3
-"""Run a single Codex optimization task on a copied working directory.
-
-This is a generic runner:
-- input: a source directory to optimize and a prompt
-- output: a copied output directory plus runner metadata/artifacts
-"""
+"""Generic Codex interaction API and thin CLI wrapper."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import traceback
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-CODEX_SESSION_ID_RE = r"session id:\s*([0-9a-f-]+)"
+CODEX_SESSION_ID_RE = re.compile(r"session id:\s*([0-9a-f-]+)", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class CodexOptimizationConfig:
+    work_dir: Path
+    prompt: str
+    model: str = ""
+    effort: str = ""
+    timeout_seconds: int = 7200
+    agent_args: list[str] = field(default_factory=list)
+    bypass_approvals_and_sandbox: bool = True
+    save_trace_to: Path | None = None
+    cwd: Path | None = None
+    extra_dirs: list[Path] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CodexOptimizationResult:
+    returncode: int
+    session_id: str | None
+    stdout: str
+    stderr: str
+    trace_path: str | None
+    started_at_utc: str
+    finished_at_utc: str
+
+    @property
+    def ok(self) -> bool:
+        return self.returncode == 0
+
+
+class CodexOptimizationClient:
+    def __init__(self, config: CodexOptimizationConfig) -> None:
+        self.config = config
+
+    def run(self) -> CodexOptimizationResult:
+        started_at = utc_now()
+        try:
+            completed = subprocess.run(
+                self._build_command(),
+                input=self._normalized_prompt(),
+                text=True,
+                capture_output=True,
+                cwd=self._cwd(),
+                timeout=self.config.timeout_seconds,
+                env=os.environ.copy(),
+            )
+            session_id = find_codex_session_id(completed.stderr)
+            trace_path = save_trace_if_requested(session_id, self.config.save_trace_to)
+            return CodexOptimizationResult(
+                returncode=completed.returncode,
+                session_id=session_id,
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+                trace_path=None if trace_path is None else str(trace_path),
+                started_at_utc=started_at,
+                finished_at_utc=utc_now(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            return CodexOptimizationResult(
+                returncode=-1,
+                session_id=find_codex_session_id(str(exc.stderr or "")),
+                stdout=str(exc.stdout or ""),
+                stderr=str(exc.stderr or f"Timed out after {self.config.timeout_seconds}s"),
+                trace_path=None,
+                started_at_utc=started_at,
+                finished_at_utc=utc_now(),
+            )
+        except Exception:
+            return CodexOptimizationResult(
+                returncode=-1,
+                session_id=None,
+                stdout="",
+                stderr=traceback.format_exc(),
+                trace_path=None,
+                started_at_utc=started_at,
+                finished_at_utc=utc_now(),
+            )
+
+
+    def _cwd(self) -> Path:
+        return self.config.work_dir if self.config.cwd is None else self.config.cwd
+
+    def _normalized_prompt(self) -> str:
+        prompt = self.config.prompt.strip()
+        if not prompt:
+            raise ValueError("prompt must not be empty")
+        return prompt + "\n"
+
+    def _build_command(self) -> list[str]:
+        command = [
+            "codex",
+            "exec",
+            "-C",
+            str(self._cwd()),
+            "--color",
+            "never",
+            "--add-dir",
+            str(self.config.work_dir.resolve()),
+        ]
+        for path in self.config.extra_dirs:
+            command.extend(["--add-dir", str(path.resolve())])
+        if self.config.bypass_approvals_and_sandbox:
+            command.append("--dangerously-bypass-approvals-and-sandbox")
+        else:
+            command.extend(["--sandbox", "workspace-write"])
+        if self.config.model:
+            command.extend(["-m", self.config.model])
+        if self.config.effort:
+            command.extend(["-c", f"model_reasoning_effort={json.dumps(self.config.effort)}"])
+        command.extend(self.config.agent_args)
+        command.append("-")
+        return command
 
 
 def utc_now() -> str:
@@ -40,76 +150,8 @@ def dump_json(path: Path, payload: dict) -> None:
     write_text(path, json.dumps(payload, indent=2) + "\n")
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run a single Codex optimization task on a copied working directory."
-    )
-    parser.add_argument("--input-dir", type=Path, required=True, help="Seed directory to copy into the output task dir.")
-    parser.add_argument("--output-dir", type=Path, required=True, help="Output directory for the copied task and runner artifacts.")
-    parser.add_argument("--prompt-file", type=Path, default=None, help="Path to a prompt file.")
-    parser.add_argument("--prompt-text", default="", help="Inline prompt text.")
-    parser.add_argument("--model", default="", help="Optional Codex model override.")
-    parser.add_argument("--effort", default="", help="Optional Codex reasoning effort override.")
-    parser.add_argument("--agent-timeout-seconds", type=int, default=7200)
-    parser.add_argument("--agent-arg", action="append", default=[], help="Extra argument to pass to `codex exec`.")
-    parser.add_argument(
-        "--codex-dangerously-bypass-approvals-and-sandbox",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    return parser.parse_args()
-
-
-def build_prompt(args: argparse.Namespace) -> str:
-    parts: list[str] = []
-    if args.prompt_file is not None:
-        parts.append(read_text(args.prompt_file))
-    if args.prompt_text:
-        parts.append(args.prompt_text)
-    prompt = "\n\n".join(part.strip() for part in parts if part.strip()).strip()
-    if not prompt:
-        raise SystemExit("Provide --prompt-file and/or --prompt-text.")
-    return prompt + "\n"
-
-
-def prepare_output_dir(input_dir: Path, output_dir: Path) -> None:
-    input_dir = input_dir.expanduser().resolve()
-    output_dir = output_dir.expanduser().resolve()
-    if not input_dir.is_dir():
-        raise FileNotFoundError(f"Input directory does not exist: {input_dir}")
-    if output_dir.exists():
-        raise FileExistsError(f"Output directory already exists: {output_dir}")
-    shutil.copytree(input_dir, output_dir)
-
-
-def build_codex_command(args: argparse.Namespace, output_dir: Path) -> list[str]:
-    command = [
-        "codex",
-        "exec",
-        "-C",
-        str(REPO_ROOT),
-        "--color",
-        "never",
-        "--add-dir",
-        str(output_dir.resolve()),
-    ]
-    if args.codex_dangerously_bypass_approvals_and_sandbox:
-        command.append("--dangerously-bypass-approvals-and-sandbox")
-    else:
-        command.extend(["--sandbox", "workspace-write"])
-    if args.model:
-        command.extend(["-m", args.model])
-    if args.effort:
-        command.extend(["-c", f"model_reasoning_effort={json.dumps(args.effort)}"])
-    command.extend(args.agent_arg)
-    command.append("-")
-    return command
-
-
 def find_codex_session_id(stderr_text: str) -> str | None:
-    import re
-
-    match = re.search(CODEX_SESSION_ID_RE, stderr_text or "", flags=re.IGNORECASE)
+    match = CODEX_SESSION_ID_RE.search(stderr_text or "")
     return match.group(1) if match else None
 
 
@@ -127,111 +169,78 @@ def find_trace_path(session_id: str | None) -> Path | None:
     return matches[0] if matches else None
 
 
-def copy_trace_if_present(output_dir: Path, trace_path: Path | None) -> str | None:
+def save_trace_if_requested(session_id: str | None, save_trace_to: Path | None) -> Path | None:
+    if save_trace_to is None:
+        return None
+    trace_path = find_trace_path(session_id)
     if trace_path is None:
         return None
-    target_name = "agent_trace.jsonl"
-    shutil.copy2(trace_path, output_dir / target_name)
-    return target_name
+    save_trace_to = save_trace_to.expanduser().resolve()
+    save_trace_to.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(trace_path, save_trace_to)
+    return save_trace_to
 
 
-def invoke_codex(args: argparse.Namespace, output_dir: Path, prompt: str) -> dict:
-    command = build_codex_command(args, output_dir)
-    completed = subprocess.run(
-        command,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        cwd=REPO_ROOT,
-        timeout=args.agent_timeout_seconds,
-        env=os.environ.copy(),
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run a single Codex optimization task.")
+    parser.add_argument("--work-dir", type=Path, required=True, help="Directory Codex can edit.")
+    parser.add_argument("--prompt-file", type=Path, default=None, help="Path to a prompt file.")
+    parser.add_argument("--prompt-text", default="", help="Inline prompt text.")
+    parser.add_argument("--model", default="", help="Optional Codex model override.")
+    parser.add_argument("--effort", default="", help="Optional Codex reasoning effort override.")
+    parser.add_argument("--timeout-seconds", type=int, default=7200)
+    parser.add_argument("--agent-arg", action="append", default=[], help="Extra argument to pass to `codex exec`.")
+    parser.add_argument("--save-trace-to", type=Path, default=None, help="Optional file path for a copied agent trace.")
+    parser.add_argument("--json-output", type=Path, default=None, help="Optional path to save the result as JSON.")
+    parser.add_argument("--add-dir", type=Path, action="append", default=[], help="Extra directory to expose to Codex.")
+    parser.add_argument(
+        "--codex-dangerously-bypass-approvals-and-sandbox",
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
-    session_id = find_codex_session_id(completed.stderr)
-    trace_path = find_trace_path(session_id)
-    copied_trace = copy_trace_if_present(output_dir, trace_path)
-    if completed.returncode != 0:
-        write_text(
-            output_dir / "error.txt",
-            "Agent command failed.\n"
-            f"exit_code: {completed.returncode}\n"
-            f"command: {' '.join(command)}\n\n"
-            f"stdout:\n{completed.stdout}\n\n"
-            f"stderr:\n{completed.stderr}\n",
-        )
-    return {
-        "returncode": completed.returncode,
-        "session_id": session_id,
-        "agent_trace_path": copied_trace,
-    }
+    return parser.parse_args()
 
 
-def write_meta(
-    output_dir: Path,
-    *,
-    input_dir: Path,
-    prompt_file: Path | None,
-    agent: dict,
-    started_at: str,
-    finished_at: str,
-) -> None:
-    status = "completed" if agent["returncode"] == 0 else "agent_failed"
-    meta = {
-        "stage": "codex_optimization",
-        "status": status,
-        "input_dir": str(input_dir),
-        "output_dir": str(output_dir),
-        "prompt_file": None if prompt_file is None else str(prompt_file),
-        "agent_exit_code": agent["returncode"],
-        "agent_session_id": agent.get("session_id"),
-        "agent_trace_path": agent.get("agent_trace_path"),
-        "started_at_utc": started_at,
-        "finished_at_utc": finished_at,
-    }
-    dump_json(output_dir / "meta.json", meta)
+def build_prompt_from_args(args: argparse.Namespace) -> str:
+    parts: list[str] = []
+    if args.prompt_file is not None:
+        parts.append(read_text(args.prompt_file))
+    if args.prompt_text:
+        parts.append(args.prompt_text)
+    prompt = "\n\n".join(part.strip() for part in parts if part.strip()).strip()
+    if not prompt:
+        raise SystemExit("Provide --prompt-file and/or --prompt-text.")
+    return prompt
+
+
+def build_config_from_args(args: argparse.Namespace) -> CodexOptimizationConfig:
+    work_dir = args.work_dir.expanduser().resolve()
+    if not work_dir.is_dir():
+        raise FileNotFoundError(f"Work directory does not exist: {work_dir}")
+    return CodexOptimizationConfig(
+        work_dir=work_dir,
+        prompt=build_prompt_from_args(args),
+        model=args.model,
+        effort=args.effort,
+        timeout_seconds=args.timeout_seconds,
+        agent_args=list(args.agent_arg),
+        bypass_approvals_and_sandbox=args.codex_dangerously_bypass_approvals_and_sandbox,
+        save_trace_to=args.save_trace_to,
+        cwd=None,
+        extra_dirs=[path.expanduser().resolve() for path in args.add_dir],
+    )
 
 
 def main() -> int:
     args = parse_args()
-    input_dir = args.input_dir.expanduser().resolve()
-    output_dir = args.output_dir.expanduser().resolve()
-    prompt = build_prompt(args)
-
-    prepare_output_dir(input_dir, output_dir)
-    write_text(output_dir / "prompt.txt", prompt)
-
-    started_at = utc_now()
-    try:
-        agent = invoke_codex(args, output_dir, prompt)
-    except subprocess.TimeoutExpired:
-        agent = {
-            "returncode": -1,
-            "session_id": None,
-            "agent_trace_path": None,
-        }
-        write_text(output_dir / "error.txt", f"Agent timed out after {args.agent_timeout_seconds}s.\n")
-    except Exception:
-        agent = {
-            "returncode": -1,
-            "session_id": None,
-            "agent_trace_path": None,
-        }
-        write_text(output_dir / "error.txt", traceback.format_exc())
-
-    write_meta(
-        output_dir,
-        input_dir=input_dir,
-        prompt_file=args.prompt_file,
-        agent=agent,
-        started_at=started_at,
-        finished_at=utc_now(),
-    )
-
-    if agent["returncode"] != 0:
-        print(f"Codex optimization failed. See {output_dir / 'error.txt'}", file=sys.stderr)
-        return 1
-
-    print(f"Codex optimization completed: {output_dir}")
-    return 0
+    client = CodexOptimizationClient(build_config_from_args(args))
+    result = client.run()
+    payload = asdict(result)
+    if args.json_output is not None:
+        dump_json(args.json_output.expanduser().resolve(), payload)
+    else:
+        print(json.dumps(payload, indent=2))
+    return 0 if result.ok else 1
 
 
 if __name__ == "__main__":

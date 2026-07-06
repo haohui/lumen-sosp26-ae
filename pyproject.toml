@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 
 [project.scripts]
 lumen-codex-run = "lumen.tools.codex_runner:main"
+lumen-kernelbench-graph-eval = "lumen.harness.datasets.kernelbench.cli:main"
 
 [tool.setuptools.package-dir]
 "" = "python"

@@ -22,10 +22,10 @@ def render_claude_context(
         python_path / "lumen" / "harness" / "datasets" / "kernelbench" / "cli.py"
     )
     template = Path(__file__).with_name("claude_context.md").read_text(encoding="utf-8")
-    examples_skill = skills_path / "substrate-examples" / "SKILL.md"
+    examples_skill = skills_path / "avelang-examples" / "SKILL.md"
     if use_example_skills:
         examples_section = (
-            "2. **`substrate-examples`** - router skill that lists which category "
+            "2. **`avelang-examples`** - router skill that lists which category "
             "sub-skills are available. Read it, then read the ONE sub-skill whose\n"
             "   category best matches the target operator.\n"
             f"   Path: `{examples_skill}`"
@@ -33,7 +33,7 @@ def render_claude_context(
     else:
         examples_section = (
             "Example skills are disabled for this run. Use only "
-            "`substrate-language-spec`."
+            "`avelang-language-spec`."
         )
     activate_path = executable_path.parent / "activate"
     if activate_path.is_file():
@@ -49,6 +49,6 @@ def render_claude_context(
         bench_script=shlex.quote(str(bench_script)),
         venv_activation=venv_activation,
         skills_root=skills_path,
-        lang_spec_skill=skills_path / "substrate-language-spec" / "SKILL.md",
+        lang_spec_skill=skills_path / "avelang-language-spec" / "SKILL.md",
         examples_section=examples_section,
     )

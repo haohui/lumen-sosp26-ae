@@ -27,9 +27,9 @@ from .prompts.claude_context import render_claude_context
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 PYTHON_ROOT = PROJECT_ROOT / "python"
 SKILLS_ROOT = Path(__file__).resolve().parent / "prompts" / "skills"
-PROMPT_BACKEND = "substrate"
+PROMPT_BACKEND = "avelang"
 PROMPT_OPTION = "one_shot"
-PROMPT_KEY = "substrate_amd_full"
+PROMPT_KEY = "avelang_amd_full"
 
 _WRITE_FILE_DIRECTIVE = (
     "\n\nWrite your complete final implementation directly to the file "

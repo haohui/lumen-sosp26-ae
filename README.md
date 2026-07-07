@@ -14,7 +14,7 @@ source .venv/bin/activate
 uv pip install -e ".[eval,dev]"
 ```
 
-You will need to install substrate to evaluate the performance of the DSL kernels.
+You will need to install AveLang to evaluate the performance of the DSL kernels.
 
 For formatting and linting:
 
@@ -66,4 +66,3 @@ benchmark inputs and generated outputs live under `data/`:
   implementations.
 - `data/benchmarks/kernelbench/lumen/`: Lumen-generated KernelBench solutions,
   including multiple optimization rounds when applicable.
-

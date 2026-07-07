@@ -1,19 +1,19 @@
-# Substrate DSL - Project Context
+# AveLang DSL - Project Context
 
 This working directory is a single KernelBench problem.
-Your task: write an optimized AMD GPU kernel in **Substrate DSL** that matches
+Your task: write an optimized AMD GPU kernel in **AveLang DSL** that matches
 the behavior of `input_model.py`.
 Output must go to `output_model_new.py`.
 
 The reference model is in `input_model.py`. Preserve its public input and output
 contract exactly.
 
-## Substrate Reference Skills
+## AveLang Reference Skills
 
 All skills live in `{skills_root}/`.
 Before writing any code, read the required skills in this order:
 
-1. **`substrate-language-spec`** - complete DSL syntax, typing, launch semantics,
+1. **`avelang-language-spec`** - complete DSL syntax, typing, launch semantics,
    memory/layout conventions. Always required.
    Path: `{lang_spec_skill}`
 
@@ -25,9 +25,9 @@ Do not invent Triton-, TVM-, or CUDA-style APIs absent from the skill files.
 
 ## Critical Code Constraints
 
-- All `@substrate.jit` kernel functions must be defined at module top level.
+- All `@avelang.jit` kernel functions must be defined at module top level.
   Never nest them inside other functions or classes.
-- Substrate compiles kernels at import time; runtime kernel definition is not
+- AveLang compiles kernels at import time; runtime kernel definition is not
   supported.
 
 ## Self-Verification Loop

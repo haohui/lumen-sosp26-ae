@@ -307,9 +307,9 @@ def render_prompt_by_option(
             # Hardware components from templates.hardware
             template_key = f"templates.hardware.{component}"
             prompt_parts.append(cfg.compose_blocks([template_key]))
-        elif component.startswith("substrate_"):
-            # Substrate-specific components from templates.substrate
-            template_key = f"templates.substrate.{component}"
+        elif component.startswith("avelang_"):
+            # AveLang-specific components from templates.avelang
+            template_key = f"templates.avelang.{component}"
             prompt_parts.append(cfg.compose_blocks([template_key]))
         else:
             # Other components from templates.common

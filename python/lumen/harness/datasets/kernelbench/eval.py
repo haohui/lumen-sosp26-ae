@@ -487,8 +487,8 @@ def eval_kernel_against_ref(
     torch.cuda.set_device(device)
     
     # Backends that use tempfile approach and need CUDA_VISIBLE_DEVICES / source on disk.
-    # TileLang, Triton, CuTe, and Substrate all require importing from a real module.
-    uses_tempfile = backend.lower() in ["triton", "tilelang", "cute", "substrate"]
+    # TileLang, Triton, CuTe, and AveLang all require importing from a real module.
+    uses_tempfile = backend.lower() in ["triton", "tilelang", "cute", "avelang"]
     
     metadata = {}  # for storing result metadata
     metadata["hardware"] = torch.cuda.get_device_name(device=device)
@@ -551,7 +551,7 @@ def eval_kernel_against_ref(
         backend_lower = backend.lower()
         mark_event("custom_model_import_start")
         custom_model_import_start = time.perf_counter()
-        if backend_lower in ["triton", "tilelang", "cute", "substrate"]:
+        if backend_lower in ["triton", "tilelang", "cute", "avelang"]:
             # Use tempfile approach for backends that require proper module import
             # for JIT decorators / source-file-backed parsing to work.
             ModelNew, tempfile = load_custom_model_with_tempfile(

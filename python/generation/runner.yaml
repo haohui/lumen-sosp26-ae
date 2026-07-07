@@ -46,7 +46,7 @@ precision: bf16
 # Save backend trace for each round.
 save_trajectory: true
 
-# Allow Claude Code to use the bundled Substrate example skills.
+# Allow Claude Code to use the bundled AveLang example skills.
 use_example_skills: true
 
 # Number of correctness trials.

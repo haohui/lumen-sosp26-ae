@@ -14,7 +14,7 @@ You have complete freedom to choose the set of operators you want to replace. Yo
 """
 
 instruction = """
-Implement the target computation with one or more `@substrate.jit` GPU kernels and provide a runnable `ModelNew` entrypoint that launches those kernels.
+Implement the target computation with one or more `@avelang.jit` GPU kernels and provide a runnable `ModelNew` entrypoint that launches those kernels.
 
 Preserve the exact semantics of the target `Model.forward` in the provided `model.py`. The target architecture is authoritative over examples.
 Keep input/output contracts compatible with `get_inputs()` and `get_init_inputs()` from the target problem.
@@ -65,9 +65,9 @@ backend_display = "ThunderKittens kernels"
 one_shot_new_arch = "src/kernelbench/prompts/model_new_ex_add_thunderkittens.py"
 # No few_shot_examples - will use one-shot when few_shot option is selected
 
-[backends.substrate]
-backend_display = "Substrate DSL kernels"
-one_shot_new_arch = "src/kernelbench/prompts/model_new_ex_add_substrate.py"
+[backends.avelang]
+backend_display = "AveLang DSL kernels"
+one_shot_new_arch = "src/kernelbench/prompts/model_new_ex_add_avelang.py"
 # No few_shot_examples - will use one-shot when few_shot option is selected
 
 [backends.hip]
@@ -239,38 +239,38 @@ components = [
     "instruction",
 ]
 
-[custom_prompts.substrate_amd_full]
+[custom_prompts.avelang_amd_full]
 components = [
-    "substrate_introduction",
-    "substrate_syntax_guide",
+    "avelang_introduction",
+    "avelang_syntax_guide",
     "arch_block",
-    "substrate_constraints",
+    "avelang_constraints",
     "precision_note",
     "instruction",
 ]
 
 # -------------------------------------------------------------------------
-# Substrate-specific Templates
+# AveLang-specific Templates
 # -------------------------------------------------------------------------
-[templates.substrate]
+[templates.avelang]
 
-substrate_introduction = """
-You are writing GPU kernels with the Substrate DSL.
-Substrate DSL is a tile-based DSL for high-performance GPU kernels, syntactically close to Triton/PyCuTe and exposing low-level AMD features such as MFMA and explicit synchronization.
+avelang_introduction = """
+You are writing GPU kernels with the AveLang DSL.
+AveLang DSL is a tile-based DSL for high-performance GPU kernels, syntactically close to Triton/PyCuTe and exposing low-level AMD features such as MFMA and explicit synchronization.
 
-Treat Substrate as a PyCuTe-like kernel programming model with its own DSL syntax and AMD-oriented primitives.
-The primary deliverable is a real GPU kernel implementation in Substrate DSL, not a pure PyTorch operator replacement.
+Treat AveLang as a PyCuTe-like kernel programming model with its own DSL syntax and AMD-oriented primitives.
+The primary deliverable is a real GPU kernel implementation in AveLang DSL, not a pure PyTorch operator replacement.
 Kernel launch configuration, memory hierarchy usage, and tile-level mapping should be explicitly expressed in the generated code.
 
-Below is a reference `Model` / `ModelNew` pattern in Substrate DSL.
+Below is a reference `Model` / `ModelNew` pattern in AveLang DSL.
 You will receive a `input_model.py` architecture below, and you must output an optimized `output_model_new.py`.
 Use this structure as guidance and optimize the target architecture into a correct and runnable `ModelNew`.
 """
 
-substrate_syntax_guide = """
-## Substrate DSL Syntax and Examples
+avelang_syntax_guide = """
+## AveLang DSL Syntax and Examples
 
-Here is a complete example showing how to write a Substrate DSL kernel:
+Here is a complete example showing how to write an AveLang DSL kernel:
 
 **Example: Element-wise Addition**
 
@@ -287,24 +287,24 @@ class Model(nn.Module):
         return a + b
 ```
 
-Optimized Substrate DSL kernel:
+Optimized AveLang DSL kernel:
 ```python
 import torch
 import torch.nn as nn
-import substrate
-import substrate.language as S
+import avelang
+import avelang.language as al
 
-@substrate.jit
+@avelang.jit
 def add_kernel(
-    a: S.Tensor((1, 128), S.f32),
-    b: S.Tensor((1, 128), S.f32),
-    out: S.Tensor((1, 128), S.f32),
+    a: al.Tensor((1, 128), al.f32),
+    b: al.Tensor((1, 128), al.f32),
+    out: al.Tensor((1, 128), al.f32),
 ):
-    tid = S.thread_id(0)
+    tid = al.thread_id(0)
     if tid < 128:
         out[0, tid] = a[0, tid] + b[0, tid]
 
-def substrate_add(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+def avelang_add(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     assert a.is_cuda and b.is_cuda, "Tensors must be on CUDA/HIP device."
     assert a.shape == (1, 128) and b.shape == (1, 128), "Example kernel expects shape (1, 128)."
 
@@ -317,22 +317,22 @@ class ModelNew(nn.Module):
         super().__init__()
 
     def forward(self, a, b):
-        return substrate_add(a, b)
+        return avelang_add(a, b)
 ```
 """
 
-substrate_constraints = """
-## Substrate DSL Critical Requirements
+avelang_constraints = """
+## AveLang DSL Critical Requirements
 
 **Kernel Definition Requirements:**
-- ALL `@substrate.jit` kernel functions **must** be defined at **module top-level** — never nested inside other functions or classes.
-- Substrate compiles kernels at import time; runtime definition is not supported.
+- ALL `@avelang.jit` kernel functions **must** be defined at **module top-level** — never nested inside other functions or classes.
+- AveLang compiles kernels at import time; runtime definition is not supported.
 
 **Memory and Data Handling:**
-- Use `S.Pointer(S.dtype)` for runtime-shaped buffers, then create tensor views with `S.make_tensor(pointer, dtype, layout)`.
-- Use `S.make_shared((shape), dtype)` for shared memory buffers with proper synchronization.
-- Use `S.range()` for device-side loops, never Python's `range()`.
-- Use explicit type conversions: `S.convert(value, S.f32)` for dtype changes.
+- Use `al.Pointer(dtype)` for runtime-shaped buffers, then create tensor views with `al.make_tensor(pointer, dtype, layout)`.
+- Use `al.make_shared((shape), dtype)` for shared memory buffers with proper synchronization.
+- Use `al.range()` for device-side loops, never Python's `range()`.
+- Use explicit type conversions: `al.convert(value, al.f32)` for dtype changes.
 
 **Launch Configuration:**
 - Kernel launch syntax: `kernel[lambda: ((grid_x, grid_y, grid_z), (block_x, block_y, block_z))](args...)`

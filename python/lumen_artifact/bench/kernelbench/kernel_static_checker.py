@@ -20,6 +20,7 @@ Usage:
     will return a tuple (valid, errors, warnings) 
 """
 
+import ast
 import re
 from typing import List, Tuple, Dict, Any, Optional, Callable, Union
 
@@ -48,7 +49,13 @@ TRY_EXCEPT_PATTERNS = [r"\btry\s*:", r"\bexcept\s*:", r"\bexcept\s+\w+"]
 # --- Pass Statement / Inheritance Bypass ---
 # Rationale: Model inherits from reference class and uses 'pass' to do nothing,
 # effectively just calling the parent implementation.
-PASS_PATTERN = r"\bpass\b"
+def _has_pass_statement(code: str) -> bool:
+    """Return true only for real Python pass statements."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    return any(isinstance(node, ast.Pass) for node in ast.walk(tree))
 
 def check_code_bypass(code: str) -> Tuple[bool, str]:
     """
@@ -67,7 +74,7 @@ def check_code_bypass(code: str) -> Tuple[bool, str]:
             return (True, "Contains try-except block (potential fallback bypass)")
     
     # Check for pass statement
-    if re.search(PASS_PATTERN, code):
+    if _has_pass_statement(code):
         return (True, "Contains 'pass' statement (inheritance bypass)")
     
     return (False, "")
@@ -289,6 +296,24 @@ def check_tilelang_impl(code: str) -> Tuple[bool, str]:
     code = _strip_comments(code)
     if not re.search(r"@T\.prim_func", code):
         return (True, "Missing @T.prim_func decorator")
+    return (False, "")
+
+
+# <========= AVELANG CHECKS =========>
+# Rationale: AveLang kernels are compiled from @avelang.jit decorated functions.
+# Generated code should use the current avelang package rather than the retired
+# substrate package name.
+def check_avelang_impl(code: str) -> Tuple[bool, str]:
+    """Check for valid AveLang kernel implementation."""
+    code = _strip_comments(code)
+    if re.search(r"\bsubstrate\b", code):
+        return (True, "Uses retired substrate package name; use avelang")
+    if not re.search(r"@avelang\.jit", code):
+        return (True, "Missing @avelang.jit decorator")
+    if not re.search(r"\bavelang\.language\b", code):
+        return (True, "Missing avelang.language import")
+    if not re.search(r"\b[A-Za-z_]\w*\.(thread_id|block_id|make_tensor|make_shared|range|convert|view|amdgpu|nvvm)\b", code):
+        return (True, "No AveLang language operations found")
     return (False, "")
 
 
@@ -583,6 +608,7 @@ CHECK_FUNCTIONS: Dict[str, Union[Callable[[str], Tuple[bool, str]], Callable[[st
     "tk_impl": check_tk_impl,
     "cute_impl": check_cute_impl,
     "tilelang_impl": check_tilelang_impl,
+    "avelang_impl": check_avelang_impl,
 }
 
 # Checks that require additional parameters beyond just code
@@ -608,6 +634,7 @@ BACKEND_IMPL_CHECK = {
     "cute": "cute_impl",
     "cutlass": "cute_impl",  # alias
     "tilelang": "tilelang_impl",
+    "avelang": "avelang_impl",
 }
 
 # These are optional checks (by user's decision) - flagged as warnings
@@ -639,7 +666,7 @@ def validate_kernel_static(
     
     Args:
         code: Kernel source code
-        backend: "cuda", "hip", "triton", or "thunderkittens"
+        backend: "cuda", "hip", "triton", "thunderkittens", or "avelang"
         precision: "fp16", "fp32", or "bf16" (for future precision checks)
         forbidden: Check categories that cause errors (default: STRICT_CHECKS)
         warnings: Check categories that cause warnings (default: WARNING_CHECKS)

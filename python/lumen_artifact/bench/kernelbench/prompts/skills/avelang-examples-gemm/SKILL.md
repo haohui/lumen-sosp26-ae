@@ -1,14 +1,14 @@
 ---
-name: substrate-examples-gemm
+name: avelang-examples-gemm
 description: >
-  Verified Substrate DSL kernels for BF16 GEMM-style kernels on AMDGPU.
+  Verified AveLang DSL kernels for BF16 GEMM-style kernels on AMDGPU.
   Each example compiled and passed correctness checks on AMD MI210/MI300X (BF16).
   Reuse the tiling / shared-memory / MFMA structure; adapt only layout,
   shape contract, output epilogue, and math.
-tags: [substrate, amd, kernel, gemm]
+tags: [avelang, amd, kernel, gemm]
 ---
 
-# Substrate Verified Examples: GEMM
+# AveLang Verified Examples: GEMM
 
 Each kernel below compiled and passed correctness checks on AMD Instinct MI210
 or MI300X (BF16).
@@ -16,7 +16,7 @@ or MI300X (BF16).
 Reuse strategy:
 1. Copy the tile / block / thread structure verbatim.
 2. Preserve MFMA lane swizzles and accumulator writeback invariants exactly.
-3. Do NOT invent API calls absent from these examples or `substrate-language-spec`.
+3. Do NOT invent API calls absent from these examples or `avelang-language-spec`.
 
 
 ### fused_linear_relu_bf16_mfma: BF16 Fused GEMM Epilogue
@@ -60,12 +60,12 @@ def get_init_inputs():
     return [IN_FEATURES, OUT_FEATURES, SUBTRACT_VALUE, MULTIPLY_VALUE]
 ```
 
-**Verified Substrate kernel:**
+**Verified AveLang kernel:**
 ```python
 import torch
 import torch.nn as nn
-import substrate
-import substrate.language as S
+import avelang
+import avelang.language as al
 
 
 BATCH_SIZE = 1024
@@ -98,53 +98,53 @@ GLOBAL_LOADS_B = SHM_B_VECS // THREADS
 ROW_U32 = A_VECS_PER_ROW * 4
 
 
-@substrate.jit
+@avelang.jit
 def _load_global_a_to_shm(
-    shm_a: S.Tensor((SHM_A_VECS, 4), S.u32),
-    x_rsrc: S.Tensor((4,), S.u32),
-    block_m: S.u32,
-    k_base: S.u32,
-    k: S.u32,
-    tid: S.u32,
+    shm_a: al.Tensor((SHM_A_VECS, 4), al.u32),
+    x_rsrc: al.Tensor((4,), al.u32),
+    block_m: al.u32,
+    k_base: al.u32,
+    k: al.u32,
+    tid: al.u32,
 ):
-    zero = S.convert(0, S.u32)
+    zero = al.convert(0, al.u32)
     idx = tid
-    for _ in S.range(GLOBAL_LOADS_A):
+    for _ in al.range(GLOBAL_LOADS_A):
         row = idx // A_VECS_PER_ROW
         col_vec = idx % A_VECS_PER_ROW
         off = ((block_m * GROUP_M + row) * k + k_base + col_vec * VEC_ELEMS) * BF16_BYTES
-        shm_a[idx] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, off, 0)
+        shm_a[idx] = al.amdgpu.raw_buffer_load_x4(x_rsrc, zero, off, 0)
         idx += THREADS
 
 
-@substrate.jit
+@avelang.jit
 def _load_global_b_to_shm(
-    shm_b: S.Tensor((SHM_B_VECS, 4), S.u32),
-    w_rsrc: S.Tensor((4,), S.u32),
-    block_n: S.u32,
-    k_base: S.u32,
-    k: S.u32,
-    tid: S.u32,
+    shm_b: al.Tensor((SHM_B_VECS, 4), al.u32),
+    w_rsrc: al.Tensor((4,), al.u32),
+    block_n: al.u32,
+    k_base: al.u32,
+    k: al.u32,
+    tid: al.u32,
 ):
-    zero = S.convert(0, S.u32)
+    zero = al.convert(0, al.u32)
     idx = tid
-    for _ in S.range(GLOBAL_LOADS_B):
+    for _ in al.range(GLOBAL_LOADS_B):
         row = idx // B_VECS_PER_ROW
         col_vec = idx % B_VECS_PER_ROW
         off = ((block_n * GROUP_N + row) * k + k_base + col_vec * VEC_ELEMS) * BF16_BYTES
-        shm_b[idx] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, off, 0)
+        shm_b[idx] = al.amdgpu.raw_buffer_load_x4(w_rsrc, zero, off, 0)
         idx += THREADS
 
 
-@substrate.jit
+@avelang.jit
 def _fetch_mfma_operand_32x32x16(
-    ret: S.Tensor((2, 4), S.bf16),
-    shm: S.Tensor((SHM_A_VECS, 4), S.u32),
-    tile_idx: S.u32,
-    lane: S.u32,
+    ret: al.Tensor((2, 4), al.bf16),
+    shm: al.Tensor((SHM_A_VECS, 4), al.u32),
+    tile_idx: al.u32,
+    lane: al.u32,
 ):
-    ret_u32 = S.view(ret, S.Tensor((4,), S.u32))
-    shm_u32 = S.view(shm, S.Tensor((SHM_A_VECS * 4,), S.u32))
+    ret_u32 = al.view(ret, al.Tensor((4,), al.u32))
+    shm_u32 = al.view(shm, al.Tensor((SHM_A_VECS * 4,), al.u32))
     row = tile_idx * MMA_M + (lane % MMA_M)
     k_group_u32 = (lane // MMA_M) * 2
     row_base = row * ROW_U32
@@ -155,84 +155,84 @@ def _fetch_mfma_operand_32x32x16(
     ret_u32[3] = shm_u32[row_base + 5 + k_group_u32]
 
 
-@substrate.jit
+@avelang.jit
 def linear_fused_relu_bf16_kernel(
-    x_ptr: S.Pointer(S.bf16),
-    w_ptr: S.Pointer(S.bf16),
-    bias_ptr: S.Pointer(S.bf16),
-    out_ptr: S.Pointer(S.bf16),
-    m: S.u32,
-    n: S.u32,
-    k: S.u32,
+    x_ptr: al.Pointer(al.bf16),
+    w_ptr: al.Pointer(al.bf16),
+    bias_ptr: al.Pointer(al.bf16),
+    out_ptr: al.Pointer(al.bf16),
+    m: al.u32,
+    n: al.u32,
+    k: al.u32,
 ):
-    tid = S.thread_id(0)
-    block_n = S.block_id(0)
-    block_m = S.block_id(1)
+    tid = al.thread_id(0)
+    block_n = al.block_id(0)
+    block_m = al.block_id(1)
     wid = tid // WARP_SIZE
     lane = tid % WARP_SIZE
     warp_row = wid // WARPS_N
     warp_col = wid % WARPS_N
 
-    x_memref = S.make_tensor(x_ptr, S.bf16, S.make_layout((m * k,), (1,)))
-    w_memref = S.make_tensor(w_ptr, S.bf16, S.make_layout((n * k,), (1,)))
-    g_bias = S.make_tensor(bias_ptr, S.bf16, S.make_layout((n,), (1,)))
-    g_out = S.make_tensor(out_ptr, S.bf16, S.make_layout((m, n), (n, 1)))
+    x_memref = al.make_tensor(x_ptr, al.bf16, al.make_layout((m * k,), (1,)))
+    w_memref = al.make_tensor(w_ptr, al.bf16, al.make_layout((n * k,), (1,)))
+    g_bias = al.make_tensor(bias_ptr, al.bf16, al.make_layout((n,), (1,)))
+    g_out = al.make_tensor(out_ptr, al.bf16, al.make_layout((m, n), (n, 1)))
 
-    x_rsrc = S.amdgpu.make_rsrc(x_memref, m * k * BF16_BYTES)
-    w_rsrc = S.amdgpu.make_rsrc(w_memref, n * k * BF16_BYTES)
+    x_rsrc = al.amdgpu.make_rsrc(x_memref, m * k * BF16_BYTES)
+    w_rsrc = al.amdgpu.make_rsrc(w_memref, n * k * BF16_BYTES)
 
-    shm_a = S.make_shared((SHM_A_VECS, 4), S.u32)
-    shm_b = S.make_shared((SHM_B_VECS, 4), S.u32)
-    a_reg = S.make_local((M_TILES_PER_WARP, 2, 4), S.bf16)
-    b_reg = S.make_local((N_TILES_PER_WARP, 2, 4), S.bf16)
-    acc = S.make_local((M_TILES_PER_WARP * N_TILES_PER_WARP, ACC_SIZE), S.f32)
+    shm_a = al.make_shared((SHM_A_VECS, 4), al.u32)
+    shm_b = al.make_shared((SHM_B_VECS, 4), al.u32)
+    a_reg = al.make_local((M_TILES_PER_WARP, 2, 4), al.bf16)
+    b_reg = al.make_local((N_TILES_PER_WARP, 2, 4), al.bf16)
+    acc = al.make_local((M_TILES_PER_WARP * N_TILES_PER_WARP, ACC_SIZE), al.f32)
 
-    for i in S.range(M_TILES_PER_WARP * N_TILES_PER_WARP):
-        for j in S.range(ACC_SIZE):
+    for i in al.range(M_TILES_PER_WARP * N_TILES_PER_WARP):
+        for j in al.range(ACC_SIZE):
             acc[i, j] = 0
 
     k_tiles = k // GROUP_K
-    for kt in S.range(k_tiles):
+    for kt in al.range(k_tiles):
         k_base = kt * GROUP_K
         _load_global_a_to_shm(shm_a, x_rsrc, block_m, k_base, k, tid)
         _load_global_b_to_shm(shm_b, w_rsrc, block_n, k_base, k, tid)
-        S.syncthreads()
+        al.syncthreads()
 
-        for i in S.range(M_TILES_PER_WARP):
+        for i in al.range(M_TILES_PER_WARP):
             _fetch_mfma_operand_32x32x16(a_reg[i], shm_a, warp_row * M_TILES_PER_WARP + i, lane)
-        for j in S.range(N_TILES_PER_WARP):
+        for j in al.range(N_TILES_PER_WARP):
             _fetch_mfma_operand_32x32x16(b_reg[j], shm_b, warp_col * N_TILES_PER_WARP + j, lane)
 
-        for i in S.range(M_TILES_PER_WARP):
-            for j in S.range(N_TILES_PER_WARP):
+        for i in al.range(M_TILES_PER_WARP):
+            for j in al.range(N_TILES_PER_WARP):
                 acc_idx = i * N_TILES_PER_WARP + j
-                acc[acc_idx] = S.amdgpu.mfma_32x32x8_bf16_f32(a_reg[i, 0], b_reg[j, 0], acc[acc_idx])
-                acc[acc_idx] = S.amdgpu.mfma_32x32x8_bf16_f32(a_reg[i, 1], b_reg[j, 1], acc[acc_idx])
+                acc[acc_idx] = al.amdgpu.mfma_32x32x8_bf16_f32(a_reg[i, 0], b_reg[j, 0], acc[acc_idx])
+                acc[acc_idx] = al.amdgpu.mfma_32x32x8_bf16_f32(a_reg[i, 1], b_reg[j, 1], acc[acc_idx])
 
-        S.syncthreads()
+        al.syncthreads()
 
-    subtract_val = S.convert(SUBTRACT_VALUE, S.f32)
-    multiply_val = S.convert(MULTIPLY_VALUE, S.f32)
-    zero = S.convert(0.0, S.f32)
+    subtract_val = al.convert(SUBTRACT_VALUE, al.f32)
+    multiply_val = al.convert(MULTIPLY_VALUE, al.f32)
+    zero = al.convert(0.0, al.f32)
     lane_group = lane // MMA_N
     lane_col = lane % MMA_N
     block_row_base = block_m * GROUP_M
     block_col_base = block_n * GROUP_N
 
-    for j in S.range(N_TILES_PER_WARP):
+    for j in al.range(N_TILES_PER_WARP):
         col = block_col_base + (warp_col * N_TILES_PER_WARP + j) * MMA_N + lane_col
-        bias = S.convert(g_bias[col], S.f32)
-        for i in S.range(M_TILES_PER_WARP):
+        bias = al.convert(g_bias[col], al.f32)
+        for i in al.range(M_TILES_PER_WARP):
             acc_idx = i * N_TILES_PER_WARP + j
             row_base = block_row_base + (warp_row * M_TILES_PER_WARP + i) * MMA_M
-            for t in S.range(ACC_SIZE):
+            for t in al.range(ACC_SIZE):
                 row = row_base + (t // 4) * 8 + lane_group * 4 + (t % 4)
                 result = acc[acc_idx, t] + bias
                 result = result - subtract_val
                 result = result * multiply_val
                 if result < zero:
                     result = zero
-                g_out[row, col] = S.convert(result, S.bf16)
+                g_out[row, col] = al.convert(result, al.bf16)
 
 
 def _prepare_bf16_cuda_contiguous(t: torch.Tensor) -> torch.Tensor:
@@ -243,13 +243,13 @@ def _prepare_bf16_cuda_contiguous(t: torch.Tensor) -> torch.Tensor:
     return t.contiguous().cuda().to(dtype=torch.bfloat16)
 
 
-def substrate_linear_fused_relu(
+def avelang_linear_fused_relu(
     x: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
 ) -> torch.Tensor:
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA/HIP device is required for Substrate kernels.")
+        raise RuntimeError("CUDA/HIP device is required for AveLang kernels.")
 
     x_bf16 = _prepare_bf16_cuda_contiguous(x)
     weight_bf16 = _prepare_bf16_cuda_contiguous(weight)
@@ -296,7 +296,7 @@ class ModelNew(nn.Module):
         nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return substrate_linear_fused_relu(x, self.weight, self.bias)
+        return avelang_linear_fused_relu(x, self.weight, self.bias)
 
 
 def get_inputs():
@@ -308,9 +308,9 @@ def get_init_inputs():
 ```
 
 Contract notes:
-1. The kernel entry point is `substrate_linear_fused_relu(x, weight_t, bias)`.
+1. The kernel entry point is `avelang_linear_fused_relu(x, weight_t, bias)`.
 2. `x` must be rank-2 BF16 CUDA with shape `(M, K)`.
-3. The Substrate kernel expects `weight_t` in linear-module storage layout with shape `(N, K)`.
+3. The AveLang kernel expects `weight_t` in linear-module storage layout with shape `(N, K)`.
 4. Accumulation happens in `f32`, MFMA uses `mfma_32x32x8_bf16_f32`, and the final output is written as BF16.
 5. Preserve these translation invariants when porting similar kernels:
    - Keep the 4 warps as a `2 x 2` warp grid and add warp ownership only at operand tile selection and output writeback.

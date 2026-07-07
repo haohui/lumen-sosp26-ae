@@ -99,10 +99,6 @@ def main() -> None:
 
     repo_root = Path(__file__).resolve().parents[3]
     attn_root = benchmark_root(repo_root) / "attn"
-    baseline_defs: List[tuple[str, Path, bool]] = [
-        ("aiter", attn_root / "06_aiter" / "best_kernel.py", args.run_aiter),
-        ("triton", attn_root / "05_triton" / "best_kernel.py", args.run_triton),
-    ]
 
     seq_lens = parse_int_csv(args.seq_lens, name="seq-lens")
 
@@ -113,6 +109,9 @@ def main() -> None:
     device = torch.device(args.device)
     configure_sync_wait_mode(device=device, mode=args.sync_wait_mode)
     dtype = parse_dtype(args.dtype)
+    is_hip = getattr(torch.version, "hip", None) is not None
+    if not is_hip:
+        args.run_aiter = False
     shared = build_shared_inputs(
         seq_lens=seq_lens,
         batch_size=args.batch_size,
@@ -123,6 +122,10 @@ def main() -> None:
         dtype=dtype,
         seed=args.seed,
     )
+    baseline_defs: List[tuple[str, Path, bool]] = [
+        ("aiter", attn_root / "06_aiter" / "best_kernel.py", args.run_aiter),
+        ("triton", attn_root / "05_triton" / "best_kernel.py", args.run_triton),
+    ]
 
     timestamp = now_utc()
     rows: List[Dict[str, Any]] = []

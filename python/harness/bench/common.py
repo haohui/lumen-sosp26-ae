@@ -7,6 +7,7 @@ import csv
 import importlib.util
 import os
 import time
+import warnings
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Dict, Iterable, List
@@ -117,30 +118,58 @@ def configure_sync_wait_mode(*, device: "torch.device", mode: str) -> int:
         return -1
 
     lib = None
-    load_err: Exception | None = None
-    try:
-        lib = ctypes.CDLL("libamdhip64.so")
-    except OSError as e:
-        load_err = e
+    runtime_name = ""
+    set_fn_name = ""
+    get_fn_name = ""
+    load_errors: List[str] = []
+    for candidate_runtime, candidate_lib, candidate_set, candidate_get in (
+        ("HIP", "libamdhip64.so", "hipSetDeviceFlags", "hipGetDeviceFlags"),
+        ("CUDA", "libcudart.so", "cudaSetDeviceFlags", "cudaGetDeviceFlags"),
+    ):
+        try:
+            lib = ctypes.CDLL(candidate_lib)
+            runtime_name = candidate_runtime
+            set_fn_name = candidate_set
+            get_fn_name = candidate_get
+            break
+        except OSError as e:
+            load_errors.append(f"{candidate_lib}: {e}")
     if lib is None:
-        raise RuntimeError(f"failed to load HIP runtime library: {load_err}")
+        warnings.warn(
+            f"could not load HIP or CUDA runtime library; sync wait mode {mode_norm!r} was not applied "
+            f"({'; '.join(load_errors)})",
+            RuntimeWarning,
+        )
+        return -1
 
-    hip_set_device_flags = lib.hipSetDeviceFlags
-    hip_set_device_flags.argtypes = [ctypes.c_uint]
-    hip_set_device_flags.restype = ctypes.c_int
-    hip_get_device_flags = lib.hipGetDeviceFlags
-    hip_get_device_flags.argtypes = [ctypes.POINTER(ctypes.c_uint)]
-    hip_get_device_flags.restype = ctypes.c_int
+    try:
+        set_device_flags = getattr(lib, set_fn_name)
+        get_device_flags = getattr(lib, get_fn_name)
+    except AttributeError as e:
+        warnings.warn(
+            f"{runtime_name} runtime does not expose device flag APIs; sync wait mode {mode_norm!r} was not applied: {e}",
+            RuntimeWarning,
+        )
+        return -1
+    set_device_flags.argtypes = [ctypes.c_uint]
+    set_device_flags.restype = ctypes.c_int
+    get_device_flags.argtypes = [ctypes.POINTER(ctypes.c_uint)]
+    get_device_flags.restype = ctypes.c_int
 
     torch.cuda.set_device(device)
-    rc = int(hip_set_device_flags(flags[mode_norm]))
+    rc = int(set_device_flags(flags[mode_norm]))
     if rc != 0:
-        raise RuntimeError(f"hipSetDeviceFlags({flags[mode_norm]}) failed with error code {rc}")
+        warnings.warn(
+            f"{set_fn_name}({flags[mode_norm]}) failed with error code {rc}; sync wait mode {mode_norm!r} was not applied",
+            RuntimeWarning,
+        )
+        return -1
 
     got = ctypes.c_uint(0)
-    rc_get = int(hip_get_device_flags(ctypes.byref(got)))
+    rc_get = int(get_device_flags(ctypes.byref(got)))
     if rc_get != 0:
-        raise RuntimeError(f"hipGetDeviceFlags failed with error code {rc_get}")
+        warnings.warn(f"{get_fn_name} failed with error code {rc_get}", RuntimeWarning)
+        return -1
     return int(got.value)
 
 
@@ -348,4 +377,3 @@ def parse_dtype(name: str) -> "torch.dtype":
             raise RuntimeError("torch float8 dtype is unavailable")
         return dt
     raise ValueError(f"unsupported dtype: {name}")
-

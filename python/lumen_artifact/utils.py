@@ -1,0 +1,673 @@
+from __future__ import annotations
+
+import ast
+import json
+import math
+import os
+import re
+import shutil
+import sys
+import time
+import traceback
+from contextlib import redirect_stdout
+from dataclasses import asdict
+from importlib.util import find_spec
+from io import StringIO
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+def load_yaml_mapping(path: str | Path) -> dict[str, Any]:
+    config_path = Path(path).expanduser()
+    text = os.path.expandvars(config_path.read_text(encoding="utf-8"))
+    data = yaml.safe_load(text) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"YAML config must be a mapping: {config_path}")
+    return data
+
+
+def apply_yaml_overrides(
+    values: dict[str, Any],
+    overrides: list[str] | None = None,
+) -> dict[str, Any]:
+    merged = dict(values)
+    for override in overrides or []:
+        if "=" not in override:
+            raise ValueError(f"Override must look like key=value: {override}")
+        key, value = override.split("=", 1)
+        merged[key.strip()] = yaml.safe_load(value)
+    return merged
+
+
+def write_yaml_mapping(path: str | Path, values: dict[str, Any]) -> None:
+    Path(path).expanduser().write_text(
+        yaml.safe_dump(values, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def resolve_path(value: str | Path, base_dir: str | Path) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return (Path(base_dir).expanduser() / path).resolve()
+
+
+def discover_python_root(package_name: str = "lumen") -> Path:
+    spec = find_spec(package_name)
+    if spec is not None and spec.submodule_search_locations:
+        return Path(next(iter(spec.submodule_search_locations))).resolve().parent
+    return Path.cwd()
+
+
+def discover_module_file(module_name: str) -> Path | None:
+    spec = find_spec(module_name)
+    if spec is None or not spec.origin:
+        return None
+    return Path(spec.origin).resolve()
+
+
+def discover_kernelbench_cli_path() -> Path:
+    module_path = discover_module_file("lumen.harness.datasets.kernelbench.cli")
+    if module_path is not None:
+        return module_path
+    return (
+        discover_python_root()
+        / "lumen"
+        / "harness"
+        / "datasets"
+        / "kernelbench"
+        / "cli.py"
+    )
+
+
+def discover_skills_root(
+    *,
+    python_root: str | Path | None = None,
+    env_var: str = "LUMEN_SKILLS_ROOT",
+) -> Path:
+    env_path = os.environ.get(env_var)
+    if env_path:
+        return Path(env_path).expanduser()
+
+    root = Path(python_root) if python_root is not None else discover_python_root()
+    for start in (root, Path.cwd()):
+        start = start.resolve()
+        for parent in (start, *start.parents):
+            candidate = parent / "skills" / "examples"
+            if candidate.is_dir():
+                return candidate
+
+    return Path.cwd() / "skills" / "examples"
+
+
+def sibling_path(anchor_file: str | Path, filename: str) -> Path:
+    return Path(anchor_file).resolve().with_name(filename)
+
+
+def ensure_source_root_on_path(
+    anchor_file: str | Path,
+    *,
+    package_dir_name: str = "lumen",
+) -> Path:
+    source_root = Path(anchor_file).resolve().parent.parent
+    if (source_root / package_dir_name).is_dir() and str(source_root) not in sys.path:
+        sys.path.insert(0, str(source_root))
+    return source_root
+
+
+def coerce_config_values(
+    values: dict[str, Any],
+    base_dir: str | Path,
+) -> dict[str, Any]:
+    coerced = dict(values)
+
+    required = {"dataset_src", "level", "subset", "run_dir"}
+    missing = sorted(required - set(coerced))
+    if missing:
+        raise ValueError(f"Missing required config key(s): {', '.join(missing)}")
+
+    coerced["level"] = int(coerced["level"])
+    coerced["subset"] = parse_int_pair(coerced["subset"], name="subset")
+    coerced["run_dir"] = resolve_path(coerced["run_dir"], base_dir)
+    if coerced["dataset_src"] == "local" and "dataset_name" in coerced:
+        coerced["dataset_name"] = str(resolve_path(coerced["dataset_name"], base_dir))
+
+    for key in (
+        "timeout_seconds",
+        "max_retries",
+        "num_workers",
+        "eval_num_correct_trials",
+        "eval_num_perf_trials",
+    ):
+        if key in coerced:
+            coerced[key] = int(coerced[key])
+
+    for key, default in (
+        ("save_trajectory", True),
+        ("use_example_skills", True),
+        ("bypass_approvals_and_sandbox", True),
+    ):
+        if key in coerced:
+            coerced[key] = parse_bool(coerced[key], default=default)
+
+    return coerced
+
+
+def parse_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def parse_int_list(value: str | list[int] | tuple[int, ...] | None) -> list[int]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, (list, tuple)):
+        return [int(item) for item in value]
+    text = str(value).strip().strip("[]")
+    return [int(item.strip()) for item in text.split(",") if item.strip()]
+
+
+def parse_int_pair(
+    value: str | list[int | None] | tuple[int | None, int | None],
+    *,
+    name: str = "value",
+) -> tuple[int | None, int | None]:
+    if isinstance(value, (list, tuple)):
+        parts = list(value)
+    else:
+        text = str(value).strip()
+        if text.lower() in {"", "none", "(none, none)"}:
+            return (None, None)
+        parts = [part.strip() for part in text.strip("()[]").split(",")]
+
+    if len(parts) != 2:
+        raise ValueError(f"{name} must contain exactly two values: {value}")
+
+    def parse_item(item: object) -> int | None:
+        if item is None:
+            return None
+        text = str(item).strip()
+        return None if text.lower() in {"", "none"} else int(text)
+
+    return parse_item(parts[0]), parse_item(parts[1])
+
+
+def select_problem_ids(
+    dataset: Any,
+    problem_ids: str | list[int] | tuple[int, ...] | None,
+    subset: tuple[int | None, int | None],
+) -> list[int]:
+    all_problem_ids = dataset.get_problem_ids()
+    all_set = set(all_problem_ids)
+    explicit = parse_int_list(problem_ids)
+
+    if explicit:
+        unknown = [pid for pid in explicit if pid not in all_set]
+        if unknown:
+            print(f"[WARN] problem_ids not in dataset, ignored: {unknown}")
+        return [pid for pid in explicit if pid in all_set]
+
+    start, end = subset
+    if start is None and end is None:
+        return list(all_problem_ids)
+
+    start_value = min(all_problem_ids) if start is None else start
+    end_value = max(all_problem_ids) if end is None else end
+    return [pid for pid in all_problem_ids if start_value <= pid <= end_value]
+
+
+def torch_cuda_available() -> bool:
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+def sorted_prefixed_dirs(directory: str | Path, prefix: str) -> list[Path]:
+    base = Path(directory)
+    if not base.is_dir():
+        return []
+
+    def suffix_index(path: Path) -> int:
+        try:
+            return int(path.name.removeprefix(prefix))
+        except ValueError:
+            return -1
+
+    return sorted(
+        [
+            path
+            for path in base.iterdir()
+            if path.is_dir() and path.name.startswith(prefix)
+        ],
+        key=suffix_index,
+    )
+
+
+def parse_eval_payload(eval_payload: dict[str, Any]) -> dict[str, Any]:
+    compiled = bool(eval_payload.get("compiled", False))
+    correctness = bool(eval_payload.get("correctness", False))
+    runtime = eval_payload.get("runtime", eval_payload.get("runtime_us", -1.0)) or -1.0
+    ref_runtime = (
+        eval_payload.get("ref_runtime", eval_payload.get("ref_runtime_us", -1.0))
+        or -1.0
+    )
+    speedup = (ref_runtime / runtime) if runtime > 0 and ref_runtime > 0 else -1.0
+    return {
+        "compiled": compiled,
+        "correctness": correctness,
+        "runtime": runtime,
+        "ref_runtime": ref_runtime,
+        "speedup": speedup,
+        "metadata": eval_payload.get("metadata", {}),
+    }
+
+
+def format_eval_status(eval_payload: dict[str, Any]) -> str:
+    parsed = parse_eval_payload(eval_payload)
+    if parsed["compiled"] and parsed["correctness"]:
+        return f"compiled=true  correct=true  speedup={parsed['speedup']:.3f}x"
+    if parsed["compiled"]:
+        return "compiled=true  correct=false"
+    return f"compiled=false  {str(parsed['metadata'])[:80]}"
+
+
+def evaluate_round(round_dir: str | Path, config: Any, gpu_id: int) -> dict[str, Any]:
+    from lumen.harness.datasets.kernelbench.evaluator import evaluate_generated_model
+
+    path = Path(round_dir)
+    output_path = path / "eval_result.json"
+    eval_config_path = path / "eval_config.runtime.json"
+    source_config_path = path / "eval_config.json"
+    if output_path.exists():
+        output_path.unlink()
+
+    eval_config: dict[str, Any] = {}
+    if source_config_path.is_file():
+        eval_config = json.loads(source_config_path.read_text(encoding="utf-8"))
+    eval_config["num_correct_trials"] = int(config.eval_num_correct_trials)
+    eval_config["num_trials"] = int(config.eval_num_perf_trials)
+    eval_config_path.write_text(
+        json.dumps(eval_config, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+    log_buffer = StringIO()
+    try:
+        _set_cuda_device(gpu_id)
+        with redirect_stdout(log_buffer):
+            result = evaluate_generated_model(
+                original_model_file=path / "input_model.py",
+                generated_model_file=path / "output_model_new.py",
+                eval_config=eval_config,
+            )
+    except Exception as exc:
+        logs = log_buffer.getvalue()
+        if logs:
+            print(logs, file=sys.stderr, end="")
+        return {
+            "compiled": False,
+            "correctness": False,
+            "metadata": {
+                "error": str(exc),
+                "error_name": f"{exc.__class__.__module__}.{exc.__class__.__name__}",
+                "traceback": traceback.format_exc(),
+            },
+        }
+
+    logs = log_buffer.getvalue()
+    if logs:
+        print(logs, file=sys.stderr, end="")
+    payload = result.model_dump()
+    exit_code = 0 if result.compiled and result.correctness else 1
+    payload.setdefault("eval_exit_code", exit_code)
+    output_path.write_text(
+        json.dumps(payload, indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+def write_artifacts(
+    round_dir: str | Path,
+    *,
+    problem_id: int,
+    problem_name: str,
+    error: str,
+    eval_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    path = Path(round_dir)
+    meta: dict[str, Any] = {
+        "problem_id": problem_id,
+        "problem_name": problem_name,
+        "has_prompt": (path / "prompt.txt").is_file(),
+        "has_output_model_new": (path / "output_model_new.py").is_file(),
+        "stage": "generated",
+        "error": error,
+    }
+
+    if eval_payload is not None:
+        parsed = parse_eval_payload(eval_payload)
+        metadata = parsed["metadata"]
+        if parsed["compiled"] and parsed["correctness"]:
+            eval_error = "OK: compiled=True, correctness=True"
+        elif not parsed["compiled"]:
+            eval_error = f"compiled=False. {json.dumps(metadata, default=str)}"
+        else:
+            eval_error = (
+                f"compiled=True, correctness=False. {json.dumps(metadata, default=str)}"
+            )
+
+        meta.update(
+            {
+                "stage": "speedup_eval",
+                "compiled": parsed["compiled"],
+                "correctness": parsed["correctness"],
+                "speedup": parsed["speedup"],
+                "ref_ms": parsed["ref_runtime"],
+                "new_ms": parsed["runtime"],
+                "error": eval_error,
+                "eval_metadata": metadata,
+                "eval_payload": eval_payload,
+            }
+        )
+
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "meta.json").write_text(
+        json.dumps(meta, indent=2, default=str),
+        encoding="utf-8",
+    )
+    (path / "error.txt").write_text(meta["error"] + "\n", encoding="utf-8")
+    return meta
+
+
+def write_problem_meta(
+    problem_dir: str | Path,
+    *,
+    problem_id: int,
+    problem_name: str,
+    round_metas: list[dict[str, Any]],
+) -> None:
+    if round_metas:
+        best = next(
+            (meta for meta in round_metas if meta.get("correctness")),
+            round_metas[-1],
+        )
+        meta = dict(best)
+        meta["rounds"] = [
+            {
+                "round": idx,
+                "compiled": item.get("compiled"),
+                "correctness": item.get("correctness"),
+                "speedup": item.get("speedup"),
+            }
+            for idx, item in enumerate(round_metas)
+        ]
+    else:
+        meta = {
+            "problem_id": problem_id,
+            "problem_name": problem_name,
+            "stage": "generated",
+            "error": "no rounds completed",
+            "rounds": [],
+        }
+
+    path = Path(problem_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "meta.json").write_text(
+        json.dumps(meta, indent=2, default=str),
+        encoding="utf-8",
+    )
+    (path / "error.txt").write_text(
+        str(meta.get("error", "")) + "\n",
+        encoding="utf-8",
+    )
+
+
+def run_eval_phase(
+    config: Any,
+    dataset: Any,
+    problem_ids: list[int],
+    run_dir: str | Path,
+    gpu_ids: list[int],
+) -> None:
+    if not torch_cuda_available():
+        print("[WARN] No CUDA/HIP device available; eval was skipped.")
+        return
+
+    base_run_dir = Path(run_dir)
+    to_eval: list[tuple[int, Path, int]] = []
+    for pid in problem_ids:
+        problem_dir = base_run_dir / f"p{pid:02d}"
+        top_meta_path = problem_dir / "meta.json"
+
+        if top_meta_path.is_file():
+            top_meta = json.loads(top_meta_path.read_text(encoding="utf-8"))
+            if top_meta.get("stage") == "speedup_eval":
+                continue
+
+        for round_dir in reversed(sorted_prefixed_dirs(problem_dir, "round")):
+            if (round_dir / "output_model_new.py").is_file():
+                gpu_id = gpu_ids[len(to_eval) % len(gpu_ids)]
+                to_eval.append((pid, round_dir, gpu_id))
+                break
+
+    if not to_eval:
+        print("[INFO] Eval phase: nothing to evaluate.")
+        return
+
+    print(f"\n[EVAL] Evaluating {len(to_eval)} kernel(s) on GPU(s) {gpu_ids}.")
+    for pid, round_dir, gpu_id in to_eval:
+        problem = dataset.get_problem_by_id(pid)
+        start_time = time.time()
+        eval_payload = evaluate_round(round_dir, config, gpu_id)
+        elapsed = time.time() - start_time
+        status = format_eval_status(eval_payload)
+        print(f"  p{pid:02d}: {status}  ({elapsed:.1f}s) [gpu:{gpu_id}]")
+
+        write_artifacts(
+            round_dir,
+            problem_id=pid,
+            problem_name=problem.name,
+            error="",
+            eval_payload=eval_payload,
+        )
+        metas = []
+        for path in sorted_prefixed_dirs(round_dir.parent, "round"):
+            meta_path = path / "meta.json"
+            if meta_path.is_file():
+                metas.append(json.loads(meta_path.read_text(encoding="utf-8")))
+        write_problem_meta(
+            round_dir.parent,
+            problem_id=pid,
+            problem_name=problem.name,
+            round_metas=metas,
+        )
+
+
+def count_trace_edits(trace_path: str | Path) -> int:
+    path = Path(trace_path)
+    if not path.is_file():
+        return 0
+
+    counted_tools = {"read", "write", "edit"}
+    count = 0
+
+    def visit(node: Any) -> None:
+        nonlocal count
+        if isinstance(node, dict):
+            name = node.get("name")
+            if node.get("type") == "tool_use" and isinstance(name, str):
+                if name.lower() in counted_tools:
+                    count += 1
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+
+    with path.open(encoding="utf-8") as trace_file:
+        for line in trace_file:
+            try:
+                visit(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    return count
+
+
+def collect_generation_metrics(
+    run_dir: str | Path,
+    problem_ids: list[int],
+) -> dict[str, Any]:
+    base = Path(run_dir)
+    metas: list[dict[str, Any]] = []
+    speedups: list[float] = []
+    edit_count = 0
+
+    for pid in problem_ids:
+        problem_dir = base / f"p{pid:02d}"
+        meta_path = problem_dir / "meta.json"
+        if meta_path.is_file():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                meta = {}
+            metas.append(meta)
+            speedup = meta.get("speedup")
+            if meta.get("correctness") and isinstance(speedup, (int, float)):
+                if speedup > 0:
+                    speedups.append(float(speedup))
+
+        for round_dir in sorted_prefixed_dirs(problem_dir, "round"):
+            edit_count += count_trace_edits(round_dir / "trace.jsonl")
+
+    correct_count = sum(1 for meta in metas if meta.get("correctness"))
+    total_count = len(problem_ids)
+    geomean = None
+    if speedups:
+        geomean = math.exp(sum(math.log(value) for value in speedups) / len(speedups))
+
+    return {
+        "run_dir": str(base),
+        "correctness_rate": (
+            100.0 * correct_count / total_count if total_count else None
+        ),
+        "geomean_speedup": geomean,
+        "min_speedup": min(speedups) if speedups else None,
+        "max_speedup": max(speedups) if speedups else None,
+        "trace_edit_count": edit_count,
+    }
+
+
+def validate_generated_avelang(code: str) -> tuple[bool, list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    stripped = _strip_comments(code)
+
+    if re.search(r"\bsubstrate\b", stripped):
+        errors.append("Uses retired substrate package name; use avelang")
+    if "@avelang.jit" not in stripped:
+        errors.append("Missing @avelang.jit decorator")
+    if "avelang.language" not in stripped:
+        errors.append("Missing avelang.language import")
+    if not re.search(
+        r"\b[A-Za-z_]\w*\.(thread_id|block_id|make_tensor|make_shared|range|convert|view|amdgpu|nvvm)\b",
+        stripped,
+    ):
+        errors.append("No AveLang language operations found")
+    if re.search(r"\btry\s*:", stripped) or re.search(r"\bexcept\b", stripped):
+        errors.append("Contains try-except block")
+    if _has_pass_statement(code):
+        errors.append("Contains pass statement")
+
+    fallback_ops = [
+        "torch.mm",
+        "torch.bmm",
+        "torch.matmul",
+        "torch.conv2d",
+        "torch.nn.functional",
+    ]
+    for op in fallback_ops:
+        if op in stripped:
+            warnings.append(f"Uses possible PyTorch fallback op: {op}")
+
+    return not errors, errors, warnings
+
+
+def write_generation_config(path: str | Path, config: Any) -> None:
+    config_data = asdict(config)
+    if "run_dir" in config_data:
+        config_data["run_dir"] = str(config_data["run_dir"])
+    if "subset" in config_data:
+        config_data["subset"] = list(config_data["subset"])
+    write_yaml_mapping(path, config_data)
+
+
+def split_config_overrides(value: str) -> list[str]:
+    return [item.strip() for item in value.splitlines() if item.strip()]
+
+
+def write_codex_result(path: str | Path, result: Any) -> None:
+    try:
+        payload = asdict(result)
+    except TypeError:
+        payload = {
+            "ok": getattr(result, "ok", None),
+            "status": getattr(result, "status", None),
+            "error": getattr(result, "error", None),
+            "trace_path": getattr(result, "trace_path", None),
+            "final_response": getattr(result, "final_response", None),
+        }
+    Path(path).write_text(
+        json.dumps(payload, indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
+
+
+def copy_codex_trace(result: Any, round_dir: str | Path, *, save_trace: bool) -> None:
+    if not save_trace or not getattr(result, "trace_path", None):
+        return
+    source = Path(result.trace_path).expanduser()
+    if not source.is_file():
+        return
+    destination = Path(round_dir) / "trace.jsonl"
+    try:
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+    except OSError:
+        pass
+
+
+def _set_cuda_device(gpu_id: int) -> None:
+    import torch
+
+    if torch.cuda.is_available():
+        torch.cuda.set_device(gpu_id)
+
+
+def _strip_comments(code: str) -> str:
+    lines = []
+    for line in code.splitlines():
+        line = line.split("#", 1)[0]
+        line = line.split("//", 1)[0]
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _has_pass_statement(code: str) -> bool:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    return any(isinstance(node, ast.Pass) for node in ast.walk(tree))

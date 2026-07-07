@@ -1,0 +1,52 @@
+# Problem source. Use "huggingface" for online KernelBench.
+dataset_src: huggingface
+
+# HuggingFace dataset id, or KernelBench root when dataset_src is "local".
+dataset_name: ScalingIntelligence/KernelBench
+
+# KernelBench level to generate.
+level: 1
+
+# Inclusive problem range [start, end].
+subset: [1, 1]
+
+# Optional explicit problem IDs. Empty means use subset.
+problem_ids: ""
+
+# Output directory for this generation run.
+run_dir: runs/lumen_kernelbench_codex_demo
+
+# Per-Codex-call timeout in seconds.
+timeout_seconds: 600
+
+# Maximum generation attempts per problem.
+max_retries: 3
+
+# Codex CLI options. Empty values inherit Codex defaults/environment.
+codex_bin: ""
+codex_profile: ""
+model_provider: ""
+reasoning_effort: ""
+codex_config: ""
+bypass_approvals_and_sandbox: true
+
+# Number of generation workers.
+num_workers: 1
+
+# GPU IDs assigned round-robin for eval.
+gpu_ids: "0"
+
+# Target numeric precision included in the KernelBench prompt.
+precision: bf16
+
+# Copy Codex session trace to each round when available.
+save_trajectory: true
+
+# Number of correctness trials.
+eval_num_correct_trials: 50
+
+# Number of performance trials.
+eval_num_perf_trials: 100
+
+# GPU architecture passed to KernelBench eval_config.json.
+gpu_arch: gfx942

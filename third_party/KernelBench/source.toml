@@ -1,0 +1,6 @@
+[repo]
+name = "KernelBench"
+upstream = "https://github.com/ScalingIntelligence/KernelBench.git"
+base_commit = "7a0fae93624b60b8e9b67a862acabb5dbf8f0951"
+
+patches = ["01-lumen-generation.patch"]

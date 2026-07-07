@@ -362,6 +362,12 @@ def timer_kwargs(args: Any) -> Dict[str, Any]:
 
 
 def time_call(call: Callable[[], None], *, device: "torch.device", args: Any) -> CUDAGraphTimingResult:
+    if torch is not None:
+        def wrapped() -> None:
+            with torch.inference_mode():
+                call()
+
+        return benchmark_with_cudagraph(fn=wrapped, device=device, **timer_kwargs(args))
     return benchmark_with_cudagraph(fn=call, device=device, **timer_kwargs(args))
 
 

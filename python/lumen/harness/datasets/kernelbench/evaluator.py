@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import torch
-    from kernelbench.eval import KernelExecResult
+    from .eval import KernelExecResult
 
 DEFAULT_SEED = 42
 DEFAULT_NUM_WARMUP = 5
@@ -21,7 +21,8 @@ TEMPFILE_BACKENDS = {"triton", "tilelang", "cute", "substrate"}
 def evaluate_reference_file(filename: str | Path) -> KernelExecResult:
     """Evaluate a KernelBench reference file with CUDA graph replay timing."""
     import torch
-    from kernelbench.eval import KernelExecResult, get_error_name
+
+    from .eval import KernelExecResult, get_error_name
 
     path = Path(filename).expanduser()
     metadata: dict[str, Any] = {"filename": str(path)}
@@ -92,7 +93,8 @@ def evaluate_generated_model(
 ) -> KernelExecResult:
     """Evaluate a generated KernelBench ModelNew against an original Model file."""
     import torch
-    from kernelbench.eval import (
+
+    from .eval import (
         KernelExecResult,
         get_error_name,
         load_custom_model,
@@ -258,7 +260,7 @@ def _validate_input_file(path: Path, label: str) -> str | None:
 
 
 def _load_original_model(path: Path) -> tuple[Any, Any, Any]:
-    from kernelbench.eval import load_original_model_and_inputs
+    from .eval import load_original_model_and_inputs
 
     model_src = path.read_text(encoding="utf-8")
     Model, get_init_inputs, get_inputs = load_original_model_and_inputs(model_src, {})
@@ -322,7 +324,7 @@ def _process_inputs(
     backend: str,
     precision: torch.dtype,
 ) -> list[Any]:
-    from kernelbench.eval import _process_input_tensor
+    from .eval import _process_input_tensor
 
     return [
         _process_input_tensor(
@@ -344,7 +346,8 @@ def _measure_model_with_cuda_graph(
     num_trials: int,
 ) -> dict[str, Any]:
     import torch
-    from kernelbench.timing import get_timing_stats
+
+    from .timing import get_timing_stats
 
     with torch.no_grad(), torch.cuda.device(device):
         torch.cuda.synchronize(device=device)
@@ -374,7 +377,7 @@ def _measure_model_with_cuda_graph(
 
 
 def _get_precision(config: dict[str, Any]) -> torch.dtype:
-    from kernelbench.eval import get_torch_dtype_from_string
+    from .eval import get_torch_dtype_from_string
 
     precision = config.get("precision", "fp32")
     if isinstance(precision, str):
@@ -399,7 +402,7 @@ def _get_int_config(config: dict[str, Any], key: str, default: int) -> int:
 
 
 def _kernelbench_set_seed() -> Any:
-    from kernelbench.eval import set_seed
+    from .eval import set_seed
 
     return set_seed
 

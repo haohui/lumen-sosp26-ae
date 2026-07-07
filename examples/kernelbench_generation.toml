@@ -1,0 +1,24 @@
+# Problem source. Use "huggingface" for online KernelBench.
+run_dir = "runs/lumen_kernelbench_codex_demo"
+num_workers = 1
+
+[dataset]
+source = "huggingface"
+name = "ScalingIntelligence/KernelBench"
+level = 1
+subset = [1, 1]
+problem_ids = []
+
+[codex]
+timeout_seconds = 600
+max_retries = 3
+bypass_approvals_and_sandbox = true
+save_trajectory = true
+config_overrides = []
+
+[evaluation]
+gpu_ids = [0]
+precision = "bf16"
+num_correct_trials = 50
+num_perf_trials = 100
+gpu_arch = "gfx942"

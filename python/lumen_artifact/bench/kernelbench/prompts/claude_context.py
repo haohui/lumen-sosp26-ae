@@ -19,7 +19,7 @@ def render_claude_context(
     executable_path = Path(python_executable)
     skills_path = Path(skills_root)
     bench_script = (
-        python_path / "lumen_artifact" / "bench" / "tools" / "run_kernelbench_case.py"
+        python_path / "lumen" / "harness" / "datasets" / "kernelbench" / "cli.py"
     )
     template = Path(__file__).with_name("claude_context.md").read_text(encoding="utf-8")
     examples_skill = skills_path / "substrate-examples" / "SKILL.md"
@@ -51,7 +51,4 @@ def render_claude_context(
         skills_root=skills_path,
         lang_spec_skill=skills_path / "substrate-language-spec" / "SKILL.md",
         examples_section=examples_section,
-        eval_num_correct_trials=eval_num_correct_trials,
-        eval_num_perf_trials=eval_num_perf_trials,
-        eval_timing_method=eval_timing_method,
     )

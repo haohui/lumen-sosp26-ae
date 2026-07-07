@@ -115,6 +115,7 @@ def evaluate_generated_model(
     }
     if "gpu_arch" in config:
         metadata["gpu_arch"] = config["gpu_arch"]
+        _set_gpu_arch(config["gpu_arch"])
 
     for path, label in (
         (original_path, "Original model"),
@@ -405,6 +406,19 @@ def _kernelbench_set_seed() -> Any:
     from .eval import set_seed
 
     return set_seed
+
+
+def _set_gpu_arch(value: Any) -> None:
+    from .hardware import set_gpu_arch
+
+    if value is None:
+        return
+    if isinstance(value, str):
+        archs = [item.strip() for item in value.split(",") if item.strip()]
+    else:
+        archs = [str(item).strip() for item in value if str(item).strip()]
+    if archs:
+        set_gpu_arch(archs)
 
 
 def _cleanup_cuda(torch_module: Any, device: Any) -> None:

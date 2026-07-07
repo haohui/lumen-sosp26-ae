@@ -41,20 +41,18 @@ environment for self-checks.
 {venv_activation}
 export PYTHONPATH={python_root}:$PYTHONPATH
 {python_executable} {bench_script} \
-  --input-file eval_cases.txt \
-  --output eval_result.jsonl \
-  --num-correct-trials {eval_num_correct_trials} \
-  --num-perf-trials {eval_num_perf_trials} \
-  --timing-method {eval_timing_method} \
-  --measure-performance
+  --mode generated \
+  --original input_model.py \
+  --generated output_model_new.py \
+  --eval-config eval_config.json \
+  --json-output eval_result.json
 ```
 
 Use the same environment block above for any ad-hoc import or forward-pass
 checks.
 
-The harness writes one JSON object per case to `eval_result.jsonl`; check
-`compiled`, `correctness`, `runtime_ms`, and `ref_runtime_ms`. If `compiled` or
+The harness writes one JSON object to `eval_result.json`; check
+`compiled`, `correctness`, `runtime`, and `ref_runtime`. If `compiled` or
 `correctness` is false, fix `output_model_new.py` and re-run.
 
-Do not edit `input_model.py`, `eval_config.json`, `eval_cases.txt`, or
-`prompt.txt`.
+Do not edit `input_model.py`, `eval_config.json`, or `prompt.txt`.

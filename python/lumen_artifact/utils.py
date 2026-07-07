@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 import math
 import os
+import sys
 import time
+import traceback
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -184,8 +188,11 @@ def sorted_prefixed_dirs(directory: str | Path, prefix: str) -> list[Path]:
 def parse_eval_payload(eval_payload: dict[str, Any]) -> dict[str, Any]:
     compiled = bool(eval_payload.get("compiled", False))
     correctness = bool(eval_payload.get("correctness", False))
-    runtime = eval_payload.get("runtime_us", -1.0) or -1.0
-    ref_runtime = eval_payload.get("ref_runtime_us", -1.0) or -1.0
+    runtime = eval_payload.get("runtime", eval_payload.get("runtime_us", -1.0)) or -1.0
+    ref_runtime = (
+        eval_payload.get("ref_runtime", eval_payload.get("ref_runtime_us", -1.0))
+        or -1.0
+    )
     speedup = (ref_runtime / runtime) if runtime > 0 and ref_runtime > 0 else -1.0
     return {
         "compiled": compiled,
@@ -207,30 +214,66 @@ def format_eval_status(eval_payload: dict[str, Any]) -> str:
 
 
 def evaluate_round(round_dir: str | Path, config: Any, gpu_id: int) -> dict[str, Any]:
-    from lumen_artifact.bench import run_kernelbench_cases
+    from lumen.harness.datasets.kernelbench.evaluator import evaluate_generated_model
 
     path = Path(round_dir)
-    output_path = path / "eval_result.jsonl"
-    exit_code = run_kernelbench_cases(
-        input_file=path / "eval_cases.txt",
-        output=output_path,
-        device=gpu_id,
-        num_correct_trials=int(config.eval_num_correct_trials),
-        num_perf_trials=int(config.eval_num_perf_trials),
-        measure_performance=True,
-        timing_method=config.eval_timing_method,
-        verbose=False,
+    output_path = path / "eval_result.json"
+    eval_config_path = path / "eval_config.runtime.json"
+    source_config_path = path / "eval_config.json"
+    if output_path.exists():
+        output_path.unlink()
+
+    eval_config: dict[str, Any] = {}
+    if source_config_path.is_file():
+        eval_config = json.loads(source_config_path.read_text(encoding="utf-8"))
+    eval_config["num_correct_trials"] = int(config.eval_num_correct_trials)
+    eval_config["num_trials"] = int(config.eval_num_perf_trials)
+    eval_config_path.write_text(
+        json.dumps(eval_config, indent=2, default=str),
+        encoding="utf-8",
     )
-    lines = output_path.read_text(encoding="utf-8").splitlines()
-    if not lines:
+
+    log_buffer = StringIO()
+    try:
+        _set_cuda_device(gpu_id)
+        with redirect_stdout(log_buffer):
+            result = evaluate_generated_model(
+                original_model_file=path / "input_model.py",
+                generated_model_file=path / "output_model_new.py",
+                eval_config=eval_config,
+            )
+    except Exception as exc:
+        logs = log_buffer.getvalue()
+        if logs:
+            print(logs, file=sys.stderr, end="")
         return {
             "compiled": False,
             "correctness": False,
-            "metadata": {"error": f"eval produced no output; exit_code={exit_code}"},
+            "metadata": {
+                "error": str(exc),
+                "error_name": f"{exc.__class__.__module__}.{exc.__class__.__name__}",
+                "traceback": traceback.format_exc(),
+            },
         }
-    payload = json.loads(lines[0])
+
+    logs = log_buffer.getvalue()
+    if logs:
+        print(logs, file=sys.stderr, end="")
+    payload = result.model_dump()
+    exit_code = 0 if result.compiled and result.correctness else 1
     payload.setdefault("eval_exit_code", exit_code)
+    output_path.write_text(
+        json.dumps(payload, indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
     return payload
+
+
+def _set_cuda_device(gpu_id: int) -> None:
+    import torch
+
+    if torch.cuda.is_available():
+        torch.cuda.set_device(gpu_id)
 
 
 def write_artifacts(

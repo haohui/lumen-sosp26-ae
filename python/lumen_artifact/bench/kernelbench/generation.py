@@ -122,11 +122,12 @@ def write_round_inputs(
         ),
         encoding="utf-8",
     )
-    (path / "eval_cases.txt").write_text(f"{path}\n", encoding="utf-8")
     eval_config = {
         "backend": PROMPT_BACKEND,
         "gpu_arch": config.gpu_arch,
         "precision": config.precision,
+        "num_correct_trials": config.eval_num_correct_trials,
+        "num_trials": config.eval_num_perf_trials,
     }
     (path / "eval_config.json").write_text(
         json.dumps(eval_config, indent=2),

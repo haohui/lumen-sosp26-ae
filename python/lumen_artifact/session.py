@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import os
 import selectors
+import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+
+from lumen.harness.backend.codex import CodexRunner, CodexRunnerConfig
 
 
 RunMode = Literal["sync", "async"]
@@ -211,6 +214,71 @@ class ClaudeSession(AbstractSession):
         return proc.wait(), trace_path
 
 
+class CodexSession(AbstractSession):
+    backend = "codex"
+
+    def load_llm_config(
+        self,
+        *,
+        endpoint: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> "CodexSession":
+        if endpoint is not None:
+            self._llm_env["OPENAI_BASE_URL"] = endpoint
+        if api_key is not None:
+            self._llm_env["OPENAI_API_KEY"] = api_key
+        if model is not None:
+            self._llm_env["LUMEN_CODEX_MODEL"] = model
+        return self
+
+    def _run(self, prompt: str) -> AgentResult:
+        result = CodexRunner().execute(
+            CodexRunnerConfig(
+                work_dir=self.work_dir,
+                prompt=prompt,
+                codex_bin=os.environ.get("LUMEN_CODEX_BIN"),
+                profile=os.environ.get("LUMEN_CODEX_PROFILE"),
+                model=self._llm_env.get("LUMEN_CODEX_MODEL"),
+                model_provider=os.environ.get("LUMEN_CODEX_MODEL_PROVIDER"),
+                reasoning_effort=os.environ.get("LUMEN_CODEX_REASONING_EFFORT"),
+                timeout_seconds=self.timeout_seconds,
+                env=self._env(),
+                config_overrides=tuple(_split_codex_config_overrides()),
+                bypass_approvals_and_sandbox=True,
+            )
+        )
+        trace_dir = self._save_trace(result.trace_path) if self.save_trace else None
+        return AgentResult(
+            work_dir=self.work_dir,
+            returncode=0 if result.ok else 1,
+            error=None if result.ok else result.error or result.status,
+            trace_dir=trace_dir,
+        )
+
+    def _env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env["IS_SANDBOX"] = "1"
+        env.update(self._llm_env)
+        return env
+
+    def _save_trace(self, source: str | None) -> Path | None:
+        if source is None:
+            return None
+        destination = self._trace_path()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(source, destination)
+        except OSError:
+            return Path(source).expanduser().parent
+        return destination.parent
+
+
+def _split_codex_config_overrides() -> list[str]:
+    value = os.environ.get("LUMEN_CODEX_CONFIG", "")
+    return [item.strip() for item in value.splitlines() if item.strip()]
+
+
 class Session:
     _registry: dict[str, type[AbstractSession]] = {}
 
@@ -246,3 +314,4 @@ class Session:
 
 
 Session.register_backend(ClaudeSession.backend, ClaudeSession)
+Session.register_backend(CodexSession.backend, CodexSession)

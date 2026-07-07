@@ -16,7 +16,7 @@ problem_ids: ""
 # Output directory for this generation run.
 run_dir: runs/lumen_kernelbench_demo
 
-# Agent backend registered in lumen_artifact.session.
+# Agent backend registered in lumen_artifact.session: "claude" or "codex".
 backend: claude
 
 # Per-agent-call timeout in seconds.

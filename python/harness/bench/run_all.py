@@ -91,6 +91,24 @@ def _run(cmd: List[str], *, env: Dict[str, str] | None = None) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
+def _is_hip(python_bin: str) -> bool:
+    probe = (
+        "import torch; "
+        "print('1' if getattr(torch.version, 'hip', None) is not None else '0')"
+    )
+    try:
+        cp = subprocess.run(
+            [python_bin, "-c", probe],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return cp.returncode == 0 and cp.stdout.strip() == "1"
+    except Exception:
+        return False
+
+
 def _require_aiter(python_bin: str) -> None:
     probe = (
         "import importlib.util; "
@@ -152,11 +170,14 @@ def _run_domain(
     domain: str,
     cols: List[int],
     *,
+    is_hip: bool,
     run_id: str,
 ) -> Path:
     spec = DOMAIN_SPECS[domain]
     out = out_dir / spec.csv_name
-    run_flags = [*spec.fixed_args, "--run-aiter"]
+    run_flags = [*spec.fixed_args]
+    if is_hip:
+        run_flags.append("--run-aiter")
     cmd = [
         args.python,
         str(THIS_DIR / spec.script),
@@ -252,8 +273,11 @@ def main() -> int:
     args = parse_args()
     gemm_cols, attn_cols, moe_cols = _resolve_cols(args)
     cols_map = {"gemm": gemm_cols, "attention": attn_cols, "moe": moe_cols}
+    is_hip = False
     if not args.report_only:
-        _require_aiter(args.python)
+        is_hip = _is_hip(args.python)
+        if is_hip:
+            _require_aiter(args.python)
 
     run_id = args.run_id or time.strftime("%Y%m%d_%H%M%S", time.gmtime())
     out_dir = Path(args.run_dir) if args.run_dir else Path(args.output_dir) / run_id
@@ -268,6 +292,7 @@ def main() -> int:
                 out_dir,
                 domain,
                 cols_map[domain],
+                is_hip=is_hip,
                 run_id=run_id,
             )
 

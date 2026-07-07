@@ -72,7 +72,10 @@ def _attn_tflops(seq_len: int, mean_ms: float, meta: Dict[str, Dict[str, int | f
     batch = int(cfg.get("batch_size", ATTENTION_DEFAULTS["batch_size"]))
     heads = int(cfg.get("num_q_heads", ATTENTION_DEFAULTS["num_q_heads"]))
     dim = int(cfg.get("head_dim", ATTENTION_DEFAULTS["head_dim"]))
+    causal = bool(cfg.get("causal", ATTENTION_DEFAULTS["causal"]))
     flops = 4.0 * batch * heads * seq_len * seq_len * dim
+    if causal:
+        flops /= 2.0
     return flops / (mean_ms * 1.0e-3) / 1.0e12
 
 

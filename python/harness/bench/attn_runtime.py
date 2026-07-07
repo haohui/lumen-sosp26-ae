@@ -21,6 +21,8 @@ def attention_tflops(*, batch_size: int, seq_len: int, num_q_heads: int, head_di
     if ms <= 0.0:
         return float("nan")
     flops = 4.0 * batch_size * num_q_heads * seq_len * seq_len * head_dim
+    if causal:
+        flops /= 2.0
     return flops / (ms * 1.0e-3) / 1.0e12
 
 

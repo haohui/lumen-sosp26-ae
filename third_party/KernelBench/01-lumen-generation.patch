@@ -1,0 +1,22 @@
+diff --git a/src/kernelbench/utils.py b/src/kernelbench/utils.py
+index d2d1b17..c372c27 100644
+--- a/src/kernelbench/utils.py
++++ b/src/kernelbench/utils.py
+@@ -322,10 +322,17 @@ def get_package_resource_path(relative_path: str) -> str:
+       - Running from repo directly
+       - As a git submodule
+       - As an installed pip/uv dependency
++      - With KERNELBENCH_PACKAGE_PATH_OVERRIDE set to a package-shaped resource root
+     
+     Args:
+         relative_path: Path relative to kernelbench/, e.g. "prompts/prompts.toml"
+     """
++    override_root = os.environ.get("KERNELBENCH_PACKAGE_PATH_OVERRIDE")
++    if override_root:
++        override_path = Path(override_root).expanduser() / relative_path
++        if override_path.exists():
++            return str(override_path)
++
+     # Try importlib.resources first (installed package)
+     try:
+         resource = files("kernelbench").joinpath(relative_path)

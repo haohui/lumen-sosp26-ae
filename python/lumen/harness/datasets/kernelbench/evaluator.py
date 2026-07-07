@@ -15,7 +15,7 @@ DEFAULT_SEED = 42
 DEFAULT_NUM_WARMUP = 5
 DEFAULT_NUM_TRIALS = 100
 DEFAULT_BACKEND = "cuda"
-TEMPFILE_BACKENDS = {"triton", "tilelang", "cute", "substrate"}
+TEMPFILE_BACKENDS = {"triton", "tilelang", "cute", "avelang"}
 
 
 def evaluate_reference_file(filename: str | Path) -> KernelExecResult:

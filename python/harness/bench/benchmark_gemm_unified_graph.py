@@ -90,12 +90,6 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     gemm_root = benchmark_root(repo_root) / "gemm"
 
-    py_baselines: List[tuple[str, Path, bool]] = [
-        ("aiter", args.aiter_kernel, args.run_aiter),
-        ("hipkittens", gemm_root / "08_hipketten" / "best_kernel.py", args.run_hipkittens),
-        ("triton", gemm_root / "07_triton" / "best_kernel.py", args.run_triton),
-    ]
-
     if torch is None:
         raise RuntimeError("torch is required")
 
@@ -103,9 +97,19 @@ def main() -> None:
     device = torch.device(args.device)
     configure_sync_wait_mode(device=device, mode=args.sync_wait_mode)
     dtype = parse_dtype(args.dtype)
-    if args.run_hipblaslt and dtype is not torch.bfloat16:
+    is_hip = getattr(torch.version, "hip", None) is not None
+    if not is_hip:
+        args.run_hipblaslt = False
+        args.run_hipkittens = False
+    elif args.run_hipblaslt and dtype is not torch.bfloat16:
         args.run_hipblaslt = False
     shared = build_shared_inputs(sizes=sizes, device=device, dtype=dtype, seed=args.seed)
+
+    py_baselines: List[tuple[str, Path, bool]] = [
+        ("aiter", args.aiter_kernel, args.run_aiter),
+        ("hipkittens", gemm_root / "08_hipketten" / "best_kernel.py", args.run_hipkittens),
+        ("triton", gemm_root / "07_triton" / "best_kernel.py", args.run_triton),
+    ]
 
     timestamp = now_utc()
     rows: List[Dict[str, Any]] = []

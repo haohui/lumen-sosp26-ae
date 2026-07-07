@@ -47,7 +47,7 @@ def read_generated_output(round_dir: str | Path) -> tuple[str | None, str | None
 
 def _write_generation_workspace(*args: object, **kwargs: object) -> dict[str, Path]:
     try:
-        from lumen.harness.datasets.kernelbench.prompt import (
+        from lumen.harness.datasets.kernelbench.generation.prompt import (
             write_generation_workspace,
         )
     except ModuleNotFoundError as exc:

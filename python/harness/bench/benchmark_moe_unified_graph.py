@@ -114,26 +114,36 @@ def main() -> None:
     if args.inter_dim % BLOCK_K != 0:
         raise ValueError(f"inter_dim must be divisible by {BLOCK_K}, got {args.inter_dim}")
 
-    repo_root = Path(__file__).resolve().parents[3]
-    # AITER JIT modules are built into repo-local .aiter/jit when site-packages is read-only.
-    # Make that directory importable so module_moe_asm/module_gemm_a16w16_asm can be loaded.
-    os.environ.setdefault("AITER_JIT_DIR", str(repo_root / ".aiter" / "jit"))
-    moe_root = benchmark_root(repo_root) / "moe"
-    aiter_entry = moe_root / "05_aiter" / "run_aiter.py"
-    aiter_mod = load_module(aiter_entry)
-    build_aiter_cases = getattr(aiter_mod, "build_cases_for_seq", None)
-    resolve_aiter_backends = getattr(aiter_mod, "resolve_backends", None)
-    if not callable(build_aiter_cases):
-        raise RuntimeError(f"missing build_cases_for_seq() in {aiter_entry}")
-    if not callable(resolve_aiter_backends):
-        raise RuntimeError(f"missing resolve_backends() in {aiter_entry}")
-
-    aiter_backends = resolve_aiter_backends(args)
-    if not isinstance(aiter_backends, list):
-        raise RuntimeError(f"resolve_backends() must return list, got {type(aiter_backends).__name__}")
-    aiter_backends = [str(x) for x in aiter_backends]
     if torch is None:
         raise RuntimeError("torch is required")
+
+    repo_root = Path(__file__).resolve().parents[3]
+    is_hip = getattr(torch.version, "hip", None) is not None
+    if not is_hip:
+        args.run_aiter = False
+        args.run_aiter_asm = False
+        args.run_aiter_triton = False
+
+    build_aiter_cases = None
+    aiter_backends: List[str] = []
+    if is_hip and (args.run_aiter or args.run_aiter_asm or args.run_aiter_triton):
+        # AITER JIT modules are built into repo-local .aiter/jit when site-packages is read-only.
+        # Make that directory importable so module_moe_asm/module_gemm_a16w16_asm can be loaded.
+        os.environ.setdefault("AITER_JIT_DIR", str(repo_root / ".aiter" / "jit"))
+        moe_root = benchmark_root(repo_root) / "moe"
+        aiter_entry = moe_root / "05_aiter" / "run_aiter.py"
+        aiter_mod = load_module(aiter_entry)
+        build_aiter_cases = getattr(aiter_mod, "build_cases_for_seq", None)
+        resolve_aiter_backends = getattr(aiter_mod, "resolve_backends", None)
+        if not callable(build_aiter_cases):
+            raise RuntimeError(f"missing build_cases_for_seq() in {aiter_entry}")
+        if not callable(resolve_aiter_backends):
+            raise RuntimeError(f"missing resolve_backends() in {aiter_entry}")
+
+        resolved_backends = resolve_aiter_backends(args)
+        if not isinstance(resolved_backends, list):
+            raise RuntimeError(f"resolve_backends() must return list, got {type(resolved_backends).__name__}")
+        aiter_backends = [str(x) for x in resolved_backends]
 
     torch.manual_seed(args.seed)
     device = torch.device(args.device)

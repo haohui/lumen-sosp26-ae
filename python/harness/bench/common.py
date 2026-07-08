@@ -300,30 +300,6 @@ def maybe_write_csv(*, csv_out: Path | None, rows: List[Dict[str, Any]]) -> None
             w.writerow({k: row.get(k, "") for k in fieldnames})
 
 
-def timing_fields(timing: CUDAGraphTimingResult, *, tflops_median: float) -> Dict[str, Any]:
-    return {
-        "status": "ok",
-        "median_ms": timing.median_ms,
-        "mean_ms": timing.mean_ms,
-        "stdev_ms": timing.stdev_ms,
-        "min_ms": timing.min_ms,
-        "max_ms": timing.max_ms,
-        "p10_ms": timing.p10_ms,
-        "p90_ms": timing.p90_ms,
-        "cv": timing.cv,
-        "tflops_median": tflops_median,
-        "eager_probe_ms": timing.eager_probe_ms,
-        "suspicious": timing.suspicious,
-        "suspicious_reason": timing.suspicious_reason,
-        "num_replays": timing.num_replays,
-        "graph_iters": timing.graph_iters,
-        "warmup_calls": timing.warmup_calls,
-        "total_calls_per_sample": timing.total_calls_per_sample,
-        "trial_count": len(timing.samples_ms),
-        "samples_ms": timing.samples_ms,
-    }
-
-
 def timer_kwargs(args: Any) -> Dict[str, Any]:
     # Hard caps requested by experiment policy:
     # - at most 100 kernel calls per captured graph

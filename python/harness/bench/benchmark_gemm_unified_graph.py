@@ -20,12 +20,10 @@ from common import (
     parse_dtype,
     parse_int_csv,
     time_call,
-    timing_fields,
     validate_device_local_index,
 )
 from config import benchmark_root
 from gemm_runtime import (
-    SharedInputs,
     build_shared_inputs,
     gemm_tflops,
     load_hipblaslt_internal_module,
@@ -35,17 +33,6 @@ try:
     import torch
 except Exception:
     torch = None
-
-
-def _row(*, baseline: str, kernel_path: str, size: int, timing) -> Dict[str, Any]:
-    return {
-        "baseline": baseline,
-        "kernel_path": kernel_path,
-        "m": size,
-        "n": size,
-        "k": size,
-        **timing_fields(timing, tflops_median=gemm_tflops(size, size, size, timing.median_ms)),
-    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,7 +99,6 @@ def main() -> None:
     ]
 
     timestamp = now_utc()
-    rows: List[Dict[str, Any]] = []
     csv_rows: List[Dict[str, Any]] = []
 
     if args.run_hipblaslt:
@@ -122,13 +108,6 @@ def main() -> None:
             out = torch.empty((s, s), dtype=torch.bfloat16, device=device)
             # hipblaslt_bf16_mm_out directly consumes B:[N,K] and computes A @ B^T.
             timing = time_call(lambda: hipblaslt_mod.hipblaslt_bf16_mm_out(x.a_mk, x.b_nk, out), device=device, args=args)
-            row = _row(
-                baseline="hipblaslt",
-                kernel_path="data/benchmarks/gemm/06_hipblaslt/hipblaslt_internal_ext.cpp::hipblaslt_bf16_mm_out",
-                size=s,
-                timing=timing,
-            )
-            rows.append(row)
             csv_rows.append(
                 build_csv_row(
                     domain="gemm",
@@ -136,8 +115,8 @@ def main() -> None:
                     workload=s,
                     mean_ms=timing.mean_ms,
                     tflops=gemm_tflops(s, s, s, timing.mean_ms),
-                    status=row["status"],
-                    kernel_entry=row["kernel_path"],
+                    status="suspicious" if timing.suspicious else "ok",
+                    kernel_entry="data/benchmarks/gemm/06_hipblaslt/hipblaslt_internal_ext.cpp::hipblaslt_bf16_mm_out",
                     timestamp_utc=timestamp,
                     run_id=args.run_id,
                 )
@@ -152,8 +131,6 @@ def main() -> None:
             x = shared[s]
             # Unified contract: all Python baselines consume B:[N,K] and compute A @ B^T directly.
             timing = time_call(lambda: fn(x.a_mk, x.b_nk), device=device, args=args)
-            row = _row(baseline=name, kernel_path=str(path), size=s, timing=timing)
-            rows.append(row)
             csv_rows.append(
                 build_csv_row(
                     domain="gemm",
@@ -161,7 +138,7 @@ def main() -> None:
                     workload=s,
                     mean_ms=timing.mean_ms,
                     tflops=gemm_tflops(s, s, s, timing.mean_ms),
-                    status=row["status"],
+                    status="suspicious" if timing.suspicious else "ok",
                     kernel_entry=str(path),
                     timestamp_utc=timestamp,
                     run_id=args.run_id,

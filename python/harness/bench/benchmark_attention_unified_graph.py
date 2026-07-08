@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 from typing import Any, Dict, List
 
-from attn_runtime import SharedInputs, attention_tflops, build_shared_inputs
+from attn_runtime import attention_tflops, build_shared_inputs
 from common import (
     add_common_runtime_args,
     add_timer_args,
@@ -21,7 +21,6 @@ from common import (
     parse_dtype,
     parse_int_csv,
     time_call,
-    timing_fields,
     validate_device_local_index,
 )
 from config import benchmark_root
@@ -30,29 +29,6 @@ try:
     import torch
 except Exception:
     torch = None
-
-
-def _row(*, baseline: str, kernel_path: str, seq_len: int, args: argparse.Namespace, timing) -> Dict[str, Any]:
-    return {
-        "baseline": baseline,
-        "kernel_path": kernel_path,
-        "seq_len": seq_len,
-        "batch_size": args.batch_size,
-        "num_q_heads": args.num_q_heads,
-        "head_dim": args.head_dim,
-        "causal": bool(args.causal),
-        **timing_fields(
-            timing,
-            tflops_median=attention_tflops(
-                batch_size=args.batch_size,
-                seq_len=seq_len,
-                num_q_heads=args.num_q_heads,
-                head_dim=args.head_dim,
-                causal=bool(args.causal),
-                ms=timing.median_ms,
-            ),
-        ),
-    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -128,7 +104,6 @@ def main() -> None:
     ]
 
     timestamp = now_utc()
-    rows: List[Dict[str, Any]] = []
     csv_rows: List[Dict[str, Any]] = []
     enabled = [(n, p) for (n, p, on) in baseline_defs if on]
     for name, path in enabled:
@@ -137,8 +112,6 @@ def main() -> None:
         for s in seq_lens:
             x = shared[s]
             timing = time_call(lambda: fn(x.q_bshd, x.k_bshd, x.v_bshd), device=device, args=args)
-            row = _row(baseline=name, kernel_path=str(path), seq_len=s, args=args, timing=timing)
-            rows.append(row)
             csv_rows.append(
                 build_csv_row(
                     domain="attention",
@@ -153,7 +126,7 @@ def main() -> None:
                         causal=bool(args.causal),
                         ms=timing.mean_ms,
                     ),
-                    status=row["status"],
+                    status="suspicious" if timing.suspicious else "ok",
                     kernel_entry=str(path),
                     timestamp_utc=timestamp,
                     run_id=args.run_id,

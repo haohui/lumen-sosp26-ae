@@ -20,7 +20,6 @@ from common import (
     parse_dtype,
     parse_int_csv,
     time_call,
-    timing_fields,
     validate_device_local_index,
 )
 from config import benchmark_root
@@ -42,29 +41,6 @@ def _moe_tflops(*, tokens: int, dim: int, inter_dim: int, topk: int, ms: float) 
         return float("nan")
     flops = 6.0 * float(tokens) * float(topk) * float(dim) * float(inter_dim)
     return flops / (ms * 1.0e-3) / 1.0e12
-
-
-def _row(*, baseline: str, kernel_path: str, seq_len: int, args: argparse.Namespace, timing) -> Dict[str, Any]:
-    return {
-        "baseline": baseline,
-        "kernel_path": kernel_path,
-        "seq_len": seq_len,
-        "dim": args.dim,
-        "inter_dim": args.inter_dim,
-        "experts": args.experts,
-        "topk": args.topk,
-        "timing_mode": "cudagraph",
-        **timing_fields(
-            timing,
-            tflops_median=_moe_tflops(
-                tokens=seq_len,
-                dim=args.dim,
-                inter_dim=args.inter_dim,
-                topk=args.topk,
-                ms=timing.median_ms,
-            ),
-        ),
-    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -168,7 +144,6 @@ def main() -> None:
     )
 
     timestamp = now_utc()
-    rows: List[Dict[str, Any]] = []
     csv_rows: List[Dict[str, Any]] = []
     if aiter_backends:
         for s in seq_lens:
@@ -181,14 +156,6 @@ def main() -> None:
             )
             for case in cases:
                 timing = time_call(case.fn, device=device, args=args)
-                row = _row(
-                    baseline=case.baseline,
-                    kernel_path=case.kernel_path,
-                    seq_len=s,
-                    args=args,
-                    timing=timing,
-                )
-                rows.append(row)
                 csv_rows.append(
                     build_csv_row(
                         domain="moe",
@@ -196,7 +163,7 @@ def main() -> None:
                         workload=s,
                         mean_ms=timing.mean_ms,
                         tflops=_moe_tflops(tokens=s, dim=args.dim, inter_dim=args.inter_dim, topk=args.topk, ms=timing.mean_ms),
-                        status=row["status"],
+                        status="suspicious" if timing.suspicious else "ok",
                         kernel_entry=case.kernel_path,
                         timestamp_utc=timestamp,
                         run_id=args.run_id,

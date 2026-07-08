@@ -98,19 +98,3 @@ def build_shared_weights(
         "fc1_scale": fc1_scale.contiguous(),
         "fc2_scale": fc2_scale.contiguous(),
     }
-
-
-def run_model_once(fn, x: SharedInputs, w: Dict[str, "torch.Tensor"]) -> None:
-    with torch.inference_mode():
-        y = fn(
-            x.input_q,
-            w["w1_q"],
-            w["w2_q"],
-            x.topk_weights,
-            x.topk_ids,
-            x.input_scale,
-            w["fc1_scale"],
-            w["fc2_scale"],
-        )
-    if not isinstance(y, torch.Tensor):
-        raise RuntimeError(f"kernel output must be torch.Tensor, got {type(y).__name__}")

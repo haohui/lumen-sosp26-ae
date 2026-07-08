@@ -37,16 +37,12 @@ MOE_DEFAULTS = {
 }
 
 TIMER_DEFAULTS = {
-    "warmup": 10,
     "warmup_ms": 1000.0,
     "repeat_ms": 5000.0,
-    "min_graph_ms": 300.0,
     "graph_iters": 1,
     "timer_trials": 9,
     "min_replays": 1,
     "max_replays": 10,
-    "max_graph_iters": 100,
-    "pre_capture_iters": 3,
 }
 
 BASELINE_COLUMNS = [

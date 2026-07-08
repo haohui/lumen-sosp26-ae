@@ -1,0 +1,48 @@
+# AveLang DSL - KernelBench Agent Context
+
+This working directory is a single KernelBench problem.
+Your task is to write an optimized AMD GPU kernel in AveLang DSL that matches
+the behavior of `input_model.py`.
+Output must go to `output_model_new.py`.
+
+The reference model is in `input_model.py`. Preserve its public input and output
+contract exactly. Do not edit `input_model.py`, `eval_config.json`, or
+`prompt.txt`.
+
+## Reference Notes
+
+{skills_section}
+
+Do not invent Triton-, TVM-, CUDA-, or PyTorch-fallback APIs when an AveLang
+implementation is required.
+
+## Critical Code Constraints
+
+- All `@avelang.jit` kernel functions must be defined at module top level.
+  Never nest them inside other functions or classes.
+- AveLang compiles kernels at import time; runtime kernel definition is not
+  supported.
+- Keep `ModelNew` compatible with `get_inputs()` and `get_init_inputs()` from
+  `input_model.py`.
+
+## Self-Verification Loop
+
+After writing `output_model_new.py`, evaluate correctness and performance with
+the KernelBench harness. Use the same Python environment that launched the
+generation runner; do not use bare `python`, `python3`, `uv`, or a different
+environment for self-checks.
+
+```bash
+{venv_activation}
+export PYTHONPATH={python_root}:$PYTHONPATH
+{python_executable} {bench_script} \
+  --mode generated \
+  --original input_model.py \
+  --generated output_model_new.py \
+  --eval-config eval_config.json \
+  --json-output eval_result.json
+```
+
+The harness writes one JSON object to `eval_result.json`; check `compiled`,
+`correctness`, `runtime`, and `ref_runtime`. If `compiled` or `correctness` is
+false, fix `output_model_new.py` and re-run.

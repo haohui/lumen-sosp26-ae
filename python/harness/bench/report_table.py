@@ -63,6 +63,19 @@ def _load_meta(path: Path) -> Dict[str, Dict[str, int | float | str | bool | Lis
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _meta_workloads(
+    meta: Dict[str, Dict[str, int | float | str | bool | List[int]]],
+    domain: str,
+    default: List[int],
+) -> List[int]:
+    workloads = meta.get("workloads", {})
+    vals = workloads.get(domain) if isinstance(workloads, dict) else None
+    if not isinstance(vals, list):
+        return list(default)
+    out = [int(v) for v in vals]
+    return out or list(default)
+
+
 def _gemm_tflops(size: int, mean_ms: float) -> float:
     return (2.0 * size * size * size) / (mean_ms * 1.0e-3) / 1.0e12
 
@@ -164,15 +177,18 @@ def render_overall_markdown(
     gemm: Dict[str, List[float | None]],
     attn: Dict[str, List[float | None]],
     moe: Dict[str, List[float | None]],
+    gemm_cols: List[int],
+    attn_cols: List[int],
+    moe_cols: List[int],
 ) -> str:
     cols = " | ".join(BASELINE_COLUMNS)
     lines = [
         "| Workload | " + cols + " |",
         "|---|" + "|".join(["---:"] * len(BASELINE_COLUMNS)) + "|",
     ]
-    lines.extend(_render_section("BF16 Square GEMM, Matrix Size (M×N×K)", GEMM_WORKLOADS, gemm))
-    lines.extend(_render_section("GQA Forward Flash Attention, Sequence length", ATTENTION_WORKLOADS, attn))
-    lines.extend(_render_section("Fused MoE, Sequence length", MOE_WORKLOADS, moe))
+    lines.extend(_render_section("BF16 Square GEMM, Matrix Size (M×N×K)", gemm_cols, gemm))
+    lines.extend(_render_section("GQA Forward Flash Attention, Sequence length", attn_cols, attn))
+    lines.extend(_render_section("Fused MoE, Sequence length", moe_cols, moe))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -181,30 +197,53 @@ def render_overall_csv(
     gemm: Dict[str, List[float | None]],
     attn: Dict[str, List[float | None]],
     moe: Dict[str, List[float | None]],
+    gemm_cols: List[int],
+    attn_cols: List[int],
+    moe_cols: List[int],
 ) -> str:
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow(["Section", "Workload", *BASELINE_COLUMNS])
-    _csv_section(writer, "BF16 Square GEMM, Matrix Size (M×N×K)", GEMM_WORKLOADS, gemm)
-    _csv_section(writer, "GQA Forward Flash Attention, Sequence length", ATTENTION_WORKLOADS, attn)
-    _csv_section(writer, "Fused MoE, Sequence length", MOE_WORKLOADS, moe)
+    _csv_section(writer, "BF16 Square GEMM, Matrix Size (M×N×K)", gemm_cols, gemm)
+    _csv_section(writer, "GQA Forward Flash Attention, Sequence length", attn_cols, attn)
+    _csv_section(writer, "Fused MoE, Sequence length", moe_cols, moe)
     return out.getvalue()
 
 
 def render_from_csvs(*, gemm_csv: Path, attn_csv: Path, moe_csv: Path, meta_path: Path) -> str:
     meta = _load_meta(meta_path)
-    gemm = parse_gemm(gemm_csv, GEMM_WORKLOADS)
-    attn = parse_attention(attn_csv, ATTENTION_WORKLOADS, meta)
-    moe = parse_moe(moe_csv, MOE_WORKLOADS, meta)
-    return render_overall_markdown(gemm=gemm, attn=attn, moe=moe)
+    gemm_cols = _meta_workloads(meta, "gemm", GEMM_WORKLOADS)
+    attn_cols = _meta_workloads(meta, "attention", ATTENTION_WORKLOADS)
+    moe_cols = _meta_workloads(meta, "moe", MOE_WORKLOADS)
+    gemm = parse_gemm(gemm_csv, gemm_cols)
+    attn = parse_attention(attn_csv, attn_cols, meta)
+    moe = parse_moe(moe_csv, moe_cols, meta)
+    return render_overall_markdown(
+        gemm=gemm,
+        attn=attn,
+        moe=moe,
+        gemm_cols=gemm_cols,
+        attn_cols=attn_cols,
+        moe_cols=moe_cols,
+    )
 
 
 def render_csv_from_csvs(*, gemm_csv: Path, attn_csv: Path, moe_csv: Path, meta_path: Path) -> str:
     meta = _load_meta(meta_path)
-    gemm = parse_gemm(gemm_csv, GEMM_WORKLOADS)
-    attn = parse_attention(attn_csv, ATTENTION_WORKLOADS, meta)
-    moe = parse_moe(moe_csv, MOE_WORKLOADS, meta)
-    return render_overall_csv(gemm=gemm, attn=attn, moe=moe)
+    gemm_cols = _meta_workloads(meta, "gemm", GEMM_WORKLOADS)
+    attn_cols = _meta_workloads(meta, "attention", ATTENTION_WORKLOADS)
+    moe_cols = _meta_workloads(meta, "moe", MOE_WORKLOADS)
+    gemm = parse_gemm(gemm_csv, gemm_cols)
+    attn = parse_attention(attn_csv, attn_cols, meta)
+    moe = parse_moe(moe_csv, moe_cols, meta)
+    return render_overall_csv(
+        gemm=gemm,
+        attn=attn,
+        moe=moe,
+        gemm_cols=gemm_cols,
+        attn_cols=attn_cols,
+        moe_cols=moe_cols,
+    )
 
 
 def main() -> int:

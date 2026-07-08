@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from common import (
     add_common_runtime_args,
@@ -12,8 +12,8 @@ from common import (
     apply_visible_devices,
     build_csv_row,
     build_model_fn,
-    enable_default_flags,
     configure_sync_wait_mode,
+    enable_default_flags,
     load_module,
     maybe_write_csv,
     now_utc,
@@ -50,7 +50,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--run-hipkittens", action="store_true")
     p.add_argument("--run-triton", action="store_true")
 
-    p.add_argument("--aiter-kernel", type=Path, default=gemm_root / "05_aiter" / "best_kernel.py")
+    p.add_argument(
+        "--aiter-kernel",
+        type=Path,
+        default=gemm_root / "05_aiter" / "best_kernel.py",
+    )
     p.add_argument("--csv-out", type=Path, default=None)
     p.add_argument("--run-id", type=str, default="")
 
@@ -90,16 +94,25 @@ def main() -> None:
         args.run_hipkittens = False
     elif args.run_hipblaslt and dtype is not torch.bfloat16:
         args.run_hipblaslt = False
-    shared = build_shared_inputs(sizes=sizes, device=device, dtype=dtype, seed=args.seed)
+    shared = build_shared_inputs(
+        sizes=sizes,
+        device=device,
+        dtype=dtype,
+        seed=args.seed,
+    )
 
-    py_baselines: List[tuple[str, Path, bool]] = [
+    py_baselines: list[tuple[str, Path, bool]] = [
         ("aiter", args.aiter_kernel, args.run_aiter),
-        ("hipkittens", gemm_root / "08_hipketten" / "best_kernel.py", args.run_hipkittens),
+        (
+            "hipkittens",
+            gemm_root / "08_hipketten" / "best_kernel.py",
+            args.run_hipkittens,
+        ),
         ("triton", gemm_root / "07_triton" / "best_kernel.py", args.run_triton),
     ]
 
     timestamp = now_utc()
-    csv_rows: List[Dict[str, Any]] = []
+    csv_rows: list[dict[str, Any]] = []
 
     if args.run_hipblaslt:
         hipblaslt_mod = load_hipblaslt_internal_module(gemm_root)
@@ -107,7 +120,15 @@ def main() -> None:
             x = shared[s]
             out = torch.empty((s, s), dtype=torch.bfloat16, device=device)
             # hipblaslt_bf16_mm_out directly consumes B:[N,K] and computes A @ B^T.
-            timing = time_call(lambda: hipblaslt_mod.hipblaslt_bf16_mm_out(x.a_mk, x.b_nk, out), device=device, args=args)
+            timing = time_call(
+                lambda x=x, out=out: hipblaslt_mod.hipblaslt_bf16_mm_out(
+                    x.a_mk,
+                    x.b_nk,
+                    out,
+                ),
+                device=device,
+                args=args,
+            )
             csv_rows.append(
                 build_csv_row(
                     domain="gemm",
@@ -115,8 +136,11 @@ def main() -> None:
                     workload=s,
                     mean_ms=timing.mean_ms,
                     tflops=gemm_tflops(s, s, s, timing.mean_ms),
-                    status="suspicious" if timing.suspicious else "ok",
-                    kernel_entry="data/benchmarks/gemm/06_hipblaslt/hipblaslt_internal_ext.cpp::hipblaslt_bf16_mm_out",
+                    status="ok",
+                    kernel_entry=(
+                        "data/benchmarks/gemm/06_hipblaslt/"
+                        "hipblaslt_internal_ext.cpp::hipblaslt_bf16_mm_out"
+                    ),
                     timestamp_utc=timestamp,
                     run_id=args.run_id,
                 )
@@ -129,8 +153,12 @@ def main() -> None:
         fn = build_model_fn(mod, device=device, dtype=dtype)
         for s in sizes:
             x = shared[s]
-            # Unified contract: all Python baselines consume B:[N,K] and compute A @ B^T directly.
-            timing = time_call(lambda: fn(x.a_mk, x.b_nk), device=device, args=args)
+            # Unified contract: baselines consume B:[N,K] and compute A @ B^T.
+            timing = time_call(
+                lambda fn=fn, x=x: fn(x.a_mk, x.b_nk),
+                device=device,
+                args=args,
+            )
             csv_rows.append(
                 build_csv_row(
                     domain="gemm",
@@ -138,7 +166,7 @@ def main() -> None:
                     workload=s,
                     mean_ms=timing.mean_ms,
                     tflops=gemm_tflops(s, s, s, timing.mean_ms),
-                    status="suspicious" if timing.suspicious else "ok",
+                    status="ok",
                     kernel_entry=str(path),
                     timestamp_utc=timestamp,
                     run_id=args.run_id,

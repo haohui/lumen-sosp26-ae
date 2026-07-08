@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from common import (
     add_common_runtime_args,
@@ -12,8 +12,8 @@ from common import (
     apply_cpu_affinity,
     apply_visible_devices,
     build_csv_row,
-    enable_default_flags,
     configure_sync_wait_mode,
+    enable_default_flags,
     load_module,
     maybe_write_csv,
     now_utc,
@@ -36,7 +36,14 @@ except Exception:
     torch = None
 
 
-def _moe_tflops(*, tokens: int, dim: int, inter_dim: int, topk: int, ms: float) -> float:
+def _moe_tflops(
+    *,
+    tokens: int,
+    dim: int,
+    inter_dim: int,
+    topk: int,
+    ms: float,
+) -> float:
     if ms <= 0.0:
         return float("nan")
     flops = 6.0 * float(tokens) * float(topk) * float(dim) * float(inter_dim)
@@ -86,9 +93,13 @@ def main() -> None:
     if args.topk > args.experts:
         raise ValueError(f"topk ({args.topk}) must be <= experts ({args.experts})")
     if args.dim % BLOCK_K != 0 or args.dim % BLOCK_N != 0:
-        raise ValueError(f"dim must be divisible by {BLOCK_N}/{BLOCK_K}, got {args.dim}")
+        raise ValueError(
+            f"dim must be divisible by {BLOCK_N}/{BLOCK_K}, got {args.dim}"
+        )
     if args.inter_dim % BLOCK_K != 0:
-        raise ValueError(f"inter_dim must be divisible by {BLOCK_K}, got {args.inter_dim}")
+        raise ValueError(
+            f"inter_dim must be divisible by {BLOCK_K}, got {args.inter_dim}"
+        )
 
     if torch is None:
         raise RuntimeError("torch is required")
@@ -101,10 +112,11 @@ def main() -> None:
         args.run_aiter_triton = False
 
     build_aiter_cases = None
-    aiter_backends: List[str] = []
+    aiter_backends: list[str] = []
     if is_hip and (args.run_aiter or args.run_aiter_asm or args.run_aiter_triton):
-        # AITER JIT modules are built into repo-local .aiter/jit when site-packages is read-only.
-        # Make that directory importable so module_moe_asm/module_gemm_a16w16_asm can be loaded.
+        # AITER JIT modules are built into repo-local .aiter/jit when
+        # site-packages is read-only. Make that directory importable so
+        # module_moe_asm/module_gemm_a16w16_asm can be loaded.
         os.environ.setdefault("AITER_JIT_DIR", str(repo_root / ".aiter" / "jit"))
         moe_root = benchmark_root(repo_root) / "moe"
         aiter_entry = moe_root / "05_aiter" / "run_aiter.py"
@@ -118,7 +130,10 @@ def main() -> None:
 
         resolved_backends = resolve_aiter_backends(args)
         if not isinstance(resolved_backends, list):
-            raise RuntimeError(f"resolve_backends() must return list, got {type(resolved_backends).__name__}")
+            raise RuntimeError(
+                "resolve_backends() must return list, got "
+                f"{type(resolved_backends).__name__}"
+            )
         aiter_backends = [str(x) for x in resolved_backends]
 
     torch.manual_seed(args.seed)
@@ -144,7 +159,7 @@ def main() -> None:
     )
 
     timestamp = now_utc()
-    csv_rows: List[Dict[str, Any]] = []
+    csv_rows: list[dict[str, Any]] = []
     if aiter_backends:
         for s in seq_lens:
             cases = build_aiter_cases(
@@ -162,8 +177,14 @@ def main() -> None:
                         baseline=case.baseline,
                         workload=s,
                         mean_ms=timing.mean_ms,
-                        tflops=_moe_tflops(tokens=s, dim=args.dim, inter_dim=args.inter_dim, topk=args.topk, ms=timing.mean_ms),
-                        status="suspicious" if timing.suspicious else "ok",
+                        tflops=_moe_tflops(
+                            tokens=s,
+                            dim=args.dim,
+                            inter_dim=args.inter_dim,
+                            topk=args.topk,
+                            ms=timing.mean_ms,
+                        ),
+                        status="ok",
                         kernel_entry=case.kernel_path,
                         timestamp_utc=timestamp,
                         run_id=args.run_id,

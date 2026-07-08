@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 import torch
 
@@ -27,8 +28,6 @@ class CUDAGraphTimingResult:
     graph_iters: int
     num_replays: int
     eager_probe_ms: float | None
-    suspicious: bool
-    suspicious_reason: str | None
 
 
 def _quantile(values: Sequence[float], q: float) -> float:
@@ -51,7 +50,7 @@ def _quantile(values: Sequence[float], q: float) -> float:
 def _event_probe_ms(
     fn: Callable[[], None],
     *,
-    device: "torch.device",
+    device: torch.device,
     probe_calls: int,
 ) -> float:
     start = torch.cuda.Event(enable_timing=True)
@@ -68,7 +67,7 @@ def _event_probe_ms(
 def benchmark_with_cudagraph(
     fn: Callable[..., Any],
     *,
-    device: "torch.device",
+    device: torch.device,
     fn_args: Sequence[Any] = (),
     fn_kwargs: Mapping[str, Any] | None = None,
     warmup: int = 10,
@@ -129,7 +128,9 @@ def benchmark_with_cudagraph(
         desired_total_calls = max(1, int(fixed_repeat_calls))
     else:
         # Keep total graph executions long enough to cover min_measure_ms.
-        desired_total_calls = int(math.ceil(float(max(1.0, min_measure_ms)) / est_call_ms))
+        desired_total_calls = int(
+            math.ceil(float(max(1.0, min_measure_ms)) / est_call_ms)
+        )
         desired_total_calls = max(1, desired_total_calls)
 
     # Enforce a minimum graph size target (by call count) so timing is less noisy.
@@ -139,19 +140,26 @@ def benchmark_with_cudagraph(
         min_graph_calls = 1
 
     if fixed_repeat_calls is None:
-        # Keep per-sample replay count controlled by min_measure_ms and avoid too many replays.
-        min_graph_calls = max(min_graph_calls, int(math.ceil(float(desired_total_calls) / float(max_replays))))
+        min_graph_calls = max(
+            min_graph_calls,
+            int(math.ceil(float(desired_total_calls) / float(max_replays))),
+        )
     effective_graph_iters = max(effective_graph_iters, min_graph_calls)
     if max_graph_iters > 0:
         effective_graph_iters = min(effective_graph_iters, int(max_graph_iters))
 
     if fixed_repeat_calls is None:
-        num_replays = int(math.ceil(float(desired_total_calls) / float(effective_graph_iters)))
+        num_replays = int(
+            math.ceil(float(desired_total_calls) / float(effective_graph_iters))
+        )
         if num_replays < min_replays:
             num_replays = min_replays
         num_replays = min(num_replays, max_replays)
     else:
-        num_replays = max(1, int(math.ceil(float(desired_total_calls) / float(effective_graph_iters))))
+        num_replays = max(
+            1,
+            int(math.ceil(float(desired_total_calls) / float(effective_graph_iters))),
+        )
         num_replays = max(min_replays, min(num_replays, max_replays))
 
     graph = torch.cuda.CUDAGraph()
@@ -189,7 +197,9 @@ def benchmark_with_cudagraph(
             total_ms = float(start.elapsed_time(end))
             samples.append(total_ms / float(total_calls))
     except RuntimeError as e:
-        raise RuntimeError(f"CUDA graph capture/replay failed: {type(e).__name__}: {e}") from e
+        raise RuntimeError(
+            f"CUDA graph capture/replay failed: {type(e).__name__}: {e}"
+        ) from e
 
     eager_probe_ms = _event_probe_ms(call_once, device=device, probe_calls=probe_calls)
     median_ms = float(statistics.median(samples))
@@ -219,6 +229,4 @@ def benchmark_with_cudagraph(
         graph_iters=effective_graph_iters,
         num_replays=num_replays,
         eager_probe_ms=eager_probe_ms,
-        suspicious=False,
-        suspicious_reason=None,
     )

@@ -10,6 +10,7 @@ OUTPUT_ROOT = Path(__file__).resolve().parent / "output"
 def benchmark_root(repo_root: Path) -> Path:
     return Path(os.environ.get("AE_BENCHMARK_ROOT", repo_root / "data" / "benchmarks"))
 
+
 WORKLOADS = [1024, 2048, 4096, 8192, 16384]
 GEMM_WORKLOADS = list(WORKLOADS)
 ATTENTION_WORKLOADS = list(WORKLOADS)

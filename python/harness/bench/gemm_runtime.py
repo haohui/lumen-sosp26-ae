@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
 
 try:
     import torch
@@ -14,20 +13,26 @@ except Exception:
 
 @dataclass
 class SharedInputs:
-    a_mk: "torch.Tensor"
-    b_nk: "torch.Tensor"
+    a_mk: torch.Tensor
+    b_nk: torch.Tensor
 
 
 def gemm_tflops(m: int, n: int, k: int, ms: float) -> float:
     return (2.0 * m * n * k) / (ms * 1.0e-3) / 1.0e12
 
 
-def build_shared_inputs(*, sizes: List[int], device: "torch.device", dtype: "torch.dtype", seed: int) -> Dict[int, SharedInputs]:
+def build_shared_inputs(
+    *,
+    sizes: list[int],
+    device: torch.device,
+    dtype: torch.dtype,
+    seed: int,
+) -> dict[int, SharedInputs]:
     g = torch.Generator(device=device)
     g.manual_seed(seed)
-    out: Dict[int, SharedInputs] = {}
+    out: dict[int, SharedInputs] = {}
     for s in sizes:
-        # Unified GEMM contract for all baselines: A:[M,K], B:[N,K], output C:[M,N] = A @ B^T.
+        # Unified contract: A:[M,K], B:[N,K], output C:[M,N] = A @ B^T.
         b_nk = torch.randn((s, s), device=device, dtype=dtype, generator=g)
         out[s] = SharedInputs(
             a_mk=torch.randn((s, s), device=device, dtype=dtype, generator=g),
@@ -49,7 +54,7 @@ def load_hipblaslt_internal_module(gemm_root: Path):
         lib_dirs.extend(Path(p) for p in os.environ.get(env_name, "").split(":") if p)
     lib_dirs = [d for d in dict.fromkeys(lib_dirs) if d.exists() and d.is_dir()]
 
-    ldflags: List[str] = []
+    ldflags: list[str] = []
     for d in lib_dirs:
         ldflags.extend([f"-L{d}", f"-Wl,-rpath,{d}"])
     ldflags.extend(["-lhipblaslt", "-lhipblas", "-lrocblas", "-lamdhip64"])

@@ -9,7 +9,6 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 from common import parse_int_csv
 from config import (
@@ -31,11 +30,11 @@ THIS_DIR = Path(__file__).resolve().parent
 class DomainSpec:
     script: str
     col_arg: str
-    fixed_args: List[str]
+    fixed_args: list[str]
     csv_name: str
 
 
-DOMAIN_SPECS: Dict[str, DomainSpec] = {
+DOMAIN_SPECS: dict[str, DomainSpec] = {
     "gemm": DomainSpec(
         script="benchmark_gemm_unified_graph.py",
         col_arg="--sizes",
@@ -62,7 +61,6 @@ DOMAIN_SPECS: Dict[str, DomainSpec] = {
             str(ATTENTION_DEFAULTS["num_kv_heads"]),
             "--head-dim",
             str(ATTENTION_DEFAULTS["head_dim"]),
-            "--causal" if ATTENTION_DEFAULTS["causal"] else "--non-causal",
             "--run-triton",
         ],
         csv_name="attention_raw.csv",
@@ -87,10 +85,6 @@ DOMAIN_SPECS: Dict[str, DomainSpec] = {
 }
 
 
-def _run(cmd: List[str], *, env: Dict[str, str] | None = None) -> None:
-    subprocess.run(cmd, check=True, env=env)
-
-
 def _is_hip(python_bin: str) -> bool:
     probe = (
         "import torch; "
@@ -100,8 +94,7 @@ def _is_hip(python_bin: str) -> bool:
         cp = subprocess.run(
             [python_bin, "-c", probe],
             check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
         )
         return cp.returncode == 0 and cp.stdout.strip() == "1"
@@ -119,26 +112,39 @@ def _require_aiter(python_bin: str) -> None:
         cp = subprocess.run(
             [python_bin, "-c", probe],
             check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
         )
         ok = cp.returncode == 0 and cp.stdout.strip() == "1"
         if not ok:
-            raise RuntimeError("AITER is required but not available in this Python environment")
-    except Exception:
-        raise RuntimeError("AITER is required but import probe failed")
+            raise RuntimeError(
+                "AITER is required but not available in this Python environment"
+            )
+    except Exception as e:
+        raise RuntimeError("AITER is required but import probe failed") from e
 
 
-def _resolve_cols(args: argparse.Namespace) -> Tuple[List[int], List[int], List[int]]:
+def _resolve_cols(args: argparse.Namespace) -> tuple[list[int], list[int], list[int]]:
     common = parse_int_csv(args.workloads, name="workloads")
-    gemm = parse_int_csv(args.gemm_workloads, name="gemm-workloads") or common or list(GEMM_WORKLOADS)
-    attn = parse_int_csv(args.attention_workloads, name="attention-workloads") or common or list(ATTENTION_WORKLOADS)
-    moe = parse_int_csv(args.moe_workloads, name="moe-workloads") or common or list(MOE_WORKLOADS)
+    gemm = (
+        parse_int_csv(args.gemm_workloads, name="gemm-workloads")
+        or common
+        or list(GEMM_WORKLOADS)
+    )
+    attn = (
+        parse_int_csv(args.attention_workloads, name="attention-workloads")
+        or common
+        or list(ATTENTION_WORKLOADS)
+    )
+    moe = (
+        parse_int_csv(args.moe_workloads, name="moe-workloads")
+        or common
+        or list(MOE_WORKLOADS)
+    )
     return gemm, attn, moe
 
 
-def _timer_args(args: argparse.Namespace) -> List[str]:
+def _timer_args(args: argparse.Namespace) -> list[str]:
     return [
         "--warmup-ms",
         str(args.warmup_ms),
@@ -155,7 +161,7 @@ def _timer_args(args: argparse.Namespace) -> List[str]:
     ]
 
 
-def _with_optional_bindings(cmd: List[str], args: argparse.Namespace) -> List[str]:
+def _with_optional_bindings(cmd: list[str], args: argparse.Namespace) -> list[str]:
     out = list(cmd)
     if args.hip_visible_devices.strip():
         out.extend(["--hip-visible-devices", args.hip_visible_devices.strip()])
@@ -168,7 +174,7 @@ def _run_domain(
     args: argparse.Namespace,
     out_dir: Path,
     domain: str,
-    cols: List[int],
+    cols: list[int],
     *,
     is_hip: bool,
     run_id: str,
@@ -195,13 +201,19 @@ def _run_domain(
     env = os.environ.copy()
     if args.benchmark_root.strip():
         env["AE_BENCHMARK_ROOT"] = str(Path(args.benchmark_root).resolve())
-    _run(_with_optional_bindings(cmd, args), env=env)
+    subprocess.run(_with_optional_bindings(cmd, args), check=True, env=env)
     return out
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Run GEMM/Attention/MoE and emit raw CSV + throughput table")
-    p.add_argument("--domain", choices=["all", "gemm", "attention", "moe"], default="all")
+    p = argparse.ArgumentParser(
+        description="Run GEMM/Attention/MoE and emit raw CSV + throughput table"
+    )
+    p.add_argument(
+        "--domain",
+        choices=["all", "gemm", "attention", "moe"],
+        default="all",
+    )
     p.add_argument("--python", type=str, default=sys.executable)
     p.add_argument("--device", type=str, default="cuda:0")
     p.add_argument("--hip-visible-devices", type=str, default="")
@@ -225,7 +237,14 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _write_meta(path: Path, args: argparse.Namespace, run_id: str, gemm_cols: List[int], attn_cols: List[int], moe_cols: List[int]) -> None:
+def _write_meta(
+    path: Path,
+    args: argparse.Namespace,
+    run_id: str,
+    gemm_cols: list[int],
+    attn_cols: list[int],
+    moe_cols: list[int],
+) -> None:
     payload = {
         "run_id": run_id,
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

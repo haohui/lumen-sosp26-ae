@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 import argparse
-import ctypes
 import csv
+import ctypes
 import importlib.util
 import os
 import time
 import warnings
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, Dict, Iterable, List
+from typing import Any
 
 from cudagraph_timer import CUDAGraphTimingResult, benchmark_with_cudagraph
 
@@ -20,8 +21,8 @@ except Exception:  # pragma: no cover
     torch = None
 
 
-def parse_int_csv(spec: str, *, name: str) -> List[int]:
-    vals: List[int] = []
+def parse_int_csv(spec: str, *, name: str) -> list[int]:
+    vals: list[int] = []
     seen: set[int] = set()
     for token in spec.split(","):
         token = token.strip()
@@ -44,7 +45,7 @@ def now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def parse_cpu_cores(spec: str) -> List[int]:
+def parse_cpu_cores(spec: str) -> list[int]:
     cores: set[int] = set()
     for token in spec.split(","):
         token = token.strip()
@@ -63,7 +64,7 @@ def parse_cpu_cores(spec: str) -> List[int]:
     return sorted(cores)
 
 
-def apply_cpu_affinity(spec: str) -> List[int]:
+def apply_cpu_affinity(spec: str) -> list[int]:
     if not spec:
         return []
     if not hasattr(os, "sched_setaffinity"):
@@ -80,7 +81,9 @@ def apply_cpu_affinity(spec: str) -> List[int]:
 def apply_visible_devices(hip_visible_devices: str) -> str:
     if not hip_visible_devices:
         return ""
-    normalized = ",".join(x.strip() for x in hip_visible_devices.split(",") if x.strip())
+    normalized = ",".join(
+        x.strip() for x in hip_visible_devices.split(",") if x.strip()
+    )
     if not normalized:
         raise ValueError("invalid --hip-visible-devices value")
     os.environ["HIP_VISIBLE_DEVICES"] = normalized
@@ -95,12 +98,13 @@ def validate_device_local_index(device: str, visible_devices: str) -> None:
     local_idx = int(device.split(":", 1)[1])
     if local_idx < 0 or local_idx >= visible_count:
         raise ValueError(
-            f"--device {device} is out of range for visible devices [{visible_devices}] "
+            f"--device {device} is out of range for visible devices "
+            f"[{visible_devices}] "
             f"(use local index cuda:0..cuda:{visible_count - 1})"
         )
 
 
-def configure_sync_wait_mode(*, device: "torch.device", mode: str) -> int:
+def configure_sync_wait_mode(*, device: torch.device, mode: str) -> int:
     if torch is None:
         raise RuntimeError("torch is required to configure sync wait mode")
     mode_norm = str(mode).strip().lower()
@@ -121,7 +125,7 @@ def configure_sync_wait_mode(*, device: "torch.device", mode: str) -> int:
     runtime_name = ""
     set_fn_name = ""
     get_fn_name = ""
-    load_errors: List[str] = []
+    load_errors: list[str] = []
     for candidate_runtime, candidate_lib, candidate_set, candidate_get in (
         ("HIP", "libamdhip64.so", "hipSetDeviceFlags", "hipGetDeviceFlags"),
         ("CUDA", "libcudart.so", "cudaSetDeviceFlags", "cudaGetDeviceFlags"),
@@ -136,9 +140,11 @@ def configure_sync_wait_mode(*, device: "torch.device", mode: str) -> int:
             load_errors.append(f"{candidate_lib}: {e}")
     if lib is None:
         warnings.warn(
-            f"could not load HIP or CUDA runtime library; sync wait mode {mode_norm!r} was not applied "
+            "could not load HIP or CUDA runtime library; sync wait mode "
+            f"{mode_norm!r} was not applied "
             f"({'; '.join(load_errors)})",
             RuntimeWarning,
+            stacklevel=2,
         )
         return -1
 
@@ -147,8 +153,10 @@ def configure_sync_wait_mode(*, device: "torch.device", mode: str) -> int:
         get_device_flags = getattr(lib, get_fn_name)
     except AttributeError as e:
         warnings.warn(
-            f"{runtime_name} runtime does not expose device flag APIs; sync wait mode {mode_norm!r} was not applied: {e}",
+            f"{runtime_name} runtime does not expose device flag APIs; sync wait "
+            f"mode {mode_norm!r} was not applied: {e}",
             RuntimeWarning,
+            stacklevel=2,
         )
         return -1
     set_device_flags.argtypes = [ctypes.c_uint]
@@ -160,15 +168,21 @@ def configure_sync_wait_mode(*, device: "torch.device", mode: str) -> int:
     rc = int(set_device_flags(flags[mode_norm]))
     if rc != 0:
         warnings.warn(
-            f"{set_fn_name}({flags[mode_norm]}) failed with error code {rc}; sync wait mode {mode_norm!r} was not applied",
+            f"{set_fn_name}({flags[mode_norm]}) failed with error code {rc}; "
+            f"sync wait mode {mode_norm!r} was not applied",
             RuntimeWarning,
+            stacklevel=2,
         )
         return -1
 
     got = ctypes.c_uint(0)
     rc_get = int(get_device_flags(ctypes.byref(got)))
     if rc_get != 0:
-        warnings.warn(f"{get_fn_name} failed with error code {rc_get}", RuntimeWarning)
+        warnings.warn(
+            f"{get_fn_name} failed with error code {rc_get}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return -1
     return int(got.value)
 
@@ -191,7 +205,12 @@ def load_module(path: Path) -> ModuleType:
     return module
 
 
-def build_model_fn(module: ModuleType, *, device: "torch.device", dtype: "torch.dtype | None" = None):
+def build_model_fn(
+    module: ModuleType,
+    *,
+    device: torch.device,
+    dtype: torch.dtype | None = None,
+):
     if hasattr(module, "ModelNew"):
         model = module.ModelNew()
     elif hasattr(module, "Model"):
@@ -237,17 +256,17 @@ def add_timer_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--pre-capture-iters", type=int, default=3)
 
 
-def enable_default_flags(args: argparse.Namespace, all_flags: Iterable[str], default_true_flags: Iterable[str] | None = None) -> None:
+def enable_default_flags(
+    args: argparse.Namespace,
+    all_flags: Iterable[str],
+    default_true_flags: Iterable[str] | None = None,
+) -> None:
     flags = list(all_flags)
     if any(bool(getattr(args, f)) for f in flags):
         return
     defaults = list(default_true_flags) if default_true_flags is not None else flags
     for f in defaults:
         setattr(args, f, True)
-
-
-def effective_repeat_ms(args: Any) -> float:
-    return float(args.repeat_ms if getattr(args, "measure_ms", None) is None else args.measure_ms)
 
 
 def build_csv_row(
@@ -261,7 +280,7 @@ def build_csv_row(
     kernel_entry: str,
     timestamp_utc: str,
     run_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "domain": domain,
         "baseline": baseline,
@@ -275,7 +294,7 @@ def build_csv_row(
     }
 
 
-def maybe_write_csv(*, csv_out: Path | None, rows: List[Dict[str, Any]]) -> None:
+def maybe_write_csv(*, csv_out: Path | None, rows: list[dict[str, Any]]) -> None:
     if csv_out is None:
         return
     csv_out.parent.mkdir(parents=True, exist_ok=True)
@@ -300,7 +319,7 @@ def maybe_write_csv(*, csv_out: Path | None, rows: List[Dict[str, Any]]) -> None
             w.writerow({k: row.get(k, "") for k in fieldnames})
 
 
-def timer_kwargs(args: Any) -> Dict[str, Any]:
+def timer_kwargs(args: Any) -> dict[str, Any]:
     # Hard caps requested by experiment policy:
     # - at most 100 kernel calls per captured graph
     # - at most 10 graph replays per timing sample
@@ -309,11 +328,12 @@ def timer_kwargs(args: Any) -> Dict[str, Any]:
     fixed_repeat_calls: int | None = None
     if int(getattr(args, "repeat", 0)) > 0:
         fixed_repeat_calls = int(args.repeat)
-    measure_ms = effective_repeat_ms(args)
+    measure_ms = float(
+        args.repeat_ms if getattr(args, "measure_ms", None) is None else args.measure_ms
+    )
     graph_iters_req = max(1, int(args.graph_iters))
     # Default cap is 100, but allow explicit larger user request (e.g. 1000).
     graph_iters_cap = max(100, graph_iters_req)
-    graph_iters = min(graph_iters_req, graph_iters_cap)
     min_replays = min(int(args.min_replays), replay_cap)
     max_replays = min(int(args.max_replays), replay_cap)
     if max_replays < 1:
@@ -325,7 +345,7 @@ def timer_kwargs(args: Any) -> Dict[str, Any]:
     return {
         "warmup": int(args.warmup),
         "warmup_ms": float(args.warmup_ms),
-        "graph_iters": graph_iters,
+        "graph_iters": graph_iters_req,
         "min_graph_ms": 300.0,
         "pre_capture_iters": int(args.pre_capture_iters),
         "trial_count": int(args.timer_trials),
@@ -337,8 +357,14 @@ def timer_kwargs(args: Any) -> Dict[str, Any]:
     }
 
 
-def time_call(call: Callable[[], None], *, device: "torch.device", args: Any) -> CUDAGraphTimingResult:
+def time_call(
+    call: Callable[[], None],
+    *,
+    device: torch.device,
+    args: Any,
+) -> CUDAGraphTimingResult:
     if torch is not None:
+
         def wrapped() -> None:
             with torch.inference_mode():
                 call()
@@ -347,14 +373,18 @@ def time_call(call: Callable[[], None], *, device: "torch.device", args: Any) ->
     return benchmark_with_cudagraph(fn=call, device=device, **timer_kwargs(args))
 
 
-def parse_dtype(name: str) -> "torch.dtype":
+def parse_dtype(name: str) -> torch.dtype:
     n = name.strip().lower()
     if n == "bf16":
         return torch.bfloat16
     if n == "fp16":
         return torch.float16
     if n == "fp8":
-        dt = getattr(torch, "float8_e4m3fnuz", None) or getattr(torch, "float8_e4m3fn", None)
+        dt = getattr(torch, "float8_e4m3fnuz", None) or getattr(
+            torch,
+            "float8_e4m3fn",
+            None,
+        )
         if dt is None:
             raise RuntimeError("torch float8 dtype is unavailable")
         return dt

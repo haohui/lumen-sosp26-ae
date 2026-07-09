@@ -185,16 +185,15 @@ def _discover_module_file(module_name: str) -> Path | None:
 
 
 def _discover_kernelbench_cli_path() -> Path:
-    module_path = _discover_module_file("lumen.harness.datasets.kernelbench.cli")
+    module_path = _discover_module_file("lumen.tools.cli.kernelbench_graph_eval")
     if module_path is not None:
         return module_path
     return (
         _discover_python_root()
         / "lumen"
-        / "harness"
-        / "datasets"
-        / "kernelbench"
-        / "cli.py"
+        / "tools"
+        / "cli"
+        / "kernelbench_graph_eval.py"
     )
 
 

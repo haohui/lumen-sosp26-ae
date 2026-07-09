@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
+import sys
 import time
-import traceback
-from contextlib import redirect_stdout
-from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -38,9 +38,7 @@ def evaluate_round(
     evaluation: KernelBenchEvaluationConfig,
     gpu_id: int,
 ) -> dict[str, Any]:
-    from lumen.harness.datasets.kernelbench.evaluator import evaluate_generated_model
-
-    path = Path(round_dir)
+    path = Path(round_dir).expanduser().resolve()
     output_path = path / "eval_result.json"
     eval_config_path = path / "eval_config.runtime.json"
     source_config_path = path / "eval_config.json"
@@ -57,35 +55,60 @@ def evaluate_round(
         encoding="utf-8",
     )
 
-    log_buffer = StringIO()
-    try:
-        _set_cuda_device(gpu_id)
-        with redirect_stdout(log_buffer):
-            result = evaluate_generated_model(
-                original_model_file=path / "input_model.py",
-                generated_model_file=path / "output_model_new.py",
-                eval_config=eval_config,
-            )
-    except Exception as exc:
-        logs = log_buffer.getvalue()
-        if logs:
-            LOGGER.info("%s", logs.rstrip())
-        return {
-            "compiled": False,
-            "correctness": False,
-            "metadata": {
-                "error": str(exc),
-                "error_name": f"{exc.__class__.__module__}.{exc.__class__.__name__}",
-                "traceback": traceback.format_exc(),
-            },
-        }
+    env = os.environ.copy()
+    env["HIP_VISIBLE_DEVICES"] = str(gpu_id)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "lumen.tools.cli.kernelbench_graph_eval",
+            "--mode",
+            "generated",
+            "--original",
+            str(path / "input_model.py"),
+            "--generated",
+            str(path / "output_model_new.py"),
+            "--eval-config",
+            str(eval_config_path),
+            "--json-output",
+            str(output_path),
+        ],
+        cwd=path,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.stdout:
+        LOGGER.info("%s", completed.stdout.rstrip())
+    if completed.stderr:
+        LOGGER.info("%s", completed.stderr.rstrip())
 
-    logs = log_buffer.getvalue()
-    if logs:
-        LOGGER.info("%s", logs.rstrip())
-    payload = result.model_dump()
-    exit_code = 0 if result.compiled and result.correctness else 1
-    payload.setdefault("eval_exit_code", exit_code)
+    error = "KernelBench eval subprocess failed before writing output"
+    if output_path.is_file():
+        try:
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            payload.setdefault("eval_exit_code", completed.returncode)
+            output_path.write_text(
+                json.dumps(payload, indent=2, default=str) + "\n",
+                encoding="utf-8",
+            )
+            return payload
+        except Exception as exc:
+            LOGGER.warning("Failed to parse evaluation output JSON: %s", exc)
+            error = f"KernelBench eval subprocess wrote invalid JSON: {exc}"
+
+    payload = {
+        "compiled": False,
+        "correctness": False,
+        "eval_exit_code": completed.returncode,
+        "metadata": {
+            "error": error,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+        },
+    }
     output_path.write_text(
         json.dumps(payload, indent=2, default=str) + "\n",
         encoding="utf-8",
@@ -151,10 +174,3 @@ def run_eval_phase(
             problem_name=problem.name,
             round_metas=metas,
         )
-
-
-def _set_cuda_device(gpu_id: int) -> None:
-    import torch
-
-    if torch.cuda.is_available():
-        torch.cuda.set_device(gpu_id)

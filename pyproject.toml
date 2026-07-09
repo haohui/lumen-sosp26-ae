@@ -13,6 +13,7 @@ dependencies = []
 [project.scripts]
 lumen-codex-run = "lumen.tools.cli.codex_runner:main"
 lumen-kernelbench-generate = "lumen.tools.cli.kernelbench_generate:main"
+lumen-kernelbench-invariant = "lumen.tools.cli.kernelbench_invariant:main"
 lumen-kernelbench-graph-eval = "lumen.tools.cli.kernelbench_graph_eval:main"
 lumen-kb-generation-metrics = "lumen.tools.cli.kb_generation_metrics_reporter:main"
 
@@ -29,6 +30,13 @@ dev = [
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.package-data]
+"lumen.harness.datasets.kernelbench" = [
+    "optimization_templates/gemm/*.md",
+    "prompts/*.md",
+    "prompts/*.toml",
+]
 
 [tool.setuptools.packages.find]
 where = ["python"]

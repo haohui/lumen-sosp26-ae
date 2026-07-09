@@ -120,6 +120,9 @@ def run_eval_phase(
     config: GenerationConfig,
     dataset: Any,
     problem_ids: list[int],
+    *,
+    rounds_subdir: str | None = None,
+    problem_meta_subdir: str | None = None,
 ) -> None:
     if not torch_cuda_available():
         LOGGER.warning("No CUDA/HIP device available; eval was skipped.")
@@ -130,14 +133,22 @@ def run_eval_phase(
     to_eval: list[tuple[int, Path, int]] = []
     for pid in problem_ids:
         problem_dir = run_dir / f"p{pid:02d}"
-        top_meta_path = problem_dir / "meta.json"
+        rounds_dir = (
+            problem_dir / rounds_subdir if rounds_subdir is not None else problem_dir
+        )
+        problem_meta_dir = (
+            problem_dir / problem_meta_subdir
+            if problem_meta_subdir is not None
+            else problem_dir
+        )
+        top_meta_path = problem_meta_dir / "meta.json"
 
         if top_meta_path.is_file():
             top_meta = json.loads(top_meta_path.read_text(encoding="utf-8"))
             if top_meta.get("stage") == "speedup_eval":
                 continue
 
-        for round_dir in reversed(sorted_prefixed_dirs(problem_dir, "round")):
+        for round_dir in reversed(sorted_prefixed_dirs(rounds_dir, "round")):
             if (round_dir / "output_model_new.py").is_file():
                 gpu_id = gpu_ids[len(to_eval) % len(gpu_ids)]
                 to_eval.append((pid, round_dir, gpu_id))
@@ -149,6 +160,12 @@ def run_eval_phase(
 
     LOGGER.info("Evaluating %d kernel(s) on GPU(s) %s.", len(to_eval), list(gpu_ids))
     for pid, round_dir, gpu_id in to_eval:
+        problem_dir = run_dir / f"p{pid:02d}"
+        problem_meta_dir = (
+            problem_dir / problem_meta_subdir
+            if problem_meta_subdir is not None
+            else problem_dir
+        )
         problem = dataset.get_problem_by_id(pid)
         start_time = time.time()
         eval_payload = evaluate_round(round_dir, config.evaluation, gpu_id)
@@ -169,7 +186,7 @@ def run_eval_phase(
             if meta_path.is_file():
                 metas.append(json.loads(meta_path.read_text(encoding="utf-8")))
         write_problem_meta(
-            round_dir.parent,
+            problem_meta_dir,
             problem_id=pid,
             problem_name=problem.name,
             round_metas=metas,

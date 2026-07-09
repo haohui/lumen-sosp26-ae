@@ -16,13 +16,21 @@ def build_work_items(
     problem_ids: list[int],
     run_dir: str | Path,
     gpu_ids: tuple[int, ...],
+    *,
+    completion_subdir: str | None = None,
 ) -> tuple[list[WorkArgs], int]:
     gpus = gpu_ids or (0,)
     problems: list[WorkArgs] = []
     already_done = 0
     base = Path(run_dir)
     for pid in problem_ids:
-        if (base / f"p{pid:02d}" / "meta.json").is_file():
+        problem_dir = base / f"p{pid:02d}"
+        completion_dir = (
+            problem_dir / completion_subdir
+            if completion_subdir is not None
+            else problem_dir
+        )
+        if (completion_dir / "meta.json").is_file():
             already_done += 1
             continue
         gpu_id = gpus[len(problems) % len(gpus)]

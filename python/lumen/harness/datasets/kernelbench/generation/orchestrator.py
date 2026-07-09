@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 def run_generation(config: GenerationConfig) -> None:
+    run_generation_experiment(config, generate_problem)
+
+
+def run_generation_experiment(
+    config: GenerationConfig,
+    problem_runner: Callable[[Any, GenerationConfig, Any, Path], bool],
+    *,
+    action: str = "Generating",
+    rounds_subdir: str | None = None,
+    problem_meta_subdir: str | None = None,
+) -> None:
+    """Run a generation-style experiment with a per-problem runner."""
     dataset = _construct_dataset(config.dataset)
     problem_ids = select_problem_ids(dataset, config.dataset)
 
@@ -47,6 +60,7 @@ def run_generation(config: GenerationConfig) -> None:
         problem_ids,
         run_dir,
         config.evaluation.gpu_ids,
+        completion_subdir=problem_meta_subdir,
     )
     if already_done:
         LOGGER.info(
@@ -55,7 +69,8 @@ def run_generation(config: GenerationConfig) -> None:
             len(problem_ids),
         )
     LOGGER.info(
-        "Generating %d kernel(s) for level %d (timeout %ss each)",
+        "%s %d kernel(s) for level %d (timeout %ss each)",
+        action,
         len(problems),
         config.dataset.level,
         config.codex.timeout_seconds,
@@ -63,7 +78,7 @@ def run_generation(config: GenerationConfig) -> None:
 
     results = run_generation_tasks(
         problems,
-        lambda work: generate_problem(work, config, dataset, run_dir),
+        lambda work: problem_runner(work, config, dataset, run_dir),
         num_workers=num_workers,
     )
     if results:
@@ -72,7 +87,13 @@ def run_generation(config: GenerationConfig) -> None:
     else:
         LOGGER.info("Nothing to generate.")
 
-    run_eval_phase(config, dataset, problem_ids)
+    run_eval_phase(
+        config,
+        dataset,
+        problem_ids,
+        rounds_subdir=rounds_subdir,
+        problem_meta_subdir=problem_meta_subdir,
+    )
     LOGGER.info("Results in: %s", run_dir)
 
 

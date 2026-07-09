@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +30,32 @@ def prepare_round_workspace(
         gpu_arch=evaluation.gpu_arch,
         eval_num_correct_trials=evaluation.num_correct_trials,
         eval_num_perf_trials=evaluation.num_perf_trials,
+    )
+    prompt = paths["prompt"].read_text(encoding="utf-8")
+    return RoundWorkspace(round_dir=Path(round_dir), prompt=prompt)
+
+
+def prepare_invariant_round_workspace(
+    round_dir: str | Path,
+    *,
+    ref_arch_src: str,
+    candidate_src: str | None,
+    evaluation: KernelBenchEvaluationConfig,
+    prompt_transform: Callable[[str], str] | None = None,
+) -> RoundWorkspace:
+    from lumen.harness.datasets.kernelbench.generation.prompt import (
+        write_invariant_workspace,
+    )
+
+    paths = write_invariant_workspace(
+        round_dir,
+        ref_arch_src=ref_arch_src,
+        candidate_src=candidate_src,
+        precision=evaluation.precision,
+        gpu_arch=evaluation.gpu_arch,
+        eval_num_correct_trials=evaluation.num_correct_trials,
+        eval_num_perf_trials=evaluation.num_perf_trials,
+        prompt_transform=prompt_transform,
     )
     prompt = paths["prompt"].read_text(encoding="utf-8")
     return RoundWorkspace(round_dir=Path(round_dir), prompt=prompt)

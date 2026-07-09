@@ -16,7 +16,8 @@ WRITE_FILE_DIRECTIVE = (
     "\n\nWrite your complete final implementation directly to the file "
     "`output_model_new.py` in the current working directory using your file "
     "writing tools. Do not print the code in your response text; write it to "
-    "the file only."
+    "the file only. Do not inspect or copy from any other `runs/` directory, "
+    "previous generated kernel, optimization round, or candidate output."
 )
 
 

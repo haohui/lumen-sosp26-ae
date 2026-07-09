@@ -280,7 +280,7 @@ Verified or compiler-exposed AMDGPU intrinsics:
 
 Important AMDGPU constraints from the implementation:
 
-- MFMA operands are vector fragments. Use the exact fragment shapes already present in `avelang/python/avelang_kernels/amdgpu_gemm.py`; do not guess fragment packing.
+- MFMA intrinsics take vector operands. Use only the public intrinsic signatures and validate behavior directly in the current round.
 - `make_rsrc` expects a tensor/memref and an integer/index byte range in `[0, 2^32 - 1]`.
 - `raw_buffer_load_x{1,2,4}` expects `rsrc` to be `vector<4xi32>`.
 - `raw_buffer_store_x1` expects an integer scalar payload; `x2/x4` expect `vector<2xi32>` / `vector<4xi32>`.
@@ -312,7 +312,7 @@ Important NVVM constraints from the implementation:
 - Element types must match bit width:
   - `_b16`: `f16`, `bf16`, or `i16`
 - `stmatrix_*` takes `(ptr, source)` where source is `i32` for `x1` and `vector<num x i32>` for `x2/x4`.
-- `mma_*` operands must be vector types. Follow the exact fragment loading/staging patterns in the NVIDIA GEMM examples rather than inventing new fragment layouts.
+- `mma_*` operands must be vector types. Use only the public intrinsic signatures and validate any fragment layout directly in the current round.
 
 ## Host-wrapper rules for KernelBench-style generation
 

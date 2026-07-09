@@ -24,6 +24,7 @@ from lumen.harness.datasets.kernelbench.generation.types import (
 
 LOGGER = logging.getLogger(__name__)
 
+
 def torch_cuda_available() -> bool:
     try:
         import torch
@@ -76,8 +77,7 @@ def evaluate_round(
         cwd=path,
         env=env,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
     if completed.stdout:
@@ -149,6 +149,7 @@ def run_eval_phase(
 
     LOGGER.info("Evaluating %d kernel(s) on GPU(s) %s.", len(to_eval), list(gpu_ids))
     for pid, round_dir, gpu_id in to_eval:
+        problem_dir = run_dir / f"p{pid:02d}"
         problem = dataset.get_problem_by_id(pid)
         start_time = time.time()
         eval_payload = evaluate_round(round_dir, config.evaluation, gpu_id)
@@ -169,7 +170,7 @@ def run_eval_phase(
             if meta_path.is_file():
                 metas.append(json.loads(meta_path.read_text(encoding="utf-8")))
         write_problem_meta(
-            round_dir.parent,
+            problem_dir,
             problem_id=pid,
             problem_name=problem.name,
             round_metas=metas,

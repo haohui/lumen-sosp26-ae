@@ -11,6 +11,7 @@ from lumen.harness.datasets.kernelbench.generation import (
     GenerationConfig,
     KernelBenchDatasetConfig,
     KernelBenchEvaluationConfig,
+    OptimizationConfig,
 )
 
 
@@ -25,6 +26,36 @@ def load_generation_config(
         data,
         Path.cwd() if base_dir is None else Path(base_dir),
     )
+
+
+def load_optimization_config(path: str | Path) -> OptimizationConfig:
+    config_path = Path(path).expanduser().resolve()
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    return OptimizationConfig(
+        run_dir=_resolve_path(data["run_dir"], config_path.parent),
+        profile=str(data["profile"]),
+    )
+
+
+def load_candidate_manifest(path: str | Path) -> dict[int, Path]:
+    manifest_path = Path(path).expanduser().resolve()
+    data = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    candidates: dict[int, Path] = {}
+    for entry in data.get("candidate", []):
+        problem_id = int(entry["problem_id"])
+        if problem_id in candidates:
+            raise ValueError(f"duplicate candidate for problem_id={problem_id}")
+        candidate = _resolve_path(entry["path"], manifest_path.parent)
+        if not candidate.is_file():
+            raise ValueError(
+                f"candidate for problem_id={problem_id} is not a file: {candidate}"
+            )
+        if not candidate.read_text(encoding="utf-8").strip():
+            raise ValueError(
+                f"candidate for problem_id={problem_id} is empty: {candidate}"
+            )
+        candidates[problem_id] = candidate
+    return candidates
 
 
 def generation_config_from_mapping(

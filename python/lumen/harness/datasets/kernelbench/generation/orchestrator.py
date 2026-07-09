@@ -72,7 +72,11 @@ def run_generation(config: GenerationConfig) -> None:
     else:
         LOGGER.info("Nothing to generate.")
 
-    run_eval_phase(config, dataset, problem_ids)
+    run_eval_phase(
+        config,
+        dataset,
+        problem_ids,
+    )
     LOGGER.info("Results in: %s", run_dir)
 
 

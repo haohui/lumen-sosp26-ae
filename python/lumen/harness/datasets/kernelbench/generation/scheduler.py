@@ -22,7 +22,8 @@ def build_work_items(
     already_done = 0
     base = Path(run_dir)
     for pid in problem_ids:
-        if (base / f"p{pid:02d}" / "meta.json").is_file():
+        problem_dir = base / f"p{pid:02d}"
+        if (problem_dir / "meta.json").is_file():
             already_done += 1
             continue
         gpu_id = gpus[len(problems) % len(gpus)]

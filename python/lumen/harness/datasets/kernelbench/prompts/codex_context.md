@@ -9,6 +9,16 @@ The reference model is in `input_model.py`. Preserve its public input and output
 contract exactly. Do not edit `input_model.py`, `eval_config.json`, or
 `prompt.txt`.
 
+## Workspace Isolation
+
+Treat this directory as the only experiment workspace. You may read files in the
+current directory, the reference notes listed below.
+
+Do not inspect, copy from, or search any `runs/` directory outside this current
+round. In particular, never read another problem's or another run's
+`output_model_new.py`, `input_model.py`, `eval_result.json`, `codex_result.json`,
+`trace.jsonl`, or `meta.json`.
+
 ## Reference Notes
 
 {skills_section}

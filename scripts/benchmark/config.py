@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 
 def benchmark_root(repo_root: Path) -> Path:
-    return Path(os.environ.get("AE_BENCHMARK_ROOT", repo_root / "data" / "benchmarks"))
+    return repo_root / "datasets" / "inference"
 
 
 WORKLOADS = [1024, 2048, 4096, 8192, 16384]

@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from backend_gemm import BACKENDS, build_shared_inputs, parse_dtype
 from cli_utils import select_backend
 from config import GEMM_DEFAULTS, GEMM_WORKLOADS, TIMER_DEFAULTS, benchmark_root
+from paths import resolve_repo_root
 
 try:
     import torch
@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     matrix_sizes = args.matrix_sizes
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = resolve_repo_root()
     gemm_root = benchmark_root(repo_root) / "gemm"
 
     if torch is None:

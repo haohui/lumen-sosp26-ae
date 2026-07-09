@@ -15,3 +15,7 @@ env/
 build/
 dist/
 *.egg-info/
+
+third_party/aiter/
+third_party/HipKittens/
+data/benchmarks/gemm/08_hipketten/build_hipkittens_mini/

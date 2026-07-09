@@ -1,0 +1,8 @@
+name=aiter
+upstream=https://github.com/ROCm/aiter.git
+ref=v0.1.10.post3
+commit=6a0e7b26ccf33164785531212cc2ec2cde0b9243
+submodules=recursive
+python_package=amd-aiter
+python_version=0.1.10.post3
+purpose=ROCm AITER kernels used by the GEMM, attention, and MoE benchmark backends.

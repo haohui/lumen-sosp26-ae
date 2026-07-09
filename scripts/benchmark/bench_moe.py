@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from backend_moe import (
     BACKENDS,
@@ -13,6 +12,7 @@ from backend_moe import (
 )
 from cli_utils import select_backend
 from config import MOE_DEFAULTS, MOE_WORKLOADS, TIMER_DEFAULTS, benchmark_root
+from paths import resolve_repo_root
 
 try:
     import torch
@@ -59,7 +59,7 @@ def main() -> None:
     if torch is None:
         raise RuntimeError("torch is required")
 
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = resolve_repo_root()
     moe_root = benchmark_root(repo_root) / "moe"
 
     torch.manual_seed(args.seed)

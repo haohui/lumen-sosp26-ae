@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import os
 import subprocess
@@ -28,6 +29,10 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Reproduce Table 2 benchmark results")
     p.add_argument("--workspace-dir", type=Path, default=None)
     p.add_argument("--python", type=str, default=sys.executable)
+    p.add_argument("--workloads", type=int, nargs="+", default=list(WORKLOADS))
+    p.add_argument("--warmup", type=int, default=10)
+    p.add_argument("--repeat", type=int, default=100)
+    p.add_argument("--graph-iters", type=int, default=1)
     p.add_argument(
         "--skip-run",
         action="store_true",
@@ -48,17 +53,25 @@ def _env() -> dict[str, str]:
     if existing:
         pythonpath = pythonpath + os.pathsep + existing
     env["PYTHONPATH"] = pythonpath
+    env["AITER_JIT_DIR"] = str(REPO_ROOT / ".aiter" / "jit")
     return env
 
 
 def _run_jsonl_command(cmd: list[str], out_path: Path) -> None:
     cp = subprocess.run(
         cmd,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         env=_env(),
     )
+    if cp.returncode != 0:
+        print("command failed:", " ".join(cmd), file=sys.stderr)
+        if cp.stdout:
+            print(cp.stdout, file=sys.stderr, end="")
+        if cp.stderr:
+            print(cp.stderr, file=sys.stderr, end="")
+        raise subprocess.CalledProcessError(cp.returncode, cmd)
     with out_path.open("a", encoding="utf-8") as f:
         for line in cp.stdout.splitlines():
             line = line.strip()
@@ -70,7 +83,26 @@ def _run_jsonl_command(cmd: list[str], out_path: Path) -> None:
         print(cp.stderr, file=sys.stderr, end="")
 
 
-def run_benchmarks(*, python_bin: str, workspace: Path) -> None:
+def _timer_args(*, warmup: int, repeat: int, graph_iters: int) -> list[str]:
+    return [
+        "--warmup",
+        str(warmup),
+        "--repeat",
+        str(repeat),
+        "--graph-iters",
+        str(graph_iters),
+    ]
+
+
+def run_benchmarks(
+    *,
+    python_bin: str,
+    workspace: Path,
+    workloads: list[int],
+    warmup: int,
+    repeat: int,
+    graph_iters: int,
+) -> None:
     for name in ("gemm", "attention", "moe"):
         (workspace / f"{name}.jsonl").write_text("", encoding="utf-8")
 
@@ -84,7 +116,8 @@ def run_benchmarks(*, python_bin: str, workspace: Path) -> None:
                 "--dtype",
                 "bf16",
                 "--matrix-sizes",
-                *[str(x) for x in WORKLOADS],
+                *[str(x) for x in workloads],
+                *_timer_args(warmup=warmup, repeat=repeat, graph_iters=graph_iters),
             ],
             workspace / "gemm.jsonl",
         )
@@ -99,7 +132,7 @@ def run_benchmarks(*, python_bin: str, workspace: Path) -> None:
                 "--dtype",
                 "bf16",
                 "--seq-lens",
-                *[str(x) for x in WORKLOADS],
+                *[str(x) for x in workloads],
                 "--batch-size",
                 "16",
                 "--num-q-heads",
@@ -108,6 +141,7 @@ def run_benchmarks(*, python_bin: str, workspace: Path) -> None:
                 "1",
                 "--head-dim",
                 "128",
+                *_timer_args(warmup=warmup, repeat=repeat, graph_iters=graph_iters),
             ],
             workspace / "attention.jsonl",
         )
@@ -120,7 +154,7 @@ def run_benchmarks(*, python_bin: str, workspace: Path) -> None:
                 "--backend",
                 backend,
                 "--tokens",
-                *[str(x) for x in WORKLOADS],
+                *[str(x) for x in workloads],
                 "--dim",
                 "7168",
                 "--inter-dim",
@@ -131,6 +165,7 @@ def run_benchmarks(*, python_bin: str, workspace: Path) -> None:
                 "4",
                 "--input-dtype",
                 "fp8",
+                *_timer_args(warmup=warmup, repeat=repeat, graph_iters=graph_iters),
             ],
             workspace / "moe.jsonl",
         )
@@ -200,7 +235,7 @@ def record_tflops(record: dict[str, Any]) -> float:
     return flops / (mean_ms * 1.0e-3) / 1.0e12
 
 
-def render_csv(records: list[dict[str, Any]]) -> str:
+def render_csv(records: list[dict[str, Any]], *, workloads: list[int]) -> str:
     table: dict[str, dict[int, dict[str, float]]] = {
         "gemm": {},
         "attention": {},
@@ -216,7 +251,7 @@ def render_csv(records: list[dict[str, Any]]) -> str:
 
     out_lines: list[list[str]] = [["domain", "workload", *BASELINE_COLUMNS]]
     for domain in ("gemm", "attention", "moe"):
-        for workload in WORKLOADS:
+        for workload in workloads:
             vals = table[domain].get(workload, {})
             out_lines.append(
                 [
@@ -228,8 +263,6 @@ def render_csv(records: list[dict[str, Any]]) -> str:
                     ],
                 ]
             )
-
-    import io
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -245,9 +278,16 @@ def main() -> int:
     workspace.mkdir(parents=True, exist_ok=True)
 
     if not args.skip_run:
-        run_benchmarks(python_bin=args.python, workspace=workspace)
+        run_benchmarks(
+            python_bin=args.python,
+            workspace=workspace,
+            workloads=args.workloads,
+            warmup=args.warmup,
+            repeat=args.repeat,
+            graph_iters=args.graph_iters,
+        )
 
-    table_csv = render_csv(load_records(workspace))
+    table_csv = render_csv(load_records(workspace), workloads=args.workloads)
     csv_path = workspace / "table2.csv"
     csv_path.write_text(table_csv, encoding="utf-8")
     print(f"workspace: {workspace}")

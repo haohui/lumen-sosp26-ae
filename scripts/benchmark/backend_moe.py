@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
-from backends import load_module
+from backends import ModelBackend, load_module
 from cli_utils import emit_jsonl
 from cudagraph_timer import benchmark_with_cudagraph
 
@@ -301,8 +301,10 @@ def run_aiter_triton(**kwargs) -> None:
     _run_aiter_variant(backend="aiter_triton", **kwargs)
 
 
-BACKENDS = {
-    "aiter": run_aiter,
-    "aiter_asm": run_aiter_asm,
-    "aiter_triton": run_aiter_triton,
+BACKEND_MAP = {
+    "aiter": ModelBackend(run=run_aiter),
+    "aiter_asm": ModelBackend(run=run_aiter_asm),
+    "aiter_triton": ModelBackend(run=run_aiter_triton),
 }
+
+BACKENDS = BACKEND_MAP

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from backends import build_model_fn, load_module
+from backends import ModelBackend, build_model_fn, load_module
 from cli_utils import emit_jsonl
 from cudagraph_timer import benchmark_with_cudagraph
 
@@ -224,7 +224,9 @@ def run_triton(
     )
 
 
-BACKENDS = {
-    "aiter": run_aiter,
-    "triton": run_triton,
+BACKEND_MAP = {
+    "aiter": ModelBackend(run=run_aiter),
+    "triton": ModelBackend(run=run_triton),
 }
+
+BACKENDS = BACKEND_MAP

@@ -6,11 +6,21 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from collections.abc import Callable
+from typing import Any, Literal
 
 try:
     import torch
 except Exception:  # pragma: no cover
     torch = None
+
+
+@dataclass(frozen=True)
+class ModelBackend:
+    run: Callable[..., None]
+
+    def __call__(self, **kwargs: Any) -> None:
+        self.run(**kwargs)
 
 
 def load_module(path: Path) -> ModuleType:
@@ -30,9 +40,9 @@ def load_module(path: Path) -> ModuleType:
 
 
 @dataclass(frozen=True)
-class ModelBackend:
+class ModelEntrypoint:
     entrypoint: str
-    kind: str
+    kind: Literal["class", "function"]
 
     def supports(self, module: ModuleType) -> bool:
         return hasattr(module, self.entrypoint)
@@ -56,15 +66,15 @@ class ModelBackend:
         if self.kind == "function":
             del device, dtype
             return lambda *xs: target(*xs)
-        raise ValueError(f"unsupported backend kind: {self.kind}")
+        raise ValueError(f"unsupported entrypoint kind: {self.kind}")
 
 
-BACKEND_MAP = {
-    "model_new": ModelBackend(entrypoint="ModelNew", kind="class"),
-    "model": ModelBackend(entrypoint="Model", kind="class"),
-    "kernel_function": ModelBackend(entrypoint="kernel_function", kind="function"),
-    "run": ModelBackend(entrypoint="run", kind="function"),
-}
+ENTRYPOINTS = (
+    ModelEntrypoint(entrypoint="ModelNew", kind="class"),
+    ModelEntrypoint(entrypoint="Model", kind="class"),
+    ModelEntrypoint(entrypoint="kernel_function", kind="function"),
+    ModelEntrypoint(entrypoint="run", kind="function"),
+)
 
 
 def build_model_fn(
@@ -73,10 +83,8 @@ def build_model_fn(
     device: torch.device,
     dtype: torch.dtype | None = None,
 ):
-    for backend in BACKEND_MAP.values():
-        if backend.supports(module):
-            return backend.build(module, device=device, dtype=dtype)
-    expected = ", ".join(
-        f"{name} ({backend.entrypoint})" for name, backend in BACKEND_MAP.items()
-    )
+    for entrypoint in ENTRYPOINTS:
+        if entrypoint.supports(module):
+            return entrypoint.build(module, device=device, dtype=dtype)
+    expected = ", ".join(entrypoint.entrypoint for entrypoint in ENTRYPOINTS)
     raise RuntimeError(f"expected one of: {expected}")

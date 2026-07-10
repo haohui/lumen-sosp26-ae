@@ -33,6 +33,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 "lumen.harness.datasets.kernelbench" = [
+    "optimization_templates/conv/*.md",
     "optimization_templates/gemm/*.md",
     "prompts/*.md",
     "prompts/*.toml",

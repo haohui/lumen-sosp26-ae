@@ -30,6 +30,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Select the Prompt 1 invariant treatment.",
     )
     parser.add_argument(
+        "--template-family",
+        choices=("auto", "gemm", "conv"),
+        default="auto",
+        help="Select the invariant optimization template family.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         help="Python logging level for generation progress.",
@@ -47,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     run_invariant_generation(
         load_generation_config(args.config),
         prompt_variant=args.prompt_variant,
+        template_family=args.template_family,
     )
     return 0
 

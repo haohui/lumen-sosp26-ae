@@ -30,6 +30,7 @@ from lumen.harness.datasets.kernelbench.generation.workspace import (
 )
 
 InvariantPromptVariant = Literal["invariants", "no-invariants"]
+InvariantTemplateFamily = Literal["auto", "gemm", "conv"]
 
 _HINT_HEADER_RE = re.compile(r"^##\s*(?:Hint\s*)?(\d+)\s*[:.\-]\s*(.+?)\s*$")
 
@@ -44,10 +45,13 @@ def run_invariant_generation(
     config: GenerationConfig,
     *,
     prompt_variant: InvariantPromptVariant = "invariants",
+    template_family: InvariantTemplateFamily = "auto",
 ) -> None:
     """Run the invariant experiment on the standard generation framework."""
     if prompt_variant not in ("invariants", "no-invariants"):
         raise ValueError(f"unknown invariant prompt variant: {prompt_variant}")
+    if template_family not in ("auto", "gemm", "conv"):
+        raise ValueError(f"unknown invariant template family: {template_family}")
 
     rounds_subdir = invariant_rounds_subdir(prompt_variant)
     run_generation_experiment(
@@ -58,6 +62,7 @@ def run_invariant_generation(
             dataset,
             run_dir,
             prompt_variant=prompt_variant,
+            template_family=template_family,
         ),
         action="Generating invariant variants for",
         rounds_subdir=rounds_subdir,
@@ -72,6 +77,7 @@ def generate_invariant_problem(
     run_dir: Path,
     *,
     prompt_variant: InvariantPromptVariant,
+    template_family: InvariantTemplateFamily,
 ) -> bool:
     """Generate a chained sequence of invariant optimization rounds."""
     problem = dataset.get_problem_by_id(work.problem_id)
@@ -92,8 +98,10 @@ def generate_invariant_problem(
             prompt_transform=lambda base_prompt, index=round_idx: (
                 build_invariant_prompt(
                     base_prompt,
+                    ref_arch_src=problem.code,
                     round_index=index,
                     prompt_variant=prompt_variant,
+                    template_family=template_family,
                 )
             ),
         )
@@ -142,18 +150,22 @@ def invariant_rounds_subdir(prompt_variant: InvariantPromptVariant) -> str:
 def build_invariant_prompt(
     base_prompt: str,
     *,
+    ref_arch_src: str,
     round_index: int,
     prompt_variant: InvariantPromptVariant = "invariants",
+    template_family: InvariantTemplateFamily = "auto",
 ) -> str:
     """Add only the guidance assigned to this invariant round."""
     if round_index < 0:
         raise ValueError("round_index must be non-negative")
 
-    hints = _load_gemm_hints(prompt_variant)
+    selected_family = _select_template_family(ref_arch_src, template_family)
+    hints = _load_template_hints(selected_family, prompt_variant)
     selected = [hint for hint in hints if hint.number == round_index + 1]
     if not selected:
         raise ValueError(
-            f"the GEMM invariant template has no hint for round {round_index}"
+            f"the {selected_family} invariant template has no hint for round "
+            f"{round_index}"
         )
 
     experiment_prompt = "\n\n".join(hint.markdown for hint in selected)
@@ -166,16 +178,38 @@ def build_invariant_prompt(
     return _insert_before_write_directive(base_prompt, block)
 
 
-def _load_gemm_hints(
+def _select_template_family(
+    ref_arch_src: str,
+    template_family: InvariantTemplateFamily,
+) -> Literal["gemm", "conv"]:
+    if template_family != "auto":
+        return template_family
+
+    if re.search(
+        r"\b(?:nn\.)?Conv[123]d\b|\bF\.conv[123]d\b|\btorch\.conv[123]d\b|"
+        r"\bconv[123]d\b|\bconvolution\b",
+        ref_arch_src,
+        flags=re.IGNORECASE,
+    ):
+        return "conv"
+    return "gemm"
+
+
+def _load_template_hints(
+    template_family: Literal["gemm", "conv"],
     prompt_variant: InvariantPromptVariant,
 ) -> list[_HintSection]:
-    full_template = _template_resource("HINTS.md").read_text(encoding="utf-8")
+    full_template = _template_resource(template_family, "HINTS.md").read_text(
+        encoding="utf-8"
+    )
     hints = _parse_hints(full_template)
     if prompt_variant == "invariants":
         return hints
 
     no_invariants = _parse_hints(
-        _template_resource("prompt1_no_invariants.md").read_text(encoding="utf-8")
+        _template_resource(template_family, "prompt1_no_invariants.md").read_text(
+            encoding="utf-8"
+        )
     )
     if not no_invariants:
         raise ValueError("the no-invariants template contains no hints")
@@ -214,9 +248,9 @@ def _insert_before_write_directive(base_prompt: str, block: str) -> str:
     return f"{prompt}\n\n{block.strip()}\n"
 
 
-def _template_resource(name: str):
+def _template_resource(template_family: Literal["gemm", "conv"], name: str):
     return files("lumen.harness.datasets.kernelbench").joinpath(
         "optimization_templates",
-        "gemm",
+        template_family,
         name,
     )

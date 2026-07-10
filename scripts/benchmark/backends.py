@@ -6,26 +6,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Protocol
 
 try:
     import torch
 except Exception:  # pragma: no cover
     torch = None
-
-
-class EntrypointBackend(Protocol):
-    name: str
-
-    def supports(self, module: ModuleType) -> bool: ...
-
-    def build(
-        self,
-        module: ModuleType,
-        *,
-        device: torch.device,
-        dtype: torch.dtype | None,
-    ): ...
 
 
 def load_module(path: Path) -> ModuleType:
@@ -45,11 +30,12 @@ def load_module(path: Path) -> ModuleType:
 
 
 @dataclass(frozen=True)
-class ModelClassBackend:
-    name: str
+class ModelBackend:
+    entrypoint: str
+    kind: str
 
     def supports(self, module: ModuleType) -> bool:
-        return hasattr(module, self.name)
+        return hasattr(module, self.entrypoint)
 
     def build(
         self,
@@ -58,40 +44,27 @@ class ModelClassBackend:
         device: torch.device,
         dtype: torch.dtype | None,
     ):
-        model = getattr(module, self.name)()
-        if hasattr(model, "to"):
-            if dtype is None:
-                model = model.to(device=device)
-            else:
-                model = model.to(device=device, dtype=dtype)
-        return lambda *xs: model(*xs)
+        target = getattr(module, self.entrypoint)
+        if self.kind == "class":
+            model = target()
+            if hasattr(model, "to"):
+                if dtype is None:
+                    model = model.to(device=device)
+                else:
+                    model = model.to(device=device, dtype=dtype)
+            return lambda *xs: model(*xs)
+        if self.kind == "function":
+            del device, dtype
+            return lambda *xs: target(*xs)
+        raise ValueError(f"unsupported backend kind: {self.kind}")
 
 
-@dataclass(frozen=True)
-class FunctionBackend:
-    name: str
-
-    def supports(self, module: ModuleType) -> bool:
-        return hasattr(module, self.name)
-
-    def build(
-        self,
-        module: ModuleType,
-        *,
-        device: torch.device,
-        dtype: torch.dtype | None,
-    ):
-        del device, dtype
-        target = getattr(module, self.name)
-        return lambda *xs: target(*xs)
-
-
-ENTRYPOINT_BACKENDS: tuple[EntrypointBackend, ...] = (
-    ModelClassBackend("ModelNew"),
-    ModelClassBackend("Model"),
-    FunctionBackend("kernel_function"),
-    FunctionBackend("run"),
-)
+BACKEND_MAP = {
+    "model_new": ModelBackend(entrypoint="ModelNew", kind="class"),
+    "model": ModelBackend(entrypoint="Model", kind="class"),
+    "kernel_function": ModelBackend(entrypoint="kernel_function", kind="function"),
+    "run": ModelBackend(entrypoint="run", kind="function"),
+}
 
 
 def build_model_fn(
@@ -100,8 +73,10 @@ def build_model_fn(
     device: torch.device,
     dtype: torch.dtype | None = None,
 ):
-    for backend in ENTRYPOINT_BACKENDS:
+    for backend in BACKEND_MAP.values():
         if backend.supports(module):
             return backend.build(module, device=device, dtype=dtype)
-    expected = ", ".join(backend.name for backend in ENTRYPOINT_BACKENDS)
+    expected = ", ".join(
+        f"{name} ({backend.entrypoint})" for name, backend in BACKEND_MAP.items()
+    )
     raise RuntimeError(f"expected one of: {expected}")

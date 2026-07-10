@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Callable, Dict, List
 
 try:
@@ -15,13 +15,6 @@ except Exception:
 FP8_MAX = 240.0
 ROUTE_GROUP_SIZE = 32
 _AITER_RUNTIME_CACHE = None
-
-
-@dataclass
-class AiterBackendCase:
-    baseline: str
-    kernel_path: str
-    fn: Callable[[], None]
 
 
 def resolve_backends(args: Any) -> List[str]:
@@ -209,7 +202,7 @@ def build_cases_for_seq(
     shared_input,
     shared_weights,
     backends: List[str] | None = None,
-) -> List[AiterBackendCase]:
+) -> List[Callable[[], None]]:
     if torch is None:
         raise RuntimeError("torch is required")
 
@@ -344,24 +337,48 @@ def build_cases_for_seq(
         )
         torch.sum(stage2_triton, dim=1, out=out_triton)
 
-    out: List[AiterBackendCase] = []
+    out: List[Callable[[], None]] = []
     if "asm" in resolved:
-        out.append(
-            AiterBackendCase(
-                baseline="AITER (asm)",
-                kernel_path="datasets/inference/moe/05_aiter/ASM/src/moe_op.py",
-                fn=run_asm,
-            )
-        )
+        out.append(run_asm)
     if "triton" in resolved:
-        out.append(
-            AiterBackendCase(
-                baseline="Triton (aiter backend)",
-                kernel_path="datasets/inference/moe/05_aiter/Triton/src/moe_op.py",
-                fn=run_triton,
-            )
-        )
+        out.append(run_triton)
     return out
+
+
+class Model:
+    def __init__(self, *, variant: str):
+        if variant not in {"aiter", "aiter_asm", "aiter_triton"}:
+            raise ValueError(f"unsupported AITER variant: {variant}")
+        self.variant = variant
+
+    def build_cases(
+        self,
+        *,
+        seq_len: int,
+        shared_input: Any,
+        shared_weights: dict[str, torch.Tensor],
+        dim: int,
+        inter_dim: int,
+        experts: int,
+        topk: int,
+        input_dtype: str,
+    ) -> List[Callable[[], None]]:
+        args = SimpleNamespace(
+            run_aiter=self.variant == "aiter",
+            run_aiter_asm=self.variant == "aiter_asm",
+            run_aiter_triton=self.variant == "aiter_triton",
+            dim=dim,
+            inter_dim=inter_dim,
+            experts=experts,
+            topk=topk,
+            input_dtype=input_dtype,
+        )
+        return build_cases_for_seq(
+            args=args,
+            seq_len=seq_len,
+            shared_input=shared_input,
+            shared_weights=shared_weights,
+        )
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:

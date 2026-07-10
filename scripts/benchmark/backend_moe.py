@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
-from backends import load_module
+from backends import build_model_fn, load_module
 from cli_utils import emit_jsonl
 from cudagraph_timer import benchmark_with_cudagraph
 
@@ -17,6 +16,24 @@ except Exception:
 
 BLOCK_N = 128
 BLOCK_K = 128
+
+
+@dataclass(frozen=True)
+class BackendSpec:
+    directory: str
+    variant: str
+
+
+BACKENDS = {
+    name: BackendSpec(directory=name, variant=name)
+    for name in ("cudaforge", "kernelbench", "kernelfalcon", "ksearch")
+}
+BACKENDS.update(
+    {
+        name: BackendSpec(directory="aiter", variant=name)
+        for name in ("aiter", "aiter_asm", "aiter_triton")
+    }
+)
 
 
 @dataclass
@@ -227,6 +244,8 @@ def _run_aiter_variant(
     token_counts: list[int],
     shared_inputs: dict[int, SharedInputs],
     shared_weights: dict[str, torch.Tensor],
+    device: torch.device,
+    input_dtype: torch.dtype,
     dim: int,
     inter_dim: int,
     experts: int,
@@ -236,43 +255,28 @@ def _run_aiter_variant(
     repeat: int,
     graph_iters: int,
 ) -> None:
-    aiter_entry = moe_root / "05_aiter" / "run_aiter.py"
+    del device, input_dtype
+    aiter_entry = moe_root / BACKENDS[backend].directory / "model.py"
     aiter_mod = load_module(aiter_entry)
-    build_aiter_cases = getattr(aiter_mod, "build_cases_for_seq", None)
-    resolve_aiter_backends = getattr(aiter_mod, "resolve_backends", None)
-    if not callable(build_aiter_cases):
-        raise RuntimeError(f"missing build_cases_for_seq() in {aiter_entry}")
-    if not callable(resolve_aiter_backends):
-        raise RuntimeError(f"missing resolve_backends() in {aiter_entry}")
-
-    aiter_args = SimpleNamespace(
-        run_aiter=backend == "aiter",
-        run_aiter_asm=backend == "aiter_asm",
-        run_aiter_triton=backend == "aiter_triton",
-        dim=dim,
-        inter_dim=inter_dim,
-        experts=experts,
-        topk=topk,
-        input_dtype=input_dtype_name,
-    )
-    resolved_backends = resolve_aiter_backends(aiter_args)
-    if not isinstance(resolved_backends, list):
-        raise RuntimeError(
-            "resolve_backends() must return list, got "
-            f"{type(resolved_backends).__name__}"
-        )
+    model_cls = getattr(aiter_mod, "Model", None)
+    if model_cls is None:
+        raise RuntimeError(f"missing Model in {aiter_entry}")
+    model = model_cls(variant=BACKENDS[backend].variant)
 
     for tokens in token_counts:
-        cases = build_aiter_cases(
-            args=aiter_args,
+        cases = model.build_cases(
             seq_len=tokens,
             shared_input=shared_inputs[tokens],
             shared_weights=shared_weights,
-            backends=[str(x) for x in resolved_backends],
+            dim=dim,
+            inter_dim=inter_dim,
+            experts=experts,
+            topk=topk,
+            input_dtype=input_dtype_name,
         )
-        for case in cases:
+        for fn in cases:
             timing = _time_call(
-                case.fn,
+                fn,
                 warmup=warmup,
                 repeat=repeat,
                 graph_iters=graph_iters,
@@ -289,20 +293,58 @@ def _run_aiter_variant(
             )
 
 
-def run_aiter(**kwargs) -> None:
-    _run_aiter_variant(backend="aiter", **kwargs)
+def _run_python_backend(
+    *,
+    backend: str,
+    moe_root: Path,
+    token_counts: list[int],
+    shared_inputs: dict[int, SharedInputs],
+    shared_weights: dict[str, torch.Tensor],
+    device: torch.device,
+    input_dtype: torch.dtype,
+    input_dtype_name: str,
+    dim: int,
+    inter_dim: int,
+    experts: int,
+    topk: int,
+    warmup: int,
+    repeat: int,
+    graph_iters: int,
+) -> None:
+    path = moe_root / BACKENDS[backend].directory / "model.py"
+    fn = build_model_fn(load_module(path), device=device, dtype=input_dtype)
+    for tokens in token_counts:
+        x = shared_inputs[tokens]
+        timing = _time_call(
+            lambda x=x: fn(
+                x.input_q,
+                shared_weights["w1_q"],
+                shared_weights["w2_q"],
+                x.topk_weights,
+                x.topk_ids,
+                x.input_scale,
+                shared_weights["fc1_scale"],
+                shared_weights["fc2_scale"],
+            ),
+            warmup=warmup,
+            repeat=repeat,
+            graph_iters=graph_iters,
+        )
+        _emit_record(
+            backend=backend,
+            tokens=tokens,
+            dim=dim,
+            inter_dim=inter_dim,
+            experts=experts,
+            topk=topk,
+            input_dtype_name=input_dtype_name,
+            mean_ms=timing.mean_ms,
+        )
 
 
-def run_aiter_asm(**kwargs) -> None:
-    _run_aiter_variant(backend="aiter_asm", **kwargs)
-
-
-def run_aiter_triton(**kwargs) -> None:
-    _run_aiter_variant(backend="aiter_triton", **kwargs)
-
-
-BACKENDS = {
-    "aiter": run_aiter,
-    "aiter_asm": run_aiter_asm,
-    "aiter_triton": run_aiter_triton,
-}
+def run_backend(*, backend: str, **kwargs) -> None:
+    spec = BACKENDS[backend]
+    if spec.directory == "aiter":
+        _run_aiter_variant(backend=backend, **kwargs)
+    else:
+        _run_python_backend(backend=backend, **kwargs)

@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 try:
     import torch
@@ -43,10 +44,11 @@ class ModelBackend:
         *,
         device: torch.device,
         dtype: torch.dtype | None,
+        model_kwargs: dict[str, Any],
     ):
         target = getattr(module, self.entrypoint)
         if self.kind == "class":
-            model = target()
+            model = target(**model_kwargs)
             if hasattr(model, "to"):
                 if dtype is None:
                     model = model.to(device=device)
@@ -54,6 +56,10 @@ class ModelBackend:
                     model = model.to(device=device, dtype=dtype)
             return lambda *xs: model(*xs)
         if self.kind == "function":
+            if model_kwargs:
+                raise RuntimeError(
+                    f"function backend {self.entrypoint} does not accept model kwargs"
+                )
             del device, dtype
             return lambda *xs: target(*xs)
         raise ValueError(f"unsupported backend kind: {self.kind}")
@@ -72,10 +78,17 @@ def build_model_fn(
     *,
     device: torch.device,
     dtype: torch.dtype | None = None,
+    model_kwargs: dict[str, Any] | None = None,
 ):
+    model_kwargs = {} if model_kwargs is None else model_kwargs
     for backend in BACKEND_MAP.values():
         if backend.supports(module):
-            return backend.build(module, device=device, dtype=dtype)
+            return backend.build(
+                module,
+                device=device,
+                dtype=dtype,
+                model_kwargs=model_kwargs,
+            )
     expected = ", ".join(
         f"{name} ({backend.entrypoint})" for name, backend in BACKEND_MAP.items()
     )

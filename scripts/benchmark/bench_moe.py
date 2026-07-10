@@ -8,16 +8,12 @@ from backend_moe import (
     build_shared_inputs,
     build_shared_weights,
     parse_dtype,
+    run_backend,
     validate_config,
 )
-from cli_utils import select_backend
+from cli_utils import add_timer_args, cuda_runtime
 from config import MOE_DEFAULTS, MOE_WORKLOADS, TIMER_DEFAULTS, benchmark_root
 from paths import resolve_repo_root
-
-try:
-    import torch
-except Exception:
-    torch = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,15 +36,12 @@ def parse_args() -> argparse.Namespace:
         default=MOE_DEFAULTS["input_dtype"],
         choices=["fp8", "bf16"],
     )
-    p.add_argument("--warmup", type=int, default=TIMER_DEFAULTS["warmup"])
-    p.add_argument("--repeat", type=int, default=TIMER_DEFAULTS["repeat"])
-    p.add_argument("--graph-iters", type=int, default=TIMER_DEFAULTS["graph_iters"])
+    add_timer_args(p, TIMER_DEFAULTS)
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    token_counts = args.tokens
     validate_config(
         dim=args.dim,
         inter_dim=args.inter_dim,
@@ -56,18 +49,11 @@ def main() -> None:
         topk=args.topk,
     )
 
-    if torch is None:
-        raise RuntimeError("torch is required")
-
-    repo_root = resolve_repo_root()
-    moe_root = benchmark_root(repo_root) / "moe"
-
-    torch.manual_seed(args.seed)
-    device = torch.device("cuda")
-    input_dtype_name = args.input_dtype.strip().lower()
-    input_dtype = parse_dtype(input_dtype_name)
+    device, input_dtype_name, input_dtype = cuda_runtime(
+        seed=args.seed, dtype_name=args.input_dtype, parse_dtype=parse_dtype
+    )
     shared_inputs = build_shared_inputs(
-        seq_lens=token_counts,
+        seq_lens=args.tokens,
         dim=args.dim,
         experts=args.experts,
         topk=args.topk,
@@ -84,12 +70,14 @@ def main() -> None:
         seed=args.seed,
     )
 
-    selected = select_backend(BACKENDS, args.backend)
-    selected(
-        moe_root=moe_root,
-        token_counts=token_counts,
+    run_backend(
+        backend=args.backend,
+        moe_root=benchmark_root(resolve_repo_root()) / "moe",
+        token_counts=args.tokens,
         shared_inputs=shared_inputs,
         shared_weights=shared_weights,
+        device=device,
+        input_dtype=input_dtype,
         dim=args.dim,
         inter_dim=args.inter_dim,
         experts=args.experts,

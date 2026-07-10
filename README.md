@@ -43,35 +43,6 @@ HIPKITTENS_ROOT=/path/to/HipKittens uv pip install -e ./packages/hipkittens
 `HIPKITTENS_ROOT` is required at build time and is not assumed to live under
 this repository.
 
-### Reference baseline sources
-
-The reference baselines use these pinned upstream kernels and APIs:
-
-- AITER GEMM (`aiter.gemm_a16w16_asm`):
-  <https://github.com/ROCm/aiter/blob/6a0e7b26ccf33164785531212cc2ec2cde0b9243/aiter/ops/gemm_op_a16w16.py>
-- AITER attention (`flash_attn_func`):
-  <https://github.com/ROCm/aiter/blob/6a0e7b26ccf33164785531212cc2ec2cde0b9243/aiter/ops/triton/attention/mha.py>
-- AITER MoE ASM (`fmoe_fp8_blockscale_g1u1`):
-  <https://github.com/ROCm/aiter/blob/6a0e7b26ccf33164785531212cc2ec2cde0b9243/aiter/ops/moe_op.py>
-- AITER MoE Triton:
-  <https://github.com/ROCm/aiter/blob/6a0e7b26ccf33164785531212cc2ec2cde0b9243/aiter/ops/triton/moe/moe_op.py>,
-  <https://github.com/ROCm/aiter/blob/6a0e7b26ccf33164785531212cc2ec2cde0b9243/aiter/ops/triton/moe/moe_op_silu_fused.py>,
-  and
-  <https://github.com/ROCm/aiter/blob/6a0e7b26ccf33164785531212cc2ec2cde0b9243/aiter/ops/triton/moe/moe_align_block_size.py>
-- HipKittens Triton attention:
-  <https://github.com/HazyResearch/HipKittens/blob/4d15d8e92dfc65b6b33c36ad8b6a7e883c5f7245/analysis/baselines/attn/triton_baseline_v02.py>
-- HipKittens Triton GEMM, adapted from:
-  <https://github.com/HazyResearch/HipKittens/blob/4d15d8e92dfc65b6b33c36ad8b6a7e883c5f7245/analysis/baselines/gemm/triton_gemm_v01.py>
-- HipKittens GEMM dispatch kernels:
-  <https://github.com/HazyResearch/HipKittens/blob/7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b/analysis/bf16_gemm/mi325x/kernel_1024.cpp>,
-  <https://github.com/HazyResearch/HipKittens/blob/7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b/analysis/bf16_gemm/mi325x/kernel_2048.cpp>,
-  <https://github.com/HazyResearch/HipKittens/blob/7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b/analysis/bf16_gemm/mi325x/kernel_4096.cpp>,
-  <https://github.com/HazyResearch/HipKittens/blob/7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b/analysis/bf16_gemm/mi325x/kernel_8192.cpp>,
-  and
-  <https://github.com/HazyResearch/HipKittens/blob/7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b/analysis/bf16_gemm/mi325x/kernel_16384.cpp>
-- hipBLASLt GEMM wrapper API:
-  <https://github.com/ROCm/hipBLASLt>
-
 ## Scope
 
 The artifact is intended to support the evaluation of Lumen on:

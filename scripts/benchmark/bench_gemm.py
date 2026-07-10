@@ -3,15 +3,10 @@ from __future__ import annotations
 
 import argparse
 
-from backend_gemm import BACKENDS, build_shared_inputs, parse_dtype
-from cli_utils import select_backend
+from backend_gemm import BACKENDS, build_shared_inputs, parse_dtype, run_backend
+from cli_utils import add_timer_args, cuda_runtime
 from config import GEMM_DEFAULTS, GEMM_WORKLOADS, TIMER_DEFAULTS, benchmark_root
 from paths import resolve_repo_root
-
-try:
-    import torch
-except Exception:
-    torch = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,35 +25,25 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=list(GEMM_WORKLOADS),
     )
-    p.add_argument("--warmup", type=int, default=TIMER_DEFAULTS["warmup"])
-    p.add_argument("--repeat", type=int, default=TIMER_DEFAULTS["repeat"])
-    p.add_argument("--graph-iters", type=int, default=TIMER_DEFAULTS["graph_iters"])
+    add_timer_args(p, TIMER_DEFAULTS)
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    matrix_sizes = args.matrix_sizes
-    repo_root = resolve_repo_root()
-    gemm_root = benchmark_root(repo_root) / "gemm"
-
-    if torch is None:
-        raise RuntimeError("torch is required")
-
-    torch.manual_seed(args.seed)
-    device = torch.device("cuda")
-    dtype_name = args.dtype.strip().lower()
-    dtype = parse_dtype(dtype_name)
+    device, dtype_name, dtype = cuda_runtime(
+        seed=args.seed, dtype_name=args.dtype, parse_dtype=parse_dtype
+    )
     shared = build_shared_inputs(
-        sizes=matrix_sizes,
+        sizes=args.matrix_sizes,
         device=device,
         dtype=dtype,
         seed=args.seed,
     )
-    selected = select_backend(BACKENDS, args.backend)
-    selected(
-        gemm_root=gemm_root,
-        matrix_sizes=matrix_sizes,
+    run_backend(
+        backend=args.backend,
+        gemm_root=benchmark_root(resolve_repo_root()) / "gemm",
+        matrix_sizes=args.matrix_sizes,
         shared=shared,
         device=device,
         dtype=dtype,

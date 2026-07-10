@@ -5,6 +5,7 @@ import importlib.util
 from pathlib import Path
 
 import torch
+import torch.nn as nn
 
 
 def _load_source_module():
@@ -24,7 +25,7 @@ def _load_source_module():
 _SRC = _load_source_module()
 
 
-def kernel_function(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+def _run(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
     """
     Unified attention entry for benchmark_attention_unified_graph.
     Expects layout [B, S, H, D] and returns output tensor [B, S, H, D].
@@ -53,3 +54,13 @@ def kernel_function(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.
     o = torch.empty_like(q_bshd)
     out_bshd, _, _ = _SRC.attention(q_bshd, k_bshd, v_bshd, o, metadata)
     return out_bshd
+
+
+class Model(nn.Module):
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+    ) -> torch.Tensor:
+        return _run(q, k, v)

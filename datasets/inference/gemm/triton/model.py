@@ -273,7 +273,7 @@ def matmul_bf16(a, b, out=None, activation=""):
     return out
 
 
-def kernel_function(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+def _run(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     if a.ndim != 2 or b.ndim != 2:
         raise ValueError("kernel_function expects 2D tensors")
     m, k = a.shape
@@ -291,9 +291,9 @@ def kernel_function(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return matmul_bf16(a, b_nk, out=out)
 
 
-class ModelNew(nn.Module):
+class Model(nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return kernel_function(a, b)
+        return _run(a, b)

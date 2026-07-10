@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import argparse
 
-from backend_attn import BACKENDS, build_shared_inputs, parse_dtype
-from cli_utils import select_backend
+from backend_attn import BACKENDS, build_shared_inputs, parse_dtype, run_backend
+from cli_utils import add_timer_args, cuda_runtime
 from config import (
     ATTENTION_DEFAULTS,
     ATTENTION_WORKLOADS,
@@ -12,11 +12,6 @@ from config import (
     benchmark_root,
 )
 from paths import resolve_repo_root
-
-try:
-    import torch
-except Exception:
-    torch = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,28 +40,17 @@ def parse_args() -> argparse.Namespace:
         default=ATTENTION_DEFAULTS["num_kv_heads"],
     )
     p.add_argument("--head-dim", type=int, default=ATTENTION_DEFAULTS["head_dim"])
-    p.add_argument("--warmup", type=int, default=TIMER_DEFAULTS["warmup"])
-    p.add_argument("--repeat", type=int, default=TIMER_DEFAULTS["repeat"])
-    p.add_argument("--graph-iters", type=int, default=TIMER_DEFAULTS["graph_iters"])
+    add_timer_args(p, TIMER_DEFAULTS)
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    seq_lens = args.seq_lens
-    repo_root = resolve_repo_root()
-    attn_root = benchmark_root(repo_root) / "attention"
-
-    if torch is None:
-        raise RuntimeError("torch is required")
-
-    torch.manual_seed(args.seed)
-    device = torch.device("cuda")
-    dtype_name = args.dtype.strip().lower()
-    dtype = parse_dtype(dtype_name)
-    causal = bool(ATTENTION_DEFAULTS["causal"])
+    device, dtype_name, dtype = cuda_runtime(
+        seed=args.seed, dtype_name=args.dtype, parse_dtype=parse_dtype
+    )
     shared = build_shared_inputs(
-        seq_lens=seq_lens,
+        seq_lens=args.seq_lens,
         batch_size=args.batch_size,
         num_q_heads=args.num_q_heads,
         num_kv_heads=args.num_kv_heads,
@@ -75,10 +59,10 @@ def main() -> None:
         dtype=dtype,
         seed=args.seed,
     )
-    selected = select_backend(BACKENDS, args.backend)
-    selected(
-        attn_root=attn_root,
-        seq_lens=seq_lens,
+    run_backend(
+        backend=args.backend,
+        attn_root=benchmark_root(resolve_repo_root()) / "attention",
+        seq_lens=args.seq_lens,
         shared=shared,
         device=device,
         dtype=dtype,
@@ -87,7 +71,7 @@ def main() -> None:
         num_q_heads=args.num_q_heads,
         num_kv_heads=args.num_kv_heads,
         head_dim=args.head_dim,
-        causal=causal,
+        causal=bool(ATTENTION_DEFAULTS["causal"]),
         warmup=args.warmup,
         repeat=args.repeat,
         graph_iters=args.graph_iters,

@@ -1,3 +1,5 @@
+# Adopted from https://github.com/HazyResearch/HipKittens/blob/a288366e4245528f74540b3fe446637cf8345745/analysis/baselines/attn/triton_baseline_v02.py#L4
+
 """
 Fused Attention
 ===============

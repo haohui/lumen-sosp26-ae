@@ -279,9 +279,11 @@ def run_triton(
     )
 
 
-BACKENDS = {
+BACKEND_MAP = {
     "aiter": run_aiter,
     "hipblaslt": run_hipblaslt,
     "hipkittens": run_hipkittens,
     "triton": run_triton,
 }
+
+BACKENDS = BACKEND_MAP

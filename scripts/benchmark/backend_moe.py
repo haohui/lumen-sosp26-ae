@@ -301,8 +301,10 @@ def run_aiter_triton(**kwargs) -> None:
     _run_aiter_variant(backend="aiter_triton", **kwargs)
 
 
-BACKENDS = {
+BACKEND_MAP = {
     "aiter": run_aiter,
     "aiter_asm": run_aiter_asm,
     "aiter_triton": run_aiter_triton,
 }
+
+BACKENDS = BACKEND_MAP

@@ -8,22 +8,30 @@ from pathlib import Path
 import torch
 
 
+_BINDING_PATH = Path(__file__).resolve().with_name("hipkittens_binding.py")
+_BINDING_MODULE_NAME = f"hipkittens_binding_{abs(hash(str(_BINDING_PATH))):x}"
+_LAZY_BINDING = None
+
+
 def _load_binding():
-    path = Path(__file__).resolve().with_name("hipkittens_binding.py")
-    module_name = f"hipkittens_binding_{abs(hash(str(path.resolve()))):x}"
-    cached = sys.modules.get(module_name)
+    global _LAZY_BINDING
+    if _LAZY_BINDING is not None:
+        return _LAZY_BINDING
+    cached = sys.modules.get(_BINDING_MODULE_NAME)
     if cached is not None:
+        _LAZY_BINDING = cached
         return cached
-    spec = importlib.util.spec_from_file_location(module_name, path)
+    spec = importlib.util.spec_from_file_location(_BINDING_MODULE_NAME, _BINDING_PATH)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot import HipKittens binding: {path}")
+        raise RuntimeError(f"cannot import HipKittens binding: {_BINDING_PATH}")
     mod = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = mod
+    sys.modules[_BINDING_MODULE_NAME] = mod
     try:
         spec.loader.exec_module(mod)
     except Exception:
-        sys.modules.pop(module_name, None)
+        sys.modules.pop(_BINDING_MODULE_NAME, None)
         raise
+    _LAZY_BINDING = mod
     return mod
 
 

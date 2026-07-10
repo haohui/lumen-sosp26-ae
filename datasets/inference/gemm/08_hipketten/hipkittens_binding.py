@@ -11,7 +11,6 @@ import torch
 
 
 _MODULE_CACHE: dict[int, object] = {}
-_PREP_CACHE: dict[tuple[int, int, int, str, str], tuple[torch.Tensor, torch.Tensor]] = {}
 
 
 def _build_dir() -> Path:
@@ -79,14 +78,8 @@ def _module_for_size(size: int):
 def dispatch_micro(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     m, _ = a.shape
     mod = _module_for_size(m)
-    key = (a.data_ptr(), b.data_ptr(), m, str(a.dtype), str(a.device))
-    cached = _PREP_CACHE.get(key)
-    if cached is None:
-        b_nk = b.contiguous()
-        out = torch.empty((m, m), device=a.device, dtype=a.dtype)
-        _PREP_CACHE[key] = (b_nk, out)
-    else:
-        b_nk, out = cached
+    b_nk = b.contiguous()
+    out = torch.empty((m, m), device=a.device, dtype=a.dtype)
     stream_ptr = int(torch.cuda.current_stream(device=a.device).cuda_stream)
     try:
         mod.dispatch_micro(a, b_nk, out, stream_ptr)

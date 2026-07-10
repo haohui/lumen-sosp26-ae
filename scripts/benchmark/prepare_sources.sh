@@ -85,11 +85,6 @@ checkout_source \
   "$repo_root/third_party/aiter.source" \
   "$repo_root/third_party/aiter"
 
-checkout_source \
-  "HipKittens" \
-  "$repo_root/third_party/HipKittens.source" \
-  "$repo_root/third_party/HipKittens"
-
 if ((install_aiter)); then
   aiter_package="$(source_value "$repo_root/third_party/aiter.source" python_package)"
   aiter_version="$(source_value "$repo_root/third_party/aiter.source" python_version)"

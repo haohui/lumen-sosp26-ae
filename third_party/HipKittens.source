@@ -1,4 +1,0 @@
-name=HipKittens
-upstream=https://github.com/HazyResearch/HipKittens.git
-commit=7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b
-purpose=HipKittens source kernels used to build the GEMM mini dispatch modules.

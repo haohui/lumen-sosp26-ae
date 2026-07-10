@@ -226,18 +226,31 @@ def run_hipkittens(
     repeat: int,
     graph_iters: int,
 ) -> None:
-    _run_python_backend(
-        backend="hipkittens",
-        path=gemm_root / "08_hipketten" / "best_kernel.py",
-        matrix_sizes=matrix_sizes,
-        shared=shared,
-        device=device,
-        dtype=dtype,
-        dtype_name=dtype_name,
-        warmup=warmup,
-        repeat=repeat,
-        graph_iters=graph_iters,
-    )
+    if dtype is not torch.bfloat16:
+        raise RuntimeError("hipkittens backend only supports bf16")
+    try:
+        import hipkittens
+    except ImportError as exc:
+        raise RuntimeError(
+            "hipkittens is not installed; set HIPKITTENS_ROOT and install with "
+            "'uv pip install -e ./packages/hipkittens'"
+        ) from exc
+
+    for s in matrix_sizes:
+        x = shared[s]
+        out = torch.empty((s, s), dtype=dtype, device=device)
+        timing = _time_call(
+            lambda x=x, out=out: hipkittens.gemm(x.a_mk, x.b_nk, out),
+            warmup=warmup,
+            repeat=repeat,
+            graph_iters=graph_iters,
+        )
+        _emit_record(
+            backend="hipkittens",
+            matrix_size=s,
+            dtype_name=dtype_name,
+            mean_ms=timing.mean_ms,
+        )
 
 
 def run_triton(

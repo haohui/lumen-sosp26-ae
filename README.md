@@ -11,7 +11,7 @@ The Python environment for this repository is expected to be managed with
 ```bash
 uv venv --python 3.12
 source .venv/bin/activate
-uv pip install -e ".[eval,dev]"
+uv pip install -e ".[dev]"
 ```
 
 You will need to install substrate to evaluate the performance of the DSL kernels.
@@ -25,16 +25,23 @@ ruff check .
 
 ## Benchmark Source Setup
 
-The benchmark harness expects the third-party source checkouts pinned in
-`third_party/*.source`. Prepare them from the repository root:
+The benchmark harness expects the AITER source checkout pinned in
+`third_party/aiter.source`. Prepare it from the repository root:
 
 ```bash
 scripts/benchmark/prepare_sources.sh --install-aiter
-scripts/benchmark/build_hipkittens_mini.py
 ```
 
-The source checkouts and HipKittens extension artifacts are local build inputs
-and are intentionally ignored by git.
+The HipKittens GEMM backend uses an external HipKittens checkout. With the
+checkout pinned to `7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b`, install its
+separate binding package as follows:
+
+```bash
+HIPKITTENS_ROOT=/path/to/HipKittens uv pip install -e ./packages/hipkittens
+```
+
+`HIPKITTENS_ROOT` is required at build time and is not assumed to live under
+this repository.
 
 ### Reference baseline sources
 

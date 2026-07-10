@@ -17,9 +17,6 @@ lumen-kernelbench-graph-eval = "lumen.harness.datasets.kernelbench.cli:main"
 "" = "python"
 
 [project.optional-dependencies]
-eval = [
-    "pybind11",
-]
 dev = [
     "ruff>=0.11.0",
 ]

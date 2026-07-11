@@ -177,6 +177,8 @@ cd '${CUDAFORGE_ROOT}'
 if [[ -f '${ENV_FILE}' ]]; then set -a; source '${ENV_FILE}'; set +a; fi
 export PYTHONPATH='${REPO_ROOT}'\${PYTHONPATH:+:\"\${PYTHONPATH}\"}
 export CUDAFORGE_PROMPT_PATH_OVERRIDE='${CUDAFORGE_RESOURCE_ROOT}'
+export CUDAFORGE_PROMPT_SUFFIX_FILE='${PROMPT_SUFFIX_FILE}'
+export CUDAFORGE_REASONING_EFFORT='${REASONING_EFFORT}'
 unset CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
 export ROCR_VISIBLE_DEVICES='${ROCR_VISIBLE_DEVICES}'
 python3 main.py '${REF_PATH}' \
@@ -184,8 +186,6 @@ python3 main.py '${REF_PATH}' \
   --gpu MI300X \
   --server_type '${SERVER_TYPE}' \
   --model_name '${MODEL_NAME}' \
-  --reasoning_effort '${REASONING_EFFORT}' \
-  --prompt-suffix-file '${PROMPT_SUFFIX_FILE}' \
   --tol '${CF_TOL}' \
   --device '${GPU_ID}' \
   --round '${ROUNDS}' \

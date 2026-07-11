@@ -36,6 +36,34 @@ It also includes outputs from baseline agentic kernel-generation frameworks,
 including KernelBench, KSearch, CUDAForge, and KernelFalcon, together with the
 corresponding Lumen-generated implementations.
 
+## Flash Attention Ablation
+
+The flash-attention optimization ablation is driven by
+`dev-support/ablation_flash_attention.py`. The script checks out the six
+recorded Avelang flash-attention commits, rebuilds Avelang with Ninja at each
+commit, benchmarks sequence lengths `1024, 2048, 4096, 8192, 16384`, writes a
+CSV result file, and emits a grouped bar chart.
+
+From this repository:
+
+```bash
+python dev-support/ablation_flash_attention.py /workspace/ae/avelang /workspace
+```
+
+The first argument is the Avelang checkout to benchmark and defaults to
+`/workspace/ae/avelang`. The second argument is the output directory and
+defaults to `/workspace`. The script expects the Avelang checkout to have a
+clean worktree because it uses `git checkout` to move between commits. It
+restores the original branch or detached commit before exiting.
+
+The benchmark command run at each commit is equivalent to:
+
+```bash
+PYTHONPATH=/workspace/ae/avelang/python /opt/venv/bin/python \
+  benchmark/attention/bench_flash_attn_amdgpu.py \
+  --batch-size 16 --seq-len <SEQ_LEN> --q-heads 8 --kv-heads 1 --head-dim 128
+```
+
 ## Evaluation Environment
 
 The experiments reported in the paper were run on a server with:
@@ -66,4 +94,3 @@ benchmark inputs and generated outputs live under `data/`:
   implementations.
 - `data/benchmarks/kernelbench/lumen/`: Lumen-generated KernelBench solutions,
   including multiple optimization rounds when applicable.
-

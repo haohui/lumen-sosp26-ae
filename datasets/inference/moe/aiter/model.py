@@ -19,7 +19,7 @@ _AITER_RUNTIME_CACHE = None
 
 def resolve_backends(args: Any) -> List[str]:
     if bool(getattr(args, "run_aiter", False)):
-        return ["asm", "triton"]
+        return ["asm"]
     out: List[str] = []
     if bool(getattr(args, "run_aiter_asm", False)):
         out.append("asm")

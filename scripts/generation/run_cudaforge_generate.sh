@@ -2,16 +2,127 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# shellcheck source=common.sh
-source "${REPO_ROOT}/scripts/generation/common.sh"
 
 usage() {
   echo "Usage: run_cudaforge_generate.sh --task attention|gemm|moe [--reference-py PATH]"
 }
 
-stage_generated() {
-  run_stage_command --run-tag "${RUN_TAG}" --trace-root "${TRACE_ROOT}" \
-    --third-party-root "${THIRD_PARTY_ROOT}" --data-root "${DATA_BENCHMARK_ROOT}"
+die() {
+  echo "$*" >&2
+  exit 2
+}
+
+resolve_repo_path() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s/%s\n' "${REPO_ROOT}" "$1" ;;
+  esac
+}
+
+ensure_path() {
+  if [[ -e "$1" ]]; then
+    return
+  fi
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    echo "[DRY-RUN] Missing path: $1" >&2
+    return
+  fi
+  echo "Missing path: $1" >&2
+  exit 1
+}
+
+canonical_task() {
+  case "$1" in
+    attention|attn) printf '%s\n' "attention" ;;
+    gemm|moe) printf '%s\n' "$1" ;;
+    *) die "Invalid task: $1 (expected: attention|gemm|moe)" ;;
+  esac
+}
+
+task_data_dir() {
+  case "$(canonical_task "$1")" in
+    attention) printf '%s\n' "attn" ;;
+    gemm) printf '%s\n' "gemm" ;;
+    moe) printf '%s\n' "moe" ;;
+  esac
+}
+
+task_reference_path() {
+  local task ref
+  task="$(canonical_task "$1")"
+  if [[ -n "${REFERENCE_PY:-}" ]]; then
+    ref="${REFERENCE_PY}"
+  else
+    case "${task}" in
+      attention) ref="datasets/inference/kernelbench/2_attention.py" ;;
+      gemm) ref="datasets/inference/kernelbench/1_gemm.py" ;;
+      moe) ref="datasets/inference/kernelbench/3_fused_moe.py" ;;
+    esac
+  fi
+  resolve_repo_path "${ref}"
+}
+
+load_api_env() {
+  if [[ -f "${ENV_FILE}" ]]; then
+    set -a
+    source "${ENV_FILE}"
+    set +a
+  fi
+
+  local key_file first
+  key_file="$(resolve_repo_path "${KEY_FILE}")"
+  if [[ -z "${OPENAI_API_KEY:-}" && -f "${key_file}" ]]; then
+    first="$(sed -n '1p' "${key_file}" | tr -d '\r')"
+    first="${first#OPENAI_API_KEY=}"
+    first="${first#export OPENAI_API_KEY=}"
+    export OPENAI_API_KEY="${first}"
+  fi
+}
+
+configure_api_provider() {
+  load_api_env
+  case "${API_PROVIDER:-openai}" in
+    openai)
+      OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      KB_MODEL_NAME="${MODEL_NAME}"
+      ;;
+    qwen)
+      OPENAI_API_KEY="${QWEN_API_KEY:-}"
+      OPENAI_BASE_URL="${QWEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}"
+      KB_MODEL_NAME="openai/${MODEL_NAME}"
+      ;;
+    *) die "Unsupported API_PROVIDER=${API_PROVIDER} (expected: openai|qwen)" ;;
+  esac
+  export OPENAI_API_KEY OPENAI_BASE_URL KB_MODEL_NAME
+}
+
+require_generation_key() {
+  if [[ "${DRY_RUN:-0}" != "1" && "${SERVER_TYPE}" == "openai" && -z "${OPENAI_API_KEY:-}" ]]; then
+    echo "API key is not set. Configure ENV_FILE=${ENV_FILE}, KEY_FILE=${KEY_FILE}, or export it before running." >&2
+    exit 2
+  fi
+}
+
+prepare_prompt_suffix_file() {
+  local out="$1"
+  local common_src="${PROMPT_ROOT}/common/${TASK}.md"
+  local baseline_common_src="${BASELINE_PROMPT_ROOT}/common.md"
+  local baseline_src="${BASELINE_PROMPT_ROOT}/${TASK}.md"
+
+  ensure_path "${common_src}"
+  if [[ "${DRY_RUN:-0}" != "1" ]]; then
+    mkdir -p "$(dirname "${out}")"
+    cp "${common_src}" "${out}"
+    if [[ -f "${baseline_common_src}" ]]; then
+      printf '\n' >> "${out}"
+      cat "${baseline_common_src}" >> "${out}"
+    fi
+    if [[ -f "${baseline_src}" ]]; then
+      printf '\n' >> "${out}"
+      cat "${baseline_src}" >> "${out}"
+    fi
+  fi
+  printf '%s\n' "${out}"
 }
 
 TASK="${TASK:-}"
@@ -51,7 +162,7 @@ BASELINE_PROMPT_ROOT="${BASELINE_PROMPT_ROOT:-${CUDAFORGE_RESOURCE_ROOT}/prompts
 REF_PATH="$(task_reference_path "${TASK}")"
 RUN_TAG="${RUN_TAG:-${TASK}_cudaforge_$(date -u +%Y%m%d_%H%M%S)}"
 TRACE_ROOT="${TRACE_ROOT:-$(resolve_repo_path "logs/generation/$(task_data_dir "${TASK}")")/${RUN_TAG}}"
-PROMPT_SUFFIX_FILE="$(prepare_prompt_suffix_file "${TASK}" "cudaforge" "${TRACE_ROOT}/02_cudaforge_prompt_suffix.txt")"
+PROMPT_SUFFIX_FILE="$(prepare_prompt_suffix_file "${TRACE_ROOT}/02_cudaforge_prompt_suffix.txt")"
 
 configure_api_provider
 require_generation_key
@@ -59,7 +170,8 @@ ensure_path "${CUDAFORGE_ROOT}"
 ensure_path "${REF_PATH}"
 ensure_path "${CUDAFORGE_RESOURCE_ROOT}"
 
-run_with_trace "02_cudaforge_${TASK}_${SERVER_TYPE}" "
+TRACE_DIR="${TRACE_ROOT}/02_cudaforge_${TASK}_${SERVER_TYPE}"
+RUN_CMD="
 set -euo pipefail
 cd '${CUDAFORGE_ROOT}'
 if [[ -f '${ENV_FILE}' ]]; then set -a; source '${ENV_FILE}'; set +a; fi
@@ -81,4 +193,25 @@ python3 main.py '${REF_PATH}' \
   --work_dir 'run_${TASK}_${RUN_TAG}'
 "
 
-stage_generated
+echo "[$(date -u +%F_%T)] baseline=02_cudaforge_${TASK}_${SERVER_TYPE}"
+if [[ "${DRY_RUN}" == "1" ]]; then
+  echo "[DRY-RUN] ${RUN_CMD}"
+else
+  mkdir -p "${TRACE_DIR}"
+  if [[ -n "${TRACE_WRAP:-}" ]]; then
+    "${TRACE_WRAP}" "${TRACE_DIR}" -- bash -lc "${RUN_CMD}"
+  else
+    bash -lc "${RUN_CMD}"
+  fi
+fi
+
+if [[ "${STAGE_GENERATED}" == "1" ]]; then
+  STAGE_CMD=(python3 "${STAGE_SCRIPT}" --task "${TASK}" --run-tag "${RUN_TAG}" \
+    --trace-root "${TRACE_ROOT}" --third-party-root "${THIRD_PARTY_ROOT}" \
+    --data-root "${DATA_BENCHMARK_ROOT}")
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "[DRY-RUN] ${STAGE_CMD[*]}"
+  else
+    "${STAGE_CMD[@]}"
+  fi
+fi

@@ -32,7 +32,7 @@ def copy_trace(trace_root: Path, dst_dir: Path, trace_prefix: str, dry_run: bool
         return
     trace = trace_dir / "traffic.jsonl"
     if trace.is_file():
-        copy_file(trace, dst_dir / "traffic.json", dry_run)
+        copy_file(trace, dst_dir / "traffic.jsonl", dry_run)
 
 
 def find_kernel(third_party_root: Path, subproc_id: int) -> Path:
@@ -45,7 +45,6 @@ def find_kernel(third_party_root: Path, subproc_id: int) -> Path:
 def main() -> int:
     p = argparse.ArgumentParser(description="Stage a generated CUDAForge kernel into data/benchmarks.")
     p.add_argument("--task", required=True, choices=["attention", "attn", "gemm", "moe"])
-    p.add_argument("--run-tag", required=True)
     p.add_argument("--trace-root", required=True, type=Path)
     p.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
     p.add_argument("--third-party-root", type=Path)

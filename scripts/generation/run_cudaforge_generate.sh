@@ -206,7 +206,7 @@ else
 fi
 
 if [[ "${STAGE_GENERATED}" == "1" ]]; then
-  STAGE_CMD=(python3 "${STAGE_SCRIPT}" --task "${TASK}" --run-tag "${RUN_TAG}" \
+  STAGE_CMD=(python3 "${STAGE_SCRIPT}" --task "${TASK}" \
     --trace-root "${TRACE_ROOT}" --third-party-root "${THIRD_PARTY_ROOT}" \
     --data-root "${DATA_BENCHMARK_ROOT}")
   if [[ "${DRY_RUN}" == "1" ]]; then

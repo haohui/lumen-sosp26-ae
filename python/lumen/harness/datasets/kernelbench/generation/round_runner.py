@@ -28,6 +28,7 @@ from lumen.harness.datasets.kernelbench.generation.validation import (
     validate_generated_avelang,
 )
 from lumen.harness.datasets.kernelbench.generation.workspace import (
+    RoundWorkspace,
     prepare_round_workspace,
     read_generated_output,
 )
@@ -52,7 +53,7 @@ def generate_problem(
     for round_idx in range(max(1, int(config.codex.max_retries))):
         round_dir = problem_dir / f"round{round_idx}"
         tag = f"p{work.problem_id:02d}/round{round_idx}"
-        round_meta, any_correct, should_continue = _run_round(
+        round_meta, any_correct, should_continue = run_generation_round(
             tag=tag,
             round_dir=round_dir,
             work=work,
@@ -73,7 +74,7 @@ def generate_problem(
     return any_correct or bool(round_metas)
 
 
-def _run_round(
+def run_generation_round(
     *,
     tag: str,
     round_dir: Path,
@@ -81,14 +82,19 @@ def _run_round(
     config: GenerationConfig,
     problem_name: str,
     ref_arch_src: str,
+    prepared_workspace: RoundWorkspace | None = None,
 ) -> tuple[dict[str, Any], bool, bool]:
-    workspace = prepare_round_workspace(
-        round_dir,
-        ref_arch_src=ref_arch_src,
-        evaluation=config.evaluation,
-    )
+    if prepared_workspace is None:
+        workspace = prepare_round_workspace(
+            round_dir,
+            ref_arch_src=ref_arch_src,
+            evaluation=config.evaluation,
+        )
+    else:
+        workspace = prepared_workspace
+    prompt = workspace.prompt
 
-    result = run_codex(workspace.round_dir, workspace.prompt, config.codex)
+    result = run_codex(workspace.round_dir, prompt, config.codex)
     write_codex_result(round_dir / "codex_result.json", result)
     copy_codex_trace(
         result,

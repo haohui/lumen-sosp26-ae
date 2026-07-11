@@ -21,7 +21,7 @@ round. In particular, never read another problem's or another run's
 
 ## Reference Notes
 
-{skills_section}
+{{ skills_section }}
 
 Do not invent Triton-, TVM-, CUDA-, or PyTorch-fallback APIs when an AveLang
 implementation is required.
@@ -43,9 +43,9 @@ generation runner; do not use bare `python`, `python3`, `uv`, or a different
 environment for self-checks.
 
 ```bash
-{venv_activation}
-export PYTHONPATH={python_root}:$PYTHONPATH
-{python_executable} {bench_script} \
+{{ venv_activation }}
+export PYTHONPATH={{ python_root }}:$PYTHONPATH
+{{ python_executable }} {{ bench_script }} \
   --mode generated \
   --original input_model.py \
   --generated output_model_new.py \

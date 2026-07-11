@@ -1,0 +1,19 @@
+{{ base_prompt }}
+
+{% if has_candidate %}
+## Starting candidate
+
+The original Torch reference remains in `input_model.py`. Start this optimization round from the existing AveLang implementation in `candidate_input.py`; do not regenerate a fresh implementation from the Torch reference. Preserve the reference semantics while applying this round's optimization guidance. `candidate_input.py` is read-only; edit only `output_model_new.py`.
+
+{% endif %}
+{% if guidance %}
+## Optimization guidance
+
+Profile: `{{ profile }}`; template family: `{{ template_family }}`.
+
+Write `output_model_new.py` so that it applies the guidance below.
+
+{{ guidance }}
+
+{% endif %}
+Write your complete final implementation directly to the file `output_model_new.py` in the current working directory using your file writing tools. Do not print the code in your response text; write it to the file only. Do not inspect or copy from any other `runs/` directory, previous generated kernel, optimization round, or candidate output.

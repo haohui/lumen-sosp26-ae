@@ -31,6 +31,14 @@ def write_round_artifacts(
         "stage": "generated",
         "error": error,
     }
+    provenance_path = path / "prompt_provenance.json"
+    if provenance_path.is_file():
+        try:
+            meta["prompt_provenance"] = json.loads(
+                provenance_path.read_text(encoding="utf-8")
+            )
+        except json.JSONDecodeError:
+            meta["prompt_provenance"] = {"error": "invalid prompt provenance"}
 
     if eval_payload is not None:
         parsed = parse_eval_payload(eval_payload)
@@ -123,6 +131,7 @@ def sorted_prefixed_dirs(directory: str | Path, prefix: str) -> list[Path]:
         ],
         key=suffix_index,
     )
+
 
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

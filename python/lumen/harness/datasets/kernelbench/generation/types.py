@@ -52,3 +52,9 @@ class GenerationConfig:
 class WorkArgs:
     problem_id: int
     gpu_id: int
+
+
+@dataclass(frozen=True)
+class OptimizationConfig:
+    run_dir: Path
+    profile: str

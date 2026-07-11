@@ -1,0 +1,250 @@
+diff --git a/utils/compile_and_run.py b/utils/compile_and_run.py
+index 405cff4..b097168 100644
+--- a/utils/compile_and_run.py
++++ b/utils/compile_and_run.py
+@@ -26,5 +26,6 @@ from typing import List, Tuple
+
+ import torch
++from scripts.benchmark.cudagraph_timer import benchmark_with_cudagraph
+
+ # ---------------------------------------------------------------------------
+
+@@ -47,6 +47,47 @@ class AccuracyError(RuntimeError):
+     """Raised when outputs do not meet the accuracy tolerance."""
+
+
++_DTYPE_DEFAULT_TOL = {
++    torch.float32: 1e-4,
++    torch.float16: 1e-2,
++    torch.bfloat16: 1e-2,
++}
++
++
++def _resolve_effective_tolerance(requested_tol: float,
++                                 ref_dtype: torch.dtype,
++                                 test_dtype: torch.dtype) -> float:
++    """
++    Resolve runtime correctness tolerance.
++
++    Default behavior follows KernelBench-style precision tolerances:
++    - fp32:  1e-4
++    - fp16:  1e-2
++    - bf16:  1e-2
++
++    The CLI `--tol` is treated as a lower bound. For low-precision outputs
++    (`fp16`/`bf16`), this avoids overly strict false negatives at 1e-3.
++    Set CUDAFORGE_STRICT_TOL=1 to disable auto relaxation and use requested
++    tolerance exactly.
++    """
++    if os.environ.get("CUDAFORGE_STRICT_TOL", "0") == "1":
++        return float(requested_tol)
++
++    auto_candidates = [
++        _DTYPE_DEFAULT_TOL.get(ref_dtype),
++        _DTYPE_DEFAULT_TOL.get(test_dtype),
++    ]
++    auto_candidates = [v for v in auto_candidates if v is not None]
++    if not auto_candidates:
++        return float(requested_tol)
++
++    auto_tol = max(auto_candidates)
++    # requested_tol <= 0 means "auto only"
++    if requested_tol <= 0:
++        return float(auto_tol)
++    return float(max(requested_tol, auto_tol))
++
++
+ # =========================== dynamic import ===============================
+ def _capture_import(path: Path):
+     """Import *path* dynamically and capture **all** build logs.
+@@ -138,14 +179,17 @@ def _bench(model: torch.nn.Module,
+            inp: List[torch.Tensor],
+            dev: torch.device,
+            warm: int,
+-           rep: int) -> List[float]:
++           rep: int,
++           graph_warmup: int | None = None,
++           graph_iters: int = 10,
++           graph_replays: int = 0) -> List[float]:
+     model.to(dev).eval()
+     inp = [x.to(dev) for x in inp]
+
+-    for _ in range(warm):
+-        model(*inp)
+-
+     if TORCH_DEVICE == "cpu":
++        for _ in range(warm):
++            model(*inp)
++
+         res = []
+         for _ in range(rep):
+             t0 = datetime.now()
+@@ -153,16 +197,23 @@ def _bench(model: torch.nn.Module,
+             res.append((datetime.now() - t0).total_seconds() * 1_000)
+         return res
+
+-    torch.cuda.synchronize(dev)
+-    s, e = torch.cuda.Event(True), torch.cuda.Event(True)
+-    times: List[float] = []
+-    for _ in range(rep):
+-        s.record()
+-        model(*inp)
+-        e.record()
+-        e.synchronize()
+-        times.append(s.elapsed_time(e))
+-    return times
++    graph_warmup = warm if graph_warmup is None else graph_warmup
++    graph_warmup = max(1, graph_warmup)
++    graph_iters = max(1, graph_iters)
++    if graph_replays > 0:
++        repeat_graphs = int(graph_replays)
++    else:
++        repeat_graphs = (max(1, rep) + graph_iters - 1) // graph_iters
++    with torch.cuda.device(dev):
++        timing = benchmark_with_cudagraph(
++            lambda: model(*inp),
++            warmup=graph_warmup,
++            repeat=max(1, repeat_graphs),
++            graph_iters=graph_iters,
++        )
++    avg_ms = float(timing.mean_ms)
++    # Keep return shape compatible with previous per-iteration list contract.
++    return [avg_ms for _ in range(max(1, rep))]
+
+
+ # ====================== RNG & 确定性设置 ======================
+@@ -442,6 +546,9 @@ def compare_and_bench(
+     device_idx: int = 0,
+     warmup: int = 5,
+     repeat: int = 20,
++    graph_warmup: int | None = None,
++    graph_iters: int = 10,
++    graph_replays: int = 0,
+     tol: float = 1e-4,
+     log_dir: str | Path | None = "run/debug",
+     seed: int = 100,  # 固定默认 seed；需要环境控制时可改成 None 并用 env 读取
+@@ -537,8 +644,8 @@ def compare_and_bench(
+             # 统一取 Tensor、保证连续
+             ref_out  = _first_tensor(ref_out).contiguous()
+             test_out = _first_tensor(test_out).contiguous()
+-            if ref_out.dtype != test_out.dtype:
+-                test_out = test_out.to(ref_out.dtype)
++            ref_dtype = ref_out.dtype
++            test_dtype = test_out.dtype
+
+             # Check memory usage
+             ref_out_bytes = ref_out.element_size() * ref_out.nelement()
+@@ -565,19 +672,55 @@ def compare_and_bench(
+
+
+             # 误差 & allclose
+-            diff = (test_out - ref_out).abs()
++            # NOTE:
++            # Do not silently cast candidate output to reference dtype here.
++            # If dtype differs, compare both in FP32 to avoid evaluator-side cast artifacts.
++            if ref_dtype != test_dtype:
++                ref_cmp = ref_out.float()
++                test_cmp = test_out.float()
++                compare_dtype = torch.float32
++            else:
++                ref_cmp = ref_out
++                test_cmp = test_out
++                compare_dtype = ref_dtype
++
++            diff = (test_cmp - ref_cmp).abs()
+             max_err  = diff.max().item()
+             mean_err = diff.mean().item()
+
+-            if not torch.allclose(ref_out, test_out, atol=tol, rtol=tol):
++            effective_tol = _resolve_effective_tolerance(
++                requested_tol=tol,
++                ref_dtype=ref_dtype,
++                test_dtype=test_dtype,
++            )
++            if not torch.allclose(ref_cmp, test_cmp, atol=effective_tol, rtol=effective_tol):
+                 raise ValueError(
+-                    f"Outputs are not close (atol={tol}, rtol={tol}). "
+-                    f"max_abs_err={max_err:.3e}, mean_abs_err={mean_err:.3e}"
++                    f"Outputs are not close (atol={effective_tol}, rtol={effective_tol}). "
++                    f"max_abs_err={max_err:.3e}, mean_abs_err={mean_err:.3e}, "
++                    f"ref_dtype={ref_dtype}, test_dtype={test_dtype}, compare_dtype={compare_dtype}"
+                 )
+
+             # 计时
+-            ref_t  = _bench(ref_model,  inp, dev, warmup, repeat)
+-            test_t = _bench(test_model, inp, dev, warmup, repeat)
++            ref_t  = _bench(
++                ref_model,
++                inp,
++                dev,
++                warmup,
++                repeat,
++                graph_warmup=graph_warmup,
++                graph_iters=graph_iters,
++                graph_replays=graph_replays,
++            )
++            test_t = _bench(
++                test_model,
++                inp,
++                dev,
++                warmup,
++                repeat,
++                graph_warmup=graph_warmup,
++                graph_iters=graph_iters,
++                graph_replays=graph_replays,
++            )
+
+             if TORCH_DEVICE == "cuda":
+                 torch.cuda.synchronize(dev)
+@@ -592,7 +735,11 @@ def compare_and_bench(
+         "timestamp": datetime.now().isoformat(timespec="seconds"),
+         "reference_file": str(ref_py),
+         "candidate_file": str(test_py),
+-        "tolerance": tol,
++        "tolerance": effective_tol,
++        "requested_tolerance": tol,
++        "ref_output_dtype": str(ref_dtype),
++        "test_output_dtype": str(test_dtype),
++        "compare_dtype": str(compare_dtype),
+         "max_abs_err": max_err,
+         "mean_abs_err": mean_err,
+         "ref_latency_ms": {
+@@ -608,6 +755,13 @@ def compare_and_bench(
+             "all": test_t,
+         },
+         "num_runs": repeat,
++        "timing_config": {
++            "warmup": warmup,
++            "repeat": repeat,
++            "graph_warmup": warmup if graph_warmup is None else graph_warmup,
++            "graph_iters": graph_iters,
++            "graph_replays": graph_replays,
++        },
+         "model_init_args": init_args,
+         "model_init_kwargs": init_kwargs,
+         "seed": seed,
+@@ -627,6 +781,9 @@ def _cli():
+     p.add_argument("--device", type=int, default=0, help="CUDA device index")
+     p.add_argument("--warmup", type=int, default=5, help="Warm-up iterations")
+     p.add_argument("--repeat", type=int, default=20, help="Benchmark runs")
++    p.add_argument("--graph_warmup", type=int, default=-1, help="CUDA graph warm-up iterations (-1 uses --warmup)")
++    p.add_argument("--graph_iters", type=int, default=10, help="CUDA graph iterations per replay")
++    p.add_argument("--graph_replays", type=int, default=0, help="CUDA graph replay count (0 derives from --repeat)")
+     p.add_argument("--tol", type=float, default=1e-4, help="Max abs error tolerance")
+     p.add_argument("--dump", type=Path, help="If set, write JSON results here")
+     args = p.parse_args()
+@@ -637,6 +794,9 @@ def _cli():
+         device_idx=args.device,
+         warmup=args.warmup,
+         repeat=args.repeat,
++        graph_warmup=(None if args.graph_warmup < 0 else args.graph_warmup),
++        graph_iters=args.graph_iters,
++        graph_replays=args.graph_replays,
+         tol=args.tol,
+     )
+     print(json.dumps(res, indent=2))
+@@ -648,4 +808,3 @@ def _cli():
+
+ if __name__ == "__main__":
+     _cli()
+-

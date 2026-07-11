@@ -1,0 +1,3 @@
+name=CUDAForge
+upstream=https://github.com/OptimAI-Lab/CudaForge.git
+base_commit=eaba693fa01bdafc9848334cada2d789e240ce3f

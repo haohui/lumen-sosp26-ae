@@ -1,0 +1,158 @@
+diff --git a/agents/query_server.py b/agents/query_server.py
+index 6ffb8d3..48dd02d 100644
+--- a/agents/query_server.py
++++ b/agents/query_server.py
+@@ -13,6 +13,31 @@ SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY")
+ FIREWORKS_API_KEY = os.environ.get("FIREWORKS_API_KEY")
+ from typing import Optional
+
++def _flatten_prompt(prompt: str | list[dict]) -> str:
++    if isinstance(prompt, str):
++        return prompt
++
++    lines: list[str] = []
++    for msg in prompt:
++        role = str(msg.get("role", "user"))
++        content = msg.get("content", "")
++
++        if isinstance(content, list):
++            parts = []
++            for block in content:
++                if isinstance(block, dict):
++                    block_type = block.get("type")
++                    if block_type == "text":
++                        parts.append(str(block.get("text", "")))
++                else:
++                    parts.append(str(block))
++            text = "\n".join(p for p in parts if p)
++        else:
++            text = str(content)
++
++        lines.append(f"[{role}] {text}".strip())
++    return "\n\n".join(lines)
++
+
+ def colorize_finish_reason(reason: Optional[str]) -> str:
+     colors = {
+@@ -109,7 +134,9 @@ def query_server(
+
+         case "openai":
+             from openai import OpenAI
+-            client = OpenAI(api_key=OPENAI_KEY)
++            timeout_env = os.environ.get("CUDAFORGE_OPENAI_TIMEOUT_SEC", "0").strip().lower()
++            timeout = None if timeout_env in {"", "0", "none", "null"} else int(timeout_env)
++            client = OpenAI(api_key=OPENAI_KEY, timeout=timeout)
+             model = model_name
+
+         case _:
+@@ -160,7 +187,6 @@ def query_server(
+             print(usage_str)
+             if log_path and log_path != "":
+                 try:
+-                    import os
+                     import datetime
+                     file_exists = os.path.exists(log_path)
+                     with open(log_path, "a", encoding="utf-8") as f:
+@@ -220,7 +246,6 @@ def query_server(
+             print(usage_str)
+             if log_path and log_path != "":
+                 try:
+-                    import os
+                     import datetime
+                     file_exists = os.path.exists(log_path)
+                     with open(log_path, "a", encoding="utf-8") as f:
+@@ -249,6 +274,50 @@ def query_server(
+             print(f"Warning: Output truncated due to max_tokens limit ({max_tokens})")
+
+     else:
++        # Codex-family models on OpenAI use the Responses API instead of chat/completions.
++        if server_type == "openai" and "codex" in str(model).lower():
++            input_text = _flatten_prompt(prompt)
++            req = {
++                "model": model,
++                "input": input_text,
++                "max_output_tokens": max_tokens,
++            }
++            if is_reasoning_model:
++                req["reasoning"] = {"effort": reasoning_effort}
++
++            response = client.responses.create(**req)
++            text = getattr(response, "output_text", "") or ""
++            if not text:
++                # Fallback extraction for SDK variants without output_text property
++                chunks = []
++                for item in getattr(response, "output", []) or []:
++                    for c in getattr(item, "content", []) or []:
++                        t = getattr(c, "text", None)
++                        if t:
++                            chunks.append(t)
++                text = "".join(chunks).strip()
++
++            usage = getattr(response, "usage", None)
++            if usage is not None:
++                input_tokens = getattr(usage, "input_tokens", 0) or 0
++                output_tokens = getattr(usage, "output_tokens", 0) or 0
++                total_tokens = getattr(usage, "total_tokens", 0) or (input_tokens + output_tokens)
++                usage_str = f"Usage: In={input_tokens}, Out={output_tokens}, Total={total_tokens}"
++                print(usage_str)
++                if log_path and log_path != "":
++                    try:
++                        import datetime
++                        file_exists = os.path.exists(log_path)
++                        with open(log_path, "a", encoding="utf-8") as f:
++                            if not file_exists:
++                                f.write("timestamp,round_idx,call_type,input_tokens,output_tokens,total_tokens\n")
++                            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
++                            f.write(f"{timestamp},{round_idx},{call_type},{input_tokens},{output_tokens},{total_tokens}\n")
++                    except Exception as e:
++                        print(f"Warning: Failed to write usage log to {log_path}: {e}")
++
++            return text
++
+         if isinstance(prompt, str):
+             messages = [
+                 {"role": "system", "content": system_prompt},
+@@ -258,20 +327,22 @@ def query_server(
+             messages = prompt
+
+         if is_reasoning_model and server_type == "openai":
+-            response = client.chat.completions.create(
+-                model=model,
+-                messages=messages,
+-                reasoning_effort=reasoning_effort,
+-            )
++            req = {
++                "model": model,
++                "messages": messages,
++                "reasoning_effort": reasoning_effort,
++            }
++            response = client.chat.completions.create(**req)
+         else:
+-            response = client.chat.completions.create(
+-                model=model,
+-                messages=messages,
+-                temperature=temperature,
+-                n=num_completions,
+-                max_tokens=max_tokens,
+-                top_p=top_p,
+-            )
++            req = {
++                "model": model,
++                "messages": messages,
++                "temperature": temperature,
++                "n": num_completions,
++                "max_tokens": max_tokens,
++                "top_p": top_p,
++            }
++            response = client.chat.completions.create(**req)
+         outputs = []
+         for choice in response.choices:
+             print(colorize_finish_reason(choice.finish_reason))
+@@ -289,7 +360,6 @@ def query_server(
+             print(usage_str)
+             if log_path and log_path != "":
+                 try:
+-                    import os
+                     import datetime
+                     file_exists = os.path.exists(log_path)
+                     with open(log_path, "a", encoding="utf-8") as f:

@@ -1,0 +1,78 @@
+diff --git a/prompts/optimization.py b/prompts/optimization.py
+index 57e0a04..17c9f5f 100644
+--- a/prompts/optimization.py
++++ b/prompts/optimization.py
+@@ -1,4 +1,5 @@
+ from __future__ import annotations
++import json
+ from pathlib import Path
+ from typing import Optional, Mapping, Any
+ from string import Template
+@@ -18,9 +19,9 @@ $gpu_items
+ # ----------  Previously generated kernels ----------
+ $history_block
+
+-You are a CUDA-kernel optimization specialist.
++You are a $BACKEND_LABEL-kernel optimization specialist.
+
+-Analyze the provided architecture and kernel history and **strictly apply the following STRATEGY** to produce an improved CUDA kernel.
++Analyze the provided architecture and kernel history and **strictly apply the following STRATEGY** to produce an improved $BACKEND_LABEL kernel.
+
+ [ARCHITECTURE FILE]
+ ```python
+@@ -39,11 +40,11 @@ GOAL
+ OUTPUT RULES (STRICT) ────────────────────────────────────────────────
+ 1. Inside the block, follow **exactly** this order:
+    1. Imports – `torch`, `torch.nn`, `load_inline`.
+-   2. `source` – triple-quoted CUDA string(s) (kernel + host wrapper).
++   2. `source` – triple-quoted $BACKEND_LABEL string(s) (kernel + host wrapper).
+    3. `cpp_src` – prototypes for *all* kernels you expose.
+    4. **One** `load_inline` call per kernel group.
+    5. `class ModelNew(nn.Module)` – mirrors original inputs/outputs but calls
+-      your CUDA kernels.
++      your $BACKEND_LABEL kernels.
+ 2. **Do NOT include** testing code, `if __name__ == "__main__"`, or extra prose.
+
+ ```python
+@@ -82,6 +83,7 @@ def _format_problem(problem: Optional[Any]) -> str:
+ def build_optimization_prompt(
+     arch_path: Path,
+     gpu_name: Optional[str] = None,
++    backend: str = "cuda",
+     *,
+     history_block: str = "",
+     optimization_suggestion: Optional[Any] = None,
+@@ -96,16 +98,21 @@ def build_optimization_prompt(
+         except Exception as exc:
+             raise RuntimeError("CUDA device not found – pass --gpu <name>.") from exc
+
+-    if gpu_name not in gpu_info:
+-        raise KeyError(f"{gpu_name} not present in GPU_SPEC_INFO")
+-
+-    info = gpu_info[gpu_name]
++    if gpu_name in gpu_info:
++        info = gpu_info[gpu_name]
++    else:
++        info = {
++            "GPU Architecture": "Unknown",
++            "GPU Name": gpu_name,
++            "Note": "No predefined spec.",
++        }
+     gpu_arch = info.get("GPU Architecture", "Unknown")
+     gpu_items = "\n".join(f"• {k}: {v}" for k, v in info.items() if k != "GPU Architecture")
+
+     arch_src = Path(arch_path).read_text().strip()
+     hist = history_block or "(None)\n"
+     optimization_suggestion_text = _format_problem(optimization_suggestion)
++    backend_label = "HIP/ROCm" if (backend or "cuda").lower() == "hip" else "CUDA"
+     return _OPTIMIZATION_PROMPT_TEMPLATE.substitute(
+         gpu_name=gpu_name,
+         gpu_arch=gpu_arch,
+@@ -113,4 +120,5 @@ def build_optimization_prompt(
+         arch_src=arch_src,
+         history_block=hist,
+         optimization_suggestion=optimization_suggestion_text,
+-    )
+\ No newline at end of file
++        BACKEND_LABEL=backend_label,
++    )

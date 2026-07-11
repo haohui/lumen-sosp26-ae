@@ -1,0 +1,147 @@
+diff --git a/prompts/generate_custom_cuda.py b/prompts/generate_custom_cuda.py
+index 4cfa22c..c05efdd 100644
+--- a/prompts/generate_custom_cuda.py
++++ b/prompts/generate_custom_cuda.py
+@@ -13,7 +13,7 @@ CLI usage
+ ---------
+ ```bash
+ python -m prompts.build_prompt KernelBench/level1/19_ReLU.py \
+-       --gpu "Quadro RTX 6000" -o prompt.txt
++       --gpu "MI300X" -o prompt.txt
+ ```
+ """
+ 
+@@ -32,6 +32,8 @@ HW_FILE = ROOT / "prompts/hardware/gpu_specs.py"  # GPU spec table
+ # --------------------------------------------------
+ FEWSHOT_BASE = ROOT / "prompts/few_shot/model_ex_add.py"   # original Model
+ FEWSHOT_NEW = ROOT / "prompts/few_shot/model_new_ex_add.py"  # optimised ModelNew
++FEWSHOT_BASE_HIP = ROOT / "prompts/few_shot_hip/model_ex_add.py"
++FEWSHOT_NEW_HIP = ROOT / "prompts/few_shot_hip/model_new_ex_add.py"
+ 
+ # ---------------------------------------------------------------------------
+ # Prompt template (with diversity requirement)
+@@ -39,20 +41,20 @@ FEWSHOT_NEW = ROOT / "prompts/few_shot/model_new_ex_add.py"  # optimised ModelNe
+ test = Template(
+     dedent(
+         """ 
+-You write custom CUDA kernels to replace the pytorch operators in the given architecture 
++You write custom $BACKEND_LABEL kernels to replace the pytorch operators in the given architecture
+ to get speedups.You have complete freedom to choose the set of operators you want to replace. You may
+-make the decision to replace some operators with custom CUDA kernels and leave others
++make the decision to replace some operators with custom $BACKEND_LABEL kernels and leave others
+ unchanged. You may replace multiple operators with custom implementations, consider
+ operator fusion opportunities (combining multiple operators into a single kernel, for
+ example, combining matmul+relu), or algorithmic changes (such as online softmax). You are
+ only limited by your imagination.
+ 
+-Here\’s an example to show you the syntax of inline embedding custom CUDA operators in torch: 
++Here\’s an example to show you the syntax of inline embedding custom $BACKEND_LABEL operators in torch:
+ The example given architecture is:
+ ‘‘‘
+ $few_base
+ ‘‘‘
+-The example new arch with custom CUDA kernels looks like this:
++The example new arch with custom $BACKEND_LABEL kernels looks like this:
+ ‘‘‘
+ $few_new
+ ‘‘‘
+@@ -65,7 +67,7 @@ And the kernel you need to implement is:
+ $kernel_src
+ ```
+ 
+-Optimize the architecture named Model with custom CUDA operators! Name your optimized
++Optimize the architecture named Model with custom $BACKEND_LABEL operators! Name your optimized
+ output architecture ModelNew. Output the new code in codeblocks. Please generate real
+ code, NOT pseudocode, make sure the code compiles and is fully functional. Just output
+ the new model code, no other text, and NO testing code!
+@@ -77,7 +79,7 @@ TEMPLATE = Template(
+         """
+ Task
+ ----
+-Generate **hand‑written CUDA kernels** that replace *all* PyTorch operator(s)
++Generate **hand‑written $BACKEND_LABEL kernels** that replace *all* PyTorch operator(s)
+ inside the original `class Model` (shown later).  You may fuse multiple
+ operators into a single kernel if that yields better performance.  Leave any
+ non‑replaced parts of the model unchanged.
+@@ -85,9 +87,9 @@ non‑replaced parts of the model unchanged.
+ OUTPUT RULES (STRICT) ────────────────────────────────────────────────
+ 1. Inside the block, follow **exactly** this order:
+    1. Imports – `torch`, `torch.nn`, `load_inline`.
+-   2. `source` – triple‑quoted CUDA string(s) (kernel + host wrapper).
++   2. `source` – triple‑quoted $BACKEND_LABEL string(s) (kernel + host wrapper).
+    3. `cpp_src` – prototypes for *all* kernels you expose.
+    4. **One** `load_inline` call per kernel group.
+    5. `class ModelNew(nn.Module)` – mirrors original inputs/outputs but calls
+-      your CUDA kernels.
++      your $BACKEND_LABEL kernels.
+ 2. **Do NOT include** testing code, `if __name__ == "__main__"`, or extra prose.
+@@ -108,7 +110,7 @@ Target architecture (to optimise):
+ $arch_src
+ ```
+ 
+-Optimize the architecture named Model with custom CUDA operators! Name your optimized
++Optimize the architecture named Model with custom $BACKEND_LABEL operators! Name your optimized
+ output architecture ModelNew. Output the new code in codeblocks. Please generate real
+ code, NOT pseudocode, make sure the code compiles and is fully functional. Just output
+ the new model code, no other text, and NO testing code!
+@@ -122,8 +124,8 @@ Example:
+     )
+ )
+ default_system_prompt = """\
+-You are a senior CUDA-kernel optimisation specialist. Your job is to generate a high-quality,
+-compilable, and runnable Python script that builds and launches **hand-written CUDA kernels**.
++You are a senior GPU-kernel optimisation specialist. Your job is to generate a high-quality,
++compilable, and runnable Python script that builds and launches **hand-written GPU kernels**.
+ 
+ OUTPUT RULES (STRICT):
+ output the code within:
+@@ -158,6 +160,7 @@ def _load_gpu_spec() -> dict:  # noqa: D401
+ def build_seed_prompt(
+     arch_path: Path,
+     gpu_name: str | None = None,
++    backend: str = "cuda",
+ ) -> str:
+     """Build LLM prompt for CUDA‑kernel optimisation (seed generation)."""
+     gpu_info = _load_gpu_spec()
+@@ -170,24 +173,34 @@ def build_seed_prompt(
+         except Exception as exc:  # pragma: no cover
+             raise RuntimeError("CUDA device not found – pass --gpu <name>.") from exc
+ 
+-    if gpu_name not in gpu_info:
+-        raise KeyError(f"{gpu_name} not present in GPU_SPEC_INFO")
+-
+-    info = gpu_info[gpu_name]
++    if gpu_name in gpu_info:
++        info = gpu_info[gpu_name]
++    else:
++        info = {
++            "GPU Architecture": "Unknown",
++            "GPU Name": gpu_name,
++            "Note": "No predefined spec.",
++        }
+     gpu_arch = info.get("GPU Architecture", "Unknown")
+     arch_src = "\n".join(
+         f"• {k}: {v}" for k, v in info.items() if k != "GPU Architecture"
+     ) if gpu_arch != "Unknown" else "Not Specified"
+ 
+-    few_base = FEWSHOT_BASE.read_text().strip()
+-    few_new = FEWSHOT_NEW.read_text().strip()
++    backend_is_hip = (backend or "cuda").lower() == "hip"
++    backend_label = "HIP/ROCm" if backend_is_hip else "CUDA"
++    few_base_path = FEWSHOT_BASE_HIP if backend_is_hip and FEWSHOT_BASE_HIP.exists() else FEWSHOT_BASE
++    few_new_path = FEWSHOT_NEW_HIP if backend_is_hip and FEWSHOT_NEW_HIP.exists() else FEWSHOT_NEW
++
++    few_base = few_base_path.read_text().strip()
++    few_new = few_new_path.read_text().strip()
+     kernel_src = Path(arch_path).read_text().strip()
+ 
+     return test.substitute(
+         few_base=few_base,
+         few_new=few_new,
+         arch_src=arch_src,
+-        kernel_src=kernel_src
++        kernel_src=kernel_src,
++        BACKEND_LABEL=backend_label,
+     )
+ 
+ 

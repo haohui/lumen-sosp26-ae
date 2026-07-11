@@ -28,37 +28,44 @@ def resolve_backends(args: Any) -> List[str]:
     return out
 
 
-def _load_aiter_runtime():
+def _load_aiter_runtime(*, include_triton: bool):
     global _AITER_RUNTIME_CACHE
-    if _AITER_RUNTIME_CACHE is not None:
+    if _AITER_RUNTIME_CACHE is not None and (
+        not include_triton or "triton_moe" in _AITER_RUNTIME_CACHE
+    ):
         return _AITER_RUNTIME_CACHE
 
     import aiter
     from aiter.ops.shuffle import shuffle_weight
-    from aiter.ops.triton.moe_align_block_size import moe_align_block_size_triton
-    from aiter.ops.triton.moe_op import fused_moe as triton_moe
-    from aiter.ops.triton.moe_op_silu_fused import fused_moe_silu as triton_moe_silu
-    from aiter.ops.triton.utils.moe_config_utils import get_optimal_moe_config_func
-    from aiter.ops.triton.utils.types import torch_to_triton_dtype
-
-    triton_cfg_fn = get_optimal_moe_config_func(
-        torch.bfloat16,
-        use_fp8_w8a8=True,
-        use_int8_w8a16=False,
-        use_int8_w8a8=False,
-        use_int4_w4a16=False,
-        use_mxfp4=False,
-    )
 
     _AITER_RUNTIME_CACHE = {
         "aiter": aiter,
         "shuffle_weight": shuffle_weight,
-        "moe_align_block_size_triton": moe_align_block_size_triton,
-        "triton_moe": triton_moe,
-        "triton_moe_silu": triton_moe_silu,
-        "torch_to_triton_dtype": torch_to_triton_dtype,
-        "triton_cfg_fn": triton_cfg_fn,
     }
+    if include_triton:
+        from aiter.ops.triton.moe_align_block_size import moe_align_block_size_triton
+        from aiter.ops.triton.moe_op import fused_moe as triton_moe
+        from aiter.ops.triton.moe_op_silu_fused import fused_moe_silu as triton_moe_silu
+        from aiter.ops.triton.utils.moe_config_utils import get_optimal_moe_config_func
+        from aiter.ops.triton.utils.types import torch_to_triton_dtype
+
+        triton_cfg_fn = get_optimal_moe_config_func(
+            torch.bfloat16,
+            use_fp8_w8a8=True,
+            use_int8_w8a16=False,
+            use_int8_w8a8=False,
+            use_int4_w4a16=False,
+            use_mxfp4=False,
+        )
+        _AITER_RUNTIME_CACHE.update(
+            {
+                "moe_align_block_size_triton": moe_align_block_size_triton,
+                "triton_moe": triton_moe,
+                "triton_moe_silu": triton_moe_silu,
+                "torch_to_triton_dtype": torch_to_triton_dtype,
+                "triton_cfg_fn": triton_cfg_fn,
+            }
+        )
     return _AITER_RUNTIME_CACHE
 
 
@@ -214,14 +221,12 @@ def build_cases_for_seq(
     if unknown:
         raise ValueError(f"unsupported AITER backends: {unknown}")
 
-    rt = _load_aiter_runtime()
+    needs_asm = "asm" in resolved
+    needs_triton = "triton" in resolved
+
+    rt = _load_aiter_runtime(include_triton=needs_triton)
     aiter = rt["aiter"]
     shuffle_weight = rt["shuffle_weight"]
-    moe_align_block_size_triton = rt["moe_align_block_size_triton"]
-    triton_moe = rt["triton_moe"]
-    triton_moe_silu = rt["triton_moe_silu"]
-    torch_to_triton_dtype = rt["torch_to_triton_dtype"]
-    triton_cfg_fn = rt["triton_cfg_fn"]
 
     experts = int(args.experts)
     topk = int(args.topk)
@@ -230,40 +235,46 @@ def build_cases_for_seq(
     x = _validate_shared_input(shared_input, seq_len=seq_len, dim=dim, topk=topk)
     w = _validate_shared_weights(shared_weights, experts=experts, dim=dim, inter_dim=inter_dim)
 
-    w1_shuf = shuffle_weight(w["w1_q"], (16, 16))
-    w2_shuf = shuffle_weight(w["w2_q"], (16, 16))
-    input_scale_t = x.input_scale.t().contiguous()
+    if needs_asm:
+        w1_shuf = shuffle_weight(w["w1_q"], (16, 16))
+        w2_shuf = shuffle_weight(w["w2_q"], (16, 16))
+        input_scale_t = x.input_scale.t().contiguous()
 
-    sorted_ids, sorted_weights, sorted_expert_ids, num_valid_ids = _build_asm_sorted_routes(
-        topk_ids=x.topk_ids.to(torch.int64).contiguous(),
-        topk_weights=x.topk_weights.to(torch.float32).contiguous(),
-        experts=experts,
-    )
-    sorted_ids_i32 = sorted_ids.to(torch.int32).contiguous()
-    sorted_weights_f32 = sorted_weights.to(torch.float32).contiguous()
-    sorted_expert_ids_i32 = sorted_expert_ids.to(torch.int32).contiguous()
-    num_valid_ids_i32 = num_valid_ids.to(torch.int32).contiguous()
+        sorted_ids, sorted_weights, sorted_expert_ids, num_valid_ids = _build_asm_sorted_routes(
+            topk_ids=x.topk_ids.to(torch.int64).contiguous(),
+            topk_weights=x.topk_weights.to(torch.float32).contiguous(),
+            experts=experts,
+        )
+        sorted_ids_i32 = sorted_ids.to(torch.int32).contiguous()
+        sorted_weights_f32 = sorted_weights.to(torch.float32).contiguous()
+        sorted_expert_ids_i32 = sorted_expert_ids.to(torch.int32).contiguous()
+        num_valid_ids_i32 = num_valid_ids.to(torch.int32).contiguous()
+        out_asm = torch.zeros((seq_len, dim), dtype=torch.bfloat16, device=x.input_q.device)
 
-    triton_cfg = triton_cfg_fn(seq_len)
-    triton_block_m = int(triton_cfg["BLOCK_SIZE_M"])
-    triton_sorted_ids, triton_expert_ids, triton_num_post = _make_triton_sorted(
-        x.topk_ids.to(torch.int32).contiguous(),
-        experts,
-        triton_block_m,
-        moe_align_block_size_triton,
-    )
+    if needs_triton:
+        moe_align_block_size_triton = rt["moe_align_block_size_triton"]
+        triton_moe = rt["triton_moe"]
+        triton_moe_silu = rt["triton_moe_silu"]
+        torch_to_triton_dtype = rt["torch_to_triton_dtype"]
+        triton_cfg = rt["triton_cfg_fn"](seq_len)
+        triton_block_m = int(triton_cfg["BLOCK_SIZE_M"])
+        triton_sorted_ids, triton_expert_ids, triton_num_post = _make_triton_sorted(
+            x.topk_ids.to(torch.int32).contiguous(),
+            experts,
+            triton_block_m,
+            moe_align_block_size_triton,
+        )
 
-    fc1_scale_3d = w["fc1_scale"].view(experts, (inter_dim * 2) // 128, dim // 128).contiguous()
-    fc2_scale_3d = w["fc2_scale"].view(experts, dim // 128, inter_dim // 128).contiguous()
+        fc1_scale_3d = w["fc1_scale"].view(experts, (inter_dim * 2) // 128, dim // 128).contiguous()
+        fc2_scale_3d = w["fc2_scale"].view(experts, dim // 128, inter_dim // 128).contiguous()
 
-    out_asm = torch.zeros((seq_len, dim), dtype=torch.bfloat16, device=x.input_q.device)
-    stage1_triton = torch.zeros((seq_len * topk, inter_dim), dtype=torch.bfloat16, device=x.input_q.device)
-    stage2_in_q = torch.zeros((seq_len * topk, inter_dim), dtype=torch.float8_e4m3fnuz, device=x.input_q.device)
-    stage2_in_scale = torch.zeros((seq_len * topk, inter_dim // 128), dtype=torch.float32, device=x.input_q.device)
-    stage2_triton = torch.zeros((seq_len, topk, dim), dtype=torch.bfloat16, device=x.input_q.device)
-    out_triton = torch.zeros((seq_len, dim), dtype=torch.bfloat16, device=x.input_q.device)
-    triton_stage2_topk_ids = torch.zeros((seq_len * topk, 1), dtype=torch.int32, device=x.input_q.device)
-    triton_stage2_topk_weights = x.topk_weights.reshape(-1, 1).contiguous()
+        stage1_triton = torch.zeros((seq_len * topk, inter_dim), dtype=torch.bfloat16, device=x.input_q.device)
+        stage2_in_q = torch.zeros((seq_len * topk, inter_dim), dtype=torch.float8_e4m3fnuz, device=x.input_q.device)
+        stage2_in_scale = torch.zeros((seq_len * topk, inter_dim // 128), dtype=torch.float32, device=x.input_q.device)
+        stage2_triton = torch.zeros((seq_len, topk, dim), dtype=torch.bfloat16, device=x.input_q.device)
+        out_triton = torch.zeros((seq_len, dim), dtype=torch.bfloat16, device=x.input_q.device)
+        triton_stage2_topk_ids = torch.zeros((seq_len * topk, 1), dtype=torch.int32, device=x.input_q.device)
+        triton_stage2_topk_weights = x.topk_weights.reshape(-1, 1).contiguous()
 
     def run_asm() -> None:
         out_asm.zero_()

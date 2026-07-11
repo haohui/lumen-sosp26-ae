@@ -24,7 +24,6 @@ BASELINE_COLUMNS = [
     "hipkittens",
     "aiter",
     "triton",
-    "aiter_asm",
     "aiter_triton",
 ]
 GEMM_BACKENDS = (
@@ -51,7 +50,6 @@ MOE_BACKENDS = (
     "kernelfalcon",
     "ksearch",
     "aiter",
-    "aiter_asm",
     "aiter_triton",
 )
 

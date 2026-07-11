@@ -34,7 +34,7 @@ index 6ffb8d3..986d5e0 100644
              messages = [
                  {"role": "system", "content": system_prompt},
 diff --git a/main.py b/main.py
-index 0085c71..5d4c0b2 100644
+index 0085c71..c3f2cfb 100644
 --- a/main.py
 +++ b/main.py
 @@ -10,6 +10,11 @@ from datetime import datetime
@@ -68,8 +68,7 @@ index 0085c71..5d4c0b2 100644
 +    p.add_argument("--device", type=int, default=0, help="GPU device index for benchmarking")
      p.add_argument("--warmup", type=int, default=5, help="Warm-up iterations")
      p.add_argument("--repeat", type=int, default=20, help="Timed iterations per benchmark")
--    p.add_argument("--tol", type=float, default=1e-3, help="Max |err| tolerated")
-+    p.add_argument("--tol", type=float, default=1e-2, help="Max abs/relative error tolerance")
+     p.add_argument("--tol", type=float, default=1e-3, help="Max |err| tolerated")
      p.add_argument("--max_tokens", type=int, default=16384, help="LLM max new tokens")
      p.add_argument("--temperature", type=float, default=0.2, help="LLM temperature")
      p.add_argument("--top_p", type=float, default=1.0, help="LLM top_p")
@@ -136,44 +135,7 @@ index 0085c71..5d4c0b2 100644
      reply_file.write_text(raw, encoding="utf-8")
      code = extract_code_block(raw) or raw  # fallback
      path = save_kernel_code(code, code_dir)
-@@ -291,9 +325,33 @@ def _bench_and_score(
-     except Exception:
-         pass
- 
--    # Wait for child and receive the payload
--    p.join()
--    payload = parent_conn.recv() if parent_conn.poll() else None
-+    # Wait for child and receive the payload (with timeout to avoid deadlock on hung kernels).
-+    timeout_sec = 300
-+    p.join(timeout=timeout_sec)
-+    if p.is_alive():
-+        try:
-+            p.terminate()
-+            p.join(timeout=5)
-+        except Exception:
-+            pass
-+        payload = (
-+            "err",
-+            {
-+                "type": "BenchmarkTimeout",
-+                "message": f"benchmark subprocess timed out after {timeout_sec}s",
-+            },
-+        )
-+    else:
-+        try:
-+            payload = parent_conn.recv() if parent_conn.poll() else None
-+        except EOFError:
-+            payload = (
-+                "err",
-+                {
-+                    "type": "SubprocessCrashed",
-+                    "message": "subprocess pipe closed unexpectedly (EOF)",
-+                },
-+            )
-     try:
-         parent_conn.close()
-     except Exception:
-@@ -495,7 +553,11 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -495,7 +529,11 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
  
          if round_idx == 0:
              print("[Seed] Generating the initial kernel ...")
@@ -186,7 +148,7 @@ index 0085c71..5d4c0b2 100644
              prompt_file = io_dir / f"round{round_idx:03d}_seed_prompt.txt"
              prompt_file.write_text(seed_prompt, encoding="utf-8")
              ind = _llm_to_kernel(seed_prompt, code_dir, call_llm, io_dir,
-@@ -521,7 +583,8 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -521,7 +559,8 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
  
                  problem_system_prompt, problem_prompt = build_correctness_prompts(error_log=error_log,
                                                                                    arch_path=task_path,
@@ -196,7 +158,7 @@ index 0085c71..5d4c0b2 100644
                  prompt_file = io_dir / f"round{round_idx:03d}_problem_identify_prompt.txt"
                  prompt_file.write_text(problem_prompt, encoding="utf-8")
                  raw = call_llm(problem_prompt, problem_system_prompt, log_path=log_path,
-@@ -535,6 +598,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -535,6 +574,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                      error_log=error_log,
                      problem=problem_json,
                      gpu_name=args.gpu,
@@ -204,7 +166,7 @@ index 0085c71..5d4c0b2 100644
                  )
                  prompt_file = io_dir / f"round{round_idx:03d}_repair_prompt.txt"
                  prompt_file.write_text(repair_prompt, encoding="utf-8")
-@@ -555,16 +619,28 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -555,16 +595,28 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                  kernel_names = extract_cuda_kernel_names(test_kernel)
                  print("=============================================================")
                  print(f"Detected kernel names: {kernel_names}")
@@ -238,7 +200,7 @@ index 0085c71..5d4c0b2 100644
                  )
                  prompt_file = io_dir / f"round{round_idx:03d}_judge_optimization_prompt.txt"
                  prompt_file.write_text(judge_prompt, encoding="utf-8")
-@@ -578,6 +654,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -578,6 +630,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                  opt_prompt = build_optimization_prompt(
                      arch_path=current_kernel.code_path,  # type: ignore[union-attr]
                      gpu_name=args.gpu,
@@ -956,69 +918,3 @@ index 0000000..a052c6f
 +    if isinstance(value, float) and math.isinf(value):
 +        return "inf" if value > 0 else "-inf"
 +    return value
-diff --git a/utils/compile_and_run.py b/utils/compile_and_run.py
-index 405cff4..7fad0dd 100644
---- a/utils/compile_and_run.py
-+++ b/utils/compile_and_run.py
-@@ -537,8 +537,8 @@ def compare_and_bench(
-             # 统一取 Tensor、保证连续
-             ref_out  = _first_tensor(ref_out).contiguous()
-             test_out = _first_tensor(test_out).contiguous()
--            if ref_out.dtype != test_out.dtype:
--                test_out = test_out.to(ref_out.dtype)
-+            ref_dtype = ref_out.dtype
-+            test_dtype = test_out.dtype
- 
-             # Check memory usage
-             ref_out_bytes = ref_out.element_size() * ref_out.nelement()
-@@ -565,14 +565,23 @@ def compare_and_bench(
- 
- 
-             # 误差 & allclose
--            diff = (test_out - ref_out).abs()
-+            if ref_dtype != test_dtype:
-+                ref_cmp = ref_out.float()
-+                test_cmp = test_out.float()
-+                compare_dtype = torch.float32
-+            else:
-+                ref_cmp = ref_out
-+                test_cmp = test_out
-+                compare_dtype = ref_dtype
-+            diff = (test_cmp - ref_cmp).abs()
-             max_err  = diff.max().item()
-             mean_err = diff.mean().item()
- 
--            if not torch.allclose(ref_out, test_out, atol=tol, rtol=tol):
-+            if not torch.allclose(ref_cmp, test_cmp, atol=tol, rtol=tol):
-                 raise ValueError(
-                     f"Outputs are not close (atol={tol}, rtol={tol}). "
--                    f"max_abs_err={max_err:.3e}, mean_abs_err={mean_err:.3e}"
-+                    f"max_abs_err={max_err:.3e}, mean_abs_err={mean_err:.3e}, "
-+                    f"ref_dtype={ref_dtype}, test_dtype={test_dtype}, compare_dtype={compare_dtype}"
-                 )
- 
-             # 计时
-@@ -593,6 +602,9 @@ def compare_and_bench(
-         "reference_file": str(ref_py),
-         "candidate_file": str(test_py),
-         "tolerance": tol,
-+        "ref_output_dtype": str(ref_dtype),
-+        "test_output_dtype": str(test_dtype),
-+        "compare_dtype": str(compare_dtype),
-         "max_abs_err": max_err,
-         "mean_abs_err": mean_err,
-         "ref_latency_ms": {
-@@ -627,7 +639,7 @@ def _cli():
-     p.add_argument("--device", type=int, default=0, help="CUDA device index")
-     p.add_argument("--warmup", type=int, default=5, help="Warm-up iterations")
-     p.add_argument("--repeat", type=int, default=20, help="Benchmark runs")
--    p.add_argument("--tol", type=float, default=1e-4, help="Max abs error tolerance")
-+    p.add_argument("--tol", type=float, default=1e-2, help="Max abs/relative error tolerance")
-     p.add_argument("--dump", type=Path, help="If set, write JSON results here")
-     args = p.parse_args()
- 
-@@ -648,4 +660,3 @@ def _cli():
- 
- if __name__ == "__main__":
-     _cli()
--

@@ -1,5 +1,5 @@
 diff --git a/main.py b/main.py
-index 0085c71..112401b 100644
+index 0085c71..a8cb518 100644
 --- a/main.py
 +++ b/main.py
 @@ -23,6 +23,18 @@ from prompts.error import build_error_prompt
@@ -32,10 +32,11 @@ index 0085c71..112401b 100644
 +    p.add_argument("--device", type=int, default=0, help="GPU device index for benchmarking")
      p.add_argument("--warmup", type=int, default=5, help="Warm-up iterations")
      p.add_argument("--repeat", type=int, default=20, help="Timed iterations per benchmark")
+-    p.add_argument("--tol", type=float, default=1e-3, help="Max |err| tolerated")
 +    p.add_argument("--graph_warmup", type=int, default=-1, help="CUDA graph warm-up iterations (-1 uses --warmup)")
 +    p.add_argument("--graph_iters", type=int, default=10, help="CUDA graph iterations per replay")
 +    p.add_argument("--graph_replays", type=int, default=0, help="CUDA graph replay count (0 derives from --repeat)")
-     p.add_argument("--tol", type=float, default=1e-3, help="Max |err| tolerated")
++    p.add_argument("--tol", type=float, default=1e-2, help="Max abs/relative error tolerance")
      p.add_argument("--max_tokens", type=int, default=16384, help="LLM max new tokens")
      p.add_argument("--temperature", type=float, default=0.2, help="LLM temperature")
      p.add_argument("--top_p", type=float, default=1.0, help="LLM top_p")

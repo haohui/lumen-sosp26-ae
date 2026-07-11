@@ -26,7 +26,7 @@ API_PROVIDER="${API_PROVIDER:-openai}"
 REASONING_EFFORT="${REASONING_EFFORT:-high}"
 ROCR_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-7}"
 GPU_ID="${GPU_ID:-0}"
-CF_TOL="${CF_TOL:-1e-3}"
+CF_TOL="${CF_TOL:-1e-2}"
 THIRD_PARTY_ROOT="${THIRD_PARTY_ROOT:-${REPO_ROOT}/third_party}"
 ENV_FILE="${ENV_FILE:-${REPO_ROOT}/.env}"
 KEY_FILE="${KEY_FILE:-../key}"
@@ -51,8 +51,6 @@ REF_PATH="$(task_reference_path "${TASK}")"
 RUN_TAG="${RUN_TAG:-${TASK}_cudaforge_$(date -u +%Y%m%d_%H%M%S)}"
 TRACE_ROOT="${TRACE_ROOT:-$(resolve_repo_path "logs/generation/$(task_data_dir "${TASK}")")/${RUN_TAG}}"
 PROMPT_SUFFIX_FILE="$(prepare_prompt_suffix_file "${TASK}" "cudaforge" "${TRACE_ROOT}/02_cudaforge_prompt_suffix.txt")"
-TOL_ARG=""
-[[ "${TASK}" == "moe" ]] && TOL_ARG="--tol '${CF_TOL}'"
 
 configure_api_provider
 require_generation_key
@@ -76,7 +74,7 @@ python3 main.py '${REF_PATH}' \
   --reasoning_effort '${REASONING_EFFORT}' \
   --prompt-suffix-file '${PROMPT_SUFFIX_FILE}' \
   --enable_profiler_feedback \
-  ${TOL_ARG} \
+  --tol '${CF_TOL}' \
   --device '${GPU_ID}' \
   --round '${ROUNDS}' \
   --subproc_id 0 \

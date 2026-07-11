@@ -1,5 +1,5 @@
 diff --git a/utils/compile_and_run.py b/utils/compile_and_run.py
-index 405cff4..7569136 100644
+index 405cff4..7050b16 100644
 --- a/utils/compile_and_run.py
 +++ b/utils/compile_and_run.py
 @@ -28,6 +28,7 @@ from pathlib import Path
@@ -10,45 +10,7 @@ index 405cff4..7569136 100644
  
  # ---------------------------------------------------------------------------
  
-@@ -47,6 +48,37 @@ class AccuracyError(RuntimeError):
-     """Raised when outputs do not meet the accuracy tolerance."""
- 
- 
-+_DEFAULT_ACCURACY_TOL = 1e-2
-+
-+
-+class _AccuracyPolicy:
-+    """Centralize output dtype handling and numerical tolerance for generated kernels."""
-+
-+    def __init__(self, requested_tol: float) -> None:
-+        self.requested_tol = float(requested_tol)
-+        self.tolerance = (
-+            _DEFAULT_ACCURACY_TOL
-+            if self.requested_tol <= 0
-+            else max(self.requested_tol, _DEFAULT_ACCURACY_TOL)
-+        )
-+
-+    def prepare(self, ref_out: torch.Tensor, test_out: torch.Tensor):
-+        ref_dtype = ref_out.dtype
-+        test_dtype = test_out.dtype
-+        if ref_dtype != test_dtype:
-+            return ref_out.float(), test_out.float(), ref_dtype, test_dtype, torch.float32
-+        return ref_out, test_out, ref_dtype, test_dtype, ref_dtype
-+
-+    def metadata(self, ref_dtype: torch.dtype, test_dtype: torch.dtype, compare_dtype: torch.dtype) -> dict:
-+        return {
-+            "tolerance": self.tolerance,
-+            "requested_tolerance": self.requested_tol,
-+            "ref_output_dtype": str(ref_dtype),
-+            "test_output_dtype": str(test_dtype),
-+            "compare_dtype": str(compare_dtype),
-+        }
-+
-+
- # =========================== dynamic import ===============================
- def _capture_import(path: Path):
-     """Import *path* dynamically and capture **all** build logs.
-@@ -138,14 +170,17 @@ def _bench(model: torch.nn.Module,
+@@ -138,14 +139,17 @@ def _bench(model: torch.nn.Module,
             inp: List[torch.Tensor],
             dev: torch.device,
             warm: int,
@@ -70,7 +32,7 @@ index 405cff4..7569136 100644
          res = []
          for _ in range(rep):
              t0 = datetime.now()
-@@ -153,16 +188,23 @@ def _bench(model: torch.nn.Module,
+@@ -153,16 +157,23 @@ def _bench(model: torch.nn.Module,
              res.append((datetime.now() - t0).total_seconds() * 1_000)
          return res
  
@@ -104,7 +66,7 @@ index 405cff4..7569136 100644
  
  
  # ====================== RNG & 确定性设置 ======================
-@@ -442,6 +484,9 @@ def compare_and_bench(
+@@ -442,6 +453,9 @@ def compare_and_bench(
      device_idx: int = 0,
      warmup: int = 5,
      repeat: int = 20,
@@ -114,32 +76,39 @@ index 405cff4..7569136 100644
      tol: float = 1e-4,
      log_dir: str | Path | None = "run/debug",
      seed: int = 100,  # 固定默认 seed；需要环境控制时可改成 None 并用 env 读取
-@@ -537,8 +582,7 @@ def compare_and_bench(
+@@ -537,8 +551,8 @@ def compare_and_bench(
              # 统一取 Tensor、保证连续
              ref_out  = _first_tensor(ref_out).contiguous()
              test_out = _first_tensor(test_out).contiguous()
 -            if ref_out.dtype != test_out.dtype:
 -                test_out = test_out.to(ref_out.dtype)
-+            accuracy = _AccuracyPolicy(tol)
++            ref_dtype = ref_out.dtype
++            test_dtype = test_out.dtype
  
              # Check memory usage
              ref_out_bytes = ref_out.element_size() * ref_out.nelement()
-@@ -565,19 +609,39 @@ def compare_and_bench(
+@@ -565,19 +579,46 @@ def compare_and_bench(
  
  
              # 误差 & allclose
 -            diff = (test_out - ref_out).abs()
-+            ref_cmp, test_cmp, ref_dtype, test_dtype, compare_dtype = accuracy.prepare(ref_out, test_out)
++            if ref_dtype != test_dtype:
++                ref_cmp = ref_out.float()
++                test_cmp = test_out.float()
++                compare_dtype = torch.float32
++            else:
++                ref_cmp = ref_out
++                test_cmp = test_out
++                compare_dtype = ref_dtype
 +            diff = (test_cmp - ref_cmp).abs()
              max_err  = diff.max().item()
              mean_err = diff.mean().item()
  
 -            if not torch.allclose(ref_out, test_out, atol=tol, rtol=tol):
-+            if not torch.allclose(ref_cmp, test_cmp, atol=accuracy.tolerance, rtol=accuracy.tolerance):
++            if not torch.allclose(ref_cmp, test_cmp, atol=tol, rtol=tol):
                  raise ValueError(
--                    f"Outputs are not close (atol={tol}, rtol={tol}). "
+                     f"Outputs are not close (atol={tol}, rtol={tol}). "
 -                    f"max_abs_err={max_err:.3e}, mean_abs_err={mean_err:.3e}"
-+                    f"Outputs are not close (atol={accuracy.tolerance}, rtol={accuracy.tolerance}). "
 +                    f"max_abs_err={max_err:.3e}, mean_abs_err={mean_err:.3e}, "
 +                    f"ref_dtype={ref_dtype}, test_dtype={test_dtype}, compare_dtype={compare_dtype}"
                  )
@@ -170,16 +139,17 @@ index 405cff4..7569136 100644
  
              if TORCH_DEVICE == "cuda":
                  torch.cuda.synchronize(dev)
-@@ -592,7 +656,7 @@ def compare_and_bench(
-         "timestamp": datetime.now().isoformat(timespec="seconds"),
+@@ -593,6 +634,9 @@ def compare_and_bench(
          "reference_file": str(ref_py),
          "candidate_file": str(test_py),
--        "tolerance": tol,
-+        **accuracy.metadata(ref_dtype, test_dtype, compare_dtype),
+         "tolerance": tol,
++        "ref_output_dtype": str(ref_dtype),
++        "test_output_dtype": str(test_dtype),
++        "compare_dtype": str(compare_dtype),
          "max_abs_err": max_err,
          "mean_abs_err": mean_err,
          "ref_latency_ms": {
-@@ -608,6 +672,13 @@ def compare_and_bench(
+@@ -608,6 +652,13 @@ def compare_and_bench(
              "all": test_t,
          },
          "num_runs": repeat,
@@ -193,17 +163,19 @@ index 405cff4..7569136 100644
          "model_init_args": init_args,
          "model_init_kwargs": init_kwargs,
          "seed": seed,
-@@ -627,6 +698,9 @@ def _cli():
+@@ -627,7 +678,10 @@ def _cli():
      p.add_argument("--device", type=int, default=0, help="CUDA device index")
      p.add_argument("--warmup", type=int, default=5, help="Warm-up iterations")
      p.add_argument("--repeat", type=int, default=20, help="Benchmark runs")
+-    p.add_argument("--tol", type=float, default=1e-4, help="Max abs error tolerance")
 +    p.add_argument("--graph_warmup", type=int, default=-1, help="CUDA graph warm-up iterations (-1 uses --warmup)")
 +    p.add_argument("--graph_iters", type=int, default=10, help="CUDA graph iterations per replay")
 +    p.add_argument("--graph_replays", type=int, default=0, help="CUDA graph replay count (0 derives from --repeat)")
-     p.add_argument("--tol", type=float, default=1e-4, help="Max abs error tolerance")
++    p.add_argument("--tol", type=float, default=1e-2, help="Max abs/relative error tolerance")
      p.add_argument("--dump", type=Path, help="If set, write JSON results here")
      args = p.parse_args()
-@@ -637,6 +711,9 @@ def _cli():
+ 
+@@ -637,6 +691,9 @@ def _cli():
          device_idx=args.device,
          warmup=args.warmup,
          repeat=args.repeat,
@@ -213,7 +185,7 @@ index 405cff4..7569136 100644
          tol=args.tol,
      )
      print(json.dumps(res, indent=2))
-@@ -648,4 +725,3 @@ def _cli():
+@@ -648,4 +705,3 @@ def _cli():
  
  if __name__ == "__main__":
      _cli()

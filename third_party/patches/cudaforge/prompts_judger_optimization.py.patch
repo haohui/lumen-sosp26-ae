@@ -8,7 +8,7 @@ index 43fdc35..3806eda 100644
    - PyTorch reference architecture file (contains `class Model`)
 -  - (Optional) current CUDA candidate code to inspect
 +  - (Optional) current candidate kernel code to inspect
-
+ 
  The Judge LLM must return **exactly one** optimisation target with a minimal plan.
  """
 @@ -19,7 +19,7 @@ from string import Template
@@ -17,7 +17,7 @@ index 43fdc35..3806eda 100644
  import sys
 -from typing import Optional, Tuple
 +from typing import Tuple
-
+ 
  ROOT = Path(__file__).resolve().parents[1]
  HW_FILE = ROOT / "prompts/hardware/gpu_specs.py"
 @@ -51,9 +51,8 @@ from string import Template
@@ -30,22 +30,22 @@ index 43fdc35..3806eda 100644
 +You are a senior $BACKEND_LABEL performance engineer. Read the target GPU spec, the PyTorch
 +reference code, the current candidate kernel, and the profiling metrics. Then identify **exactly one** highest-impact speed bottleneck, propose **exactly one** optimisation method and propose a
  modification plan. Be surgical and metrics-driven.
-
+ 
  Rules:
 @@ -92,12 +91,12 @@ $gpu_items
  $python_code
-
-
+ 
+ 
 -# CUDA candidate
 +# $BACKEND_LABEL candidate
  ```python
  $CUDA_CODE
  ```
-
+ 
 -# Nsight Compute metrics (verbatim)
 +# $METRICS_LABEL (verbatim)
  $NCU_METRICS
-
+ 
  Read everything and follow the Rules exactly. Return the JSON in the specified format.
 @@ -115,27 +114,37 @@ def build_judger_optimization_prompts(
      gpu_name: str,
@@ -54,7 +54,7 @@ index 43fdc35..3806eda 100644
 +    backend: str = "cuda",
  ) -> Tuple[str, str]:
      """Return (system_prompt_str, instruction_str) for single-issue optimisation.
-
+ 
      Args:
          arch_path:   Path to .py that contains the PyTorch reference `class Model`
 -        gpu_name:    Key in GPU_SPEC_INFO (e.g., "Quadro RTX 6000")
@@ -66,7 +66,7 @@ index 43fdc35..3806eda 100644
      gpu_info = _load_gpu_spec()
 -    if gpu_name not in gpu_info:
 -        raise KeyError(f"{gpu_name} not present in GPU_SPEC_INFO")
-
+ 
 -    info = gpu_info[gpu_name]
 +    if gpu_name in gpu_info:
 +        info = gpu_info[gpu_name]
@@ -81,7 +81,7 @@ index 43fdc35..3806eda 100644
      gpu_items = "\n".join(
          f"• {k}: {v}" for k, v in info.items() if k != "GPU Architecture"
      )
-
+ 
 +    backend_label = "HIP/ROCm" if (backend or "cuda").lower() == "hip" else "CUDA"
 +    metrics_label = "ROCm profiler metrics" if (backend or "cuda").lower() == "hip" else "Nsight Compute metrics"
 +

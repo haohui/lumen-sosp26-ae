@@ -1,30 +1,8 @@
 diff --git a/main.py b/main.py
-index 0085c71..6453b33 100644
+index 0085c71..112401b 100644
 --- a/main.py
 +++ b/main.py
-@@ -1,11 +1,12 @@
- # main.py
- from __future__ import annotations
- import argparse
-+import os
- import re
- import random
- import time
- import json
- import csv
- from datetime import datetime
- from pathlib import Path
- from typing import Optional, List, Dict, Any
-@@ -15,7 +17,7 @@ matplotlib.use("Agg")  # headless save
- import matplotlib.pyplot as plt
-
- from agents.query_server import query_server
--from prompts.generate_custom_cuda import build_seed_prompt, default_system_prompt
-+from prompts.generate_custom_cuda import build_seed_prompt, default_system_prompt, _load_gpu_spec
- from utils.compile_and_run import compare_and_bench
- from utils.kernel_io import extract_code_block, save_kernel_code, extract_json, extract_cuda_kernel_names
- from scripts.individual import KernelIndividual  # adjust path if needed
-@@ -23,6 +25,18 @@ from prompts.error import build_error_prompt
+@@ -23,6 +23,18 @@ from prompts.error import build_error_prompt
  from prompts.optimization import build_optimization_prompt
  from prompts.judger_repair import build_correctness_prompts
  from prompts.judger_optimization import build_judger_optimization_prompts
@@ -41,22 +19,14 @@ index 0085c71..6453b33 100644
 +    metrics_to_prompt_rocm = None
 +
  _INVOCATION_SPLITTER = "Invoked with:"
-
+ 
  def _sanitize_error_message(exc: Exception) -> str:
-@@ -43,7 +53,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
-         type=Path,
-         help="Path to a single task .py file OR a directory containing many tasks (.py)",
-     )
--    p.add_argument("--gpu", default="Quadro RTX 6000", help="GPU name in prompt spec")
-+    p.add_argument("--gpu", default="MI300X", help="GPU name in prompt spec")
-     p.add_argument("--server_type", default="local", help="LLM provider (local, openai, deepseek, vllm, etc.)")
+@@ -45,20 +57,37 @@ def _build_arg_parser() -> argparse.ArgumentParser:
      p.add_argument("--server_address", default="localhost", help="LLM server address (for vllm/sglang)")
      p.add_argument("--server_port", type=int, default=8000, help="LLM server port (for vllm/sglang)")
-@@ -51,2 +61,3 @@ def _build_arg_parser() -> argparse.ArgumentParser:
      p.add_argument("--model_name", default="deepseek-ai/deepseek-coder-6.7b-instruct", help="LLM model")
-+    p.add_argument("--backend", choices=["cuda", "hip"], default="hip", help="GPU backend")
++    p.add_argument("--backend", choices=["cuda", "hip"], default="cuda", help="GPU backend")
      p.add_argument("--round", "-G", type=int, default=10, help="Number of generations per task")
-@@ -53,5 +64,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
      p.add_argument("--work_dir", type=Path, default=Path("run"), help="Output root directory")
 -    p.add_argument("--device", type=int, default=0, help="CUDA device index for benchmarking")
 +    p.add_argument("--device", type=int, default=0, help="GPU device index for benchmarking")
@@ -66,10 +36,11 @@ index 0085c71..6453b33 100644
 +    p.add_argument("--graph_iters", type=int, default=10, help="CUDA graph iterations per replay")
 +    p.add_argument("--graph_replays", type=int, default=0, help="CUDA graph replay count (0 derives from --repeat)")
      p.add_argument("--tol", type=float, default=1e-3, help="Max |err| tolerated")
-@@ -60,3 +74,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
+     p.add_argument("--max_tokens", type=int, default=16384, help="LLM max new tokens")
      p.add_argument("--temperature", type=float, default=0.2, help="LLM temperature")
      p.add_argument("--top_p", type=float, default=1.0, help="LLM top_p")
 +    p.add_argument("--prompt-suffix-file", type=Path, default=None, help="Optional file appended to every LLM prompt")
++    p.add_argument("--hip-fewshot-new", type=Path, default=None, help="HIP ModelNew few-shot example")
 +    p.add_argument(
 +        "--reasoning_effort",
 +        choices=["low", "medium", "high"],
@@ -77,91 +48,22 @@ index 0085c71..6453b33 100644
 +        help="Reasoning effort for reasoning-capable models (e.g., OpenAI/Codex).",
 +    )
      # multi-task controls
-@@ -67,1 +88,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
+     p.add_argument("--first_n", type=int, default=0, help="When arch_py is a directory, take the first N tasks (sorted)")
+     p.add_argument("--num_tasks", type=int, default=1, help="When sampling, how many tasks to pick (if >0 and first_n=0)")
+     p.add_argument("--shuffle_seed", type=int, default=0, help="Random seed for sampling (0 = time)")
+     
 +    p.add_argument(
 +        "--enable_profiler_feedback",
 +        action="store_true",
 +        help="Enable profiler-guided optimization on HIP backend.",
 +    )
      p.add_argument("--subproc_id", type=int, default=0, help="Identifier for sub-process (e.g., when running multiple in parallel)")
-@@ -70,6 +96,73 @@ def _build_arg_parser() -> argparse.ArgumentParser:
+     
      return p
- 
- 
-+def _resolve_prompt_gpu_name(gpu_name: str) -> str:
-+    """Prompt templates require GPU name keys from gpu_specs.py; fallback when unknown."""
-+    try:
-+        specs = _load_gpu_spec()
-+    except Exception:
-+        return gpu_name
-+
-+    if gpu_name in specs:
-+        return gpu_name
-+
-+    normalized = gpu_name.strip().lower()
-+    # Normalize common ROCm runtime names to prompt-table keys.
-+    if "mi300x" in normalized:
-+        for name in ("MI300X", "AMD Instinct MI300X"):
-+            if name in specs:
-+                return name
-+
-+    preferred = ["MI300X", "AMD Instinct MI300X"]
-+    fallback = next(
-+        (name for name in preferred if name in specs),
-+        next(iter(specs), gpu_name),
-+    )
-+    print(f"[Prompt GPU] '{gpu_name}' not found in gpu_specs.py, fallback to '{fallback}'.")
-+    return fallback
-+
-+
-+def _looks_nvidia_gpu_name(gpu_name: str) -> bool:
-+    markers = (
-+        "NVIDIA",
-+        "H100",
-+        "H200",
-+        "A100",
-+        "L40",
-+        "RTX",
-+        "GEFORCE",
-+        "TESLA",
-+        "T4",
-+        "A10",
-+        "QUADRO",
-+    )
-+    up = str(gpu_name or "").strip().upper()
-+    return any(m in up for m in markers)
-+
-+
-+def _looks_amd_gpu_name(gpu_name: str) -> bool:
-+    markers = ("AMD", "MI", "INSTINCT", "RADEON", "CDNA", "RDNA", "GFX")
-+    up = str(gpu_name or "").strip().upper()
-+    return any(m in up for m in markers)
-+
-+
-+def _validate_backend_gpu_combo(*, backend: str, gpu_name: str) -> None:
-+    b = str(backend or "").strip().lower()
-+    g = str(gpu_name or "").strip()
-+    if not g:
-+        return
-+    if b == "hip" and _looks_nvidia_gpu_name(g):
-+        raise ValueError(
-+            f"backend=hip but --gpu={gpu_name!r} looks NVIDIA-oriented. "
-+            "For ROCm runs, use an AMD target (for example: --gpu MI300X)."
-+        )
-+    if b == "cuda" and _looks_amd_gpu_name(g):
-+        raise ValueError(
-+            f"backend=cuda but --gpu={gpu_name!r} looks AMD-oriented. "
-+            "For MI300X/ROCm runs, use --backend hip."
-+        )
-+
-+
- # ---------------------- naming helpers -----------------
- def _slugify_tag(text: str, max_len: int = 80) -> str:
-     """Collapse a string into a filesystem-friendly slug."""
-@@ -131,8 +223,36 @@ def _build_history_block(code_dir: Path, keep_last: int = 10) -> str:
+@@ -131,8 +160,23 @@ def _build_history_block(code_dir: Path, keep_last: int = 10) -> str:
      return "## Existing kernels\n" + "\n\n".join(snippets) + "\n"
-
-
+ 
+ 
 +def _read_prompt_suffix(path: Optional[Path]) -> str:
 +    if path is None:
 +        return ""
@@ -175,27 +77,14 @@ index 0085c71..6453b33 100644
 +        return text
 +    return f"{text.rstrip()}\n\n{suffix}"
 +
-+def _normalize_inline_args_for_hip(code: str, backend: str) -> tuple[str, int]:
-+    """Fix common load_inline arg-name mistakes for HIP runs."""
-+    if str(backend).lower() != "hip":
-+        return code, 0
-+
-+    out = str(code or "")
-+    replaced = 0
-+    out, n = re.subn(r"\bhip_sources\s*=", "cuda_sources=", out)
-+    replaced += int(n)
-+    out, n = re.subn(r"\bextra_hip_cflags\s*=", "extra_cuda_cflags=", out)
-+    replaced += int(n)
-+    return out, replaced
-+
 +
  # ------------------- LLM & eval steps ------------------
  def _make_llm_caller(args):
 +    prompt_suffix = _read_prompt_suffix(args.prompt_suffix_file)
-
+ 
      def call_llm(
          prompt: str,
-@@ -141,15 +516,19 @@ def _make_llm_caller(args):
+@@ -141,15 +185,19 @@ def _make_llm_caller(args):
          call_type: str = "unknown",
          round_idx: int = -1,
      ) -> str:
@@ -216,28 +105,15 @@ index 0085c71..6453b33 100644
              server_address=args.server_address,
              server_port=args.server_port,
              log_path=str(log_path) if log_path else None,
-@@ -168,6 +549,7 @@ def _llm_to_kernel(
-     call_llm,
-     io_dir: Path,
-     round_idx,
-+    backend: str = "cuda",
-     sys_prompt: Optional[str] = None,   # New: optional system prompt
-     log_path: Optional[Path] = None,
-     call_type: str = "unknown",
-@@ -181,8 +563,12 @@ def _llm_to_kernel(
+@@ -181,6 +229,7 @@ def _llm_to_kernel(
          round_idx=round_idx,
      )
      reply_file = io_dir / f"{round_idx}_raw_reply.txt"
 +    reply_file.parent.mkdir(parents=True, exist_ok=True)
      reply_file.write_text(raw, encoding="utf-8")
      code = extract_code_block(raw) or raw  # fallback
-+    code, fixed = _normalize_inline_args_for_hip(code, backend=backend)
-+    if fixed > 0:
-+        print(f"[code-normalize] round={round_idx} backend={backend} fixed_inline_args={fixed}")
      path = save_kernel_code(code, code_dir)
-     ind = KernelIndividual(code)
-     ind.code_path = path  # type: ignore[attr-defined]
-@@ -194,6 +580,9 @@ def _bench_worker_entry(test_py: str,
+@@ -194,6 +243,9 @@ def _bench_worker_entry(test_py: str,
                          device_idx: int,
                          warmup: int,
                          repeat: int,
@@ -247,7 +123,7 @@ index 0085c71..6453b33 100644
                          tol: float,
                          conn) -> None:
      """
-@@ -215,6 +604,9 @@ def _bench_worker_entry(test_py: str,
+@@ -215,6 +267,9 @@ def _bench_worker_entry(test_py: str,
              device_idx=device_idx,
              warmup=warmup,
              repeat=repeat,
@@ -257,7 +133,7 @@ index 0085c71..6453b33 100644
              tol=tol,
          )
          conn.send(("ok", res))
-@@ -255,6 +647,9 @@ def _bench_and_score(
+@@ -255,6 +310,9 @@ def _bench_and_score(
      device_idx: int,
      warmup: int,
      repeat: int,
@@ -267,7 +143,7 @@ index 0085c71..6453b33 100644
      tol: float,
      phase: str = "seed",
      metrics_dir: Path | None = None,
-@@ -280,6 +675,9 @@ def _bench_and_score(
+@@ -280,6 +338,9 @@ def _bench_and_score(
              device_idx,
              warmup,
              repeat,
@@ -277,15 +153,15 @@ index 0085c71..6453b33 100644
              tol,
              child_conn,
          ),
-@@ -291,9 +689,33 @@ def _bench_and_score(
+@@ -291,9 +352,33 @@ def _bench_and_score(
      except Exception:
          pass
-
+ 
 -    # Wait for child and receive the payload
 -    p.join()
 -    payload = parent_conn.recv() if parent_conn.poll() else None
 +    # Wait for child and receive the payload (with timeout to avoid deadlock on hung kernels).
-+    timeout_sec = max(1, int(os.environ.get("CUDAFORGE_SUBPROC_TIMEOUT_SEC", "300")))
++    timeout_sec = 300
 +    p.join(timeout=timeout_sec)
 +    if p.is_alive():
 +        try:
@@ -314,53 +190,21 @@ index 0085c71..6453b33 100644
      try:
          parent_conn.close()
      except Exception:
-@@ -366,8 +788,9 @@ def _bench_and_score(
-         except Exception as save_exc:
-             print(f"[{phase}] WARNING: failed to save metrics: {save_exc}")
-
--    # Light cleanup in parent (not required, but safer)
--    if torch.cuda.is_available():
-+    # Light cleanup in parent. Can be disabled to avoid hangs after GPU faults.
-+    do_parent_cleanup = os.environ.get("CUDAFORGE_PARENT_CLEANUP", "0") == "1"
-+    if do_parent_cleanup and torch.cuda.is_available():
-         try:
-             torch.cuda.synchronize(device_idx)
-         except Exception:
-@@ -458,7 +881,11 @@ def _append_usage_totals(log_path: Path) -> Dict[str, int]:
-
-
- # --------------------- single-task run -----------------
--def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
-+def _run_single_task(
-+    task_path: Path,
-+    args,
-+    batch_dir: Path,
-+) -> Dict[str, Any]:
-     # --- per-task directories under the SAME batch_dir
-     task_root = (batch_dir / task_path.stem).resolve()
-     code_dir = task_root / "code"
-@@ -481,6 +908,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
-         f.write(content)
-
-     call_llm = _make_llm_caller(args)
-+    prompt_gpu_name = _resolve_prompt_gpu_name(args.gpu)
-
-     current_kernel: Optional[KernelIndividual] = None
-     best_kernel: Optional[KernelIndividual] = None
-@@ -495,17 +923,20 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
-
+@@ -495,7 +580,12 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+ 
          if round_idx == 0:
              print("[Seed] Generating the initial kernel ...")
 -            seed_prompt = build_seed_prompt(arch_path=task_path, gpu_name=args.gpu)
-+            seed_prompt = build_seed_prompt(arch_path=task_path, gpu_name=prompt_gpu_name, backend=args.backend)
++            seed_prompt = build_seed_prompt(
++                arch_path=task_path,
++                gpu_name=args.gpu,
++                backend=args.backend,
++                hip_fewshot_new=args.hip_fewshot_new,
++            )
              prompt_file = io_dir / f"round{round_idx:03d}_seed_prompt.txt"
              prompt_file.write_text(seed_prompt, encoding="utf-8")
              ind = _llm_to_kernel(seed_prompt, code_dir, call_llm, io_dir,
--                                 round_idx, log_path=log_path, call_type="seed")
-+                                 round_idx, backend=args.backend, log_path=log_path, call_type="seed")
-             _bench_and_score(
-                 ind,
-                 ref_py=task_path,
+@@ -506,6 +596,9 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                  device_idx=args.device,
                  warmup=args.warmup,
                  repeat=args.repeat,
@@ -370,8 +214,8 @@ index 0085c71..6453b33 100644
                  tol=args.tol,
                  phase="seed",
                  metrics_dir=eval_dir,
-@@ -521,7 +953,8 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
-
+@@ -521,7 +614,8 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+ 
                  problem_system_prompt, problem_prompt = build_correctness_prompts(error_log=error_log,
                                                                                    arch_path=task_path,
 -                                                                                  cuda_code=current_kernel.code)
@@ -380,7 +224,7 @@ index 0085c71..6453b33 100644
                  prompt_file = io_dir / f"round{round_idx:03d}_problem_identify_prompt.txt"
                  prompt_file.write_text(problem_prompt, encoding="utf-8")
                  raw = call_llm(problem_prompt, problem_system_prompt, log_path=log_path,
-@@ -535,17 +970,21 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -535,6 +629,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                      error_log=error_log,
                      problem=problem_json,
                      gpu_name=args.gpu,
@@ -388,12 +232,7 @@ index 0085c71..6453b33 100644
                  )
                  prompt_file = io_dir / f"round{round_idx:03d}_repair_prompt.txt"
                  prompt_file.write_text(repair_prompt, encoding="utf-8")
-                 ind = _llm_to_kernel(repair_prompt, code_dir, call_llm, io_dir,
--                                     round_idx, log_path=log_path, call_type="repair")
-+                                     round_idx, backend=args.backend, log_path=log_path, call_type="repair")
-                 _bench_and_score(
-                     ind,
-                     ref_py=task_path,
+@@ -546,6 +641,9 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                      device_idx=args.device,
                      warmup=args.warmup,
                      repeat=args.repeat,
@@ -403,7 +242,7 @@ index 0085c71..6453b33 100644
                      tol=args.tol,
                      phase="repair",
                      metrics_dir=eval_dir,
-@@ -555,41 +995,92 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -555,29 +653,73 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                  kernel_names = extract_cuda_kernel_names(test_kernel)
                  print("=============================================================")
                  print(f"Detected kernel names: {kernel_names}")
@@ -431,13 +270,12 @@ index 0085c71..6453b33 100644
 +                if args.backend == "cuda":
 +                    try:
 +                        csv_path = profile_bench(
-+                            bench_py=f"bench_ref_inputs_{args.subproc_id}.py", out_csv=f"ncu_temp_{args.subproc_id}.csv")
++                            bench_py=f"bench_ref_inputs_{args.subproc_id}.py",
++                            out_csv=str(eval_dir / f"ncu_temp_{args.subproc_id}.csv"),
++                        )
 +                        metrics_df = load_ncu_metrics(csv_path, extra_keep=("Kernel Name",),
 +                                                      name_list=kernel_names, select="last")
 +                        metrics_block = metrics_to_prompt(metrics_df)
-+                        max_metrics_chars = int(os.environ.get("CUDAFORGE_METRICS_PROMPT_MAX_CHARS", "120000"))
-+                        if len(metrics_block) > max_metrics_chars:
-+                            metrics_block = metrics_block[:max_metrics_chars]
 +                        sys_judge__prompt, judge_prompt = build_judger_optimization_prompts(
 +                            arch_path=task_path,
 +                            gpu_name=args.gpu,
@@ -458,14 +296,11 @@ index 0085c71..6453b33 100644
 +                    try:
 +                        csv_path = profile_bench_rocm(
 +                            bench_py=f"bench_ref_inputs_{args.subproc_id}.py",
-+                            out_csv=f"rocprof_temp_{args.subproc_id}.csv",
++                            out_csv=eval_dir / f"rocprof_temp_{args.subproc_id}.csv",
 +                            kernel_names=kernel_names,
 +                        )
 +                        metrics_df = load_rocm_metrics(csv_path, name_list=kernel_names, select="last")
 +                        metrics_block = metrics_to_prompt_rocm(metrics_df, compact=True)
-+                        max_metrics_chars = int(os.environ.get("CUDAFORGE_METRICS_PROMPT_MAX_CHARS", "120000"))
-+                        if len(metrics_block) > max_metrics_chars:
-+                            metrics_block = metrics_block[:max_metrics_chars]
 +                        sys_judge__prompt, judge_prompt = build_judger_optimization_prompts(
 +                            arch_path=task_path,
 +                            gpu_name=args.gpu,
@@ -490,23 +325,16 @@ index 0085c71..6453b33 100644
 +                        "optimisation method": "apply one backend-compatible optimization while preserving correctness",
 +                        "modification plan": f"target lower latency than current avg {latency_avg}",
 +                    }
-
+ 
                  history_block = _build_history_block(code_dir, keep_last=0)
                  opt_prompt = build_optimization_prompt(
                      arch_path=current_kernel.code_path,  # type: ignore[union-attr]
--                    gpu_name=args.gpu,
-+                    gpu_name=prompt_gpu_name,
+                     gpu_name=args.gpu,
 +                    backend=args.backend,
                      optimization_suggestion=strategy_json
                  )
                  prompt_file = io_dir / f"round{round_idx:03d}_opt_prompt.txt"
-                 prompt_file.write_text(opt_prompt, encoding="utf-8")
-                 ind = _llm_to_kernel(opt_prompt, code_dir, call_llm, io_dir, round_idx,
--                                     log_path=log_path, call_type="optimization")
-+                                     backend=args.backend, log_path=log_path, call_type="optimization")
-                 _bench_and_score(
-                     ind,
-                     ref_py=task_path,
+@@ -590,6 +732,9 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                      device_idx=args.device,
                      warmup=args.warmup,
                      repeat=args.repeat,
@@ -516,42 +344,3 @@ index 0085c71..6453b33 100644
                      tol=args.tol,
                      phase="opt",
                      metrics_dir=eval_dir,
-@@ -671,6 +1157,11 @@ def _save_global_summary(batch_dir: Path, summary: List[Dict[str, Any]], avg_spe
- # --------------------------- main ----------------------
- def main():
-     args = _build_arg_parser().parse_args()
-+    _validate_backend_gpu_combo(backend=args.backend, gpu_name=args.gpu)
-+    print(
-+        f"[CONFIG] backend={args.backend}, gpu={args.gpu}, "
-+        f"profiler_feedback={args.enable_profiler_feedback}"
-+    )
-
-     all_tasks = _collect_tasks(args.arch_py)
-
-@@ -679,19 +1170,23 @@ def main():
-     run_tag = _build_run_tag(args.server_type, args.model_name)
-     # batch name hints: single file uses file stem; directory uses 'batch'
-     if args.arch_py.is_file():
--        batch_name = f"{stamp}_{args.arch_py.stem}_{run_tag}"
-+        batch_name = f"{stamp}_{args.arch_py.stem}_{args.backend}_{run_tag}"
-     else:
-         # include sampling info for traceability
-         pick_note = f"first{args.first_n}" if (args.first_n and args.first_n >
-                                                0) else f"num{args.num_tasks}_seed{args.shuffle_seed}"
--        batch_name = f"{stamp}_batch_{pick_note}_{run_tag}"
-+        batch_name = f"{stamp}_batch_{args.backend}_{pick_note}_{run_tag}"
-     batch_dir = (args.work_dir / batch_name).resolve()
-     batch_dir.mkdir(parents=True, exist_ok=True)
-     print(f"[BATCH] Output folder: {batch_dir}")
-
-     # single file → run once (still inside the same batch folder)
-     if args.arch_py.is_file():
--        res = _run_single_task(all_tasks[0], args, batch_dir=batch_dir)
-+        res = _run_single_task(
-+            all_tasks[0],
-+            args,
-+            batch_dir=batch_dir,
-+        )
-         summary = [res]
-         avg_speedup = res["best_score"]
-         accuracy = 1.0 if res["best_runnable"] else 0.0

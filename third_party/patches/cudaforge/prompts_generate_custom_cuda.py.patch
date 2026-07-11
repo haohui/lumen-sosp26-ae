@@ -1,26 +1,8 @@
 diff --git a/prompts/generate_custom_cuda.py b/prompts/generate_custom_cuda.py
-index 4cfa22c..c05efdd 100644
+index 4cfa22c..5a0d902 100644
 --- a/prompts/generate_custom_cuda.py
 +++ b/prompts/generate_custom_cuda.py
-@@ -13,7 +13,7 @@ CLI usage
- ---------
- ```bash
- python -m prompts.build_prompt KernelBench/level1/19_ReLU.py \
--       --gpu "Quadro RTX 6000" -o prompt.txt
-+       --gpu "MI300X" -o prompt.txt
- ```
- """
- 
-@@ -32,6 +32,8 @@ HW_FILE = ROOT / "prompts/hardware/gpu_specs.py"  # GPU spec table
- # --------------------------------------------------
- FEWSHOT_BASE = ROOT / "prompts/few_shot/model_ex_add.py"   # original Model
- FEWSHOT_NEW = ROOT / "prompts/few_shot/model_new_ex_add.py"  # optimised ModelNew
-+FEWSHOT_BASE_HIP = ROOT / "prompts/few_shot_hip/model_ex_add.py"
-+FEWSHOT_NEW_HIP = ROOT / "prompts/few_shot_hip/model_new_ex_add.py"
- 
- # ---------------------------------------------------------------------------
- # Prompt template (with diversity requirement)
-@@ -39,20 +41,20 @@ FEWSHOT_NEW = ROOT / "prompts/few_shot/model_new_ex_add.py"  # optimised ModelNe
+@@ -39,20 +39,20 @@ FEWSHOT_NEW = ROOT / "prompts/few_shot/model_new_ex_add.py"  # optimised ModelNe
  test = Template(
      dedent(
          """ 
@@ -45,7 +27,7 @@ index 4cfa22c..c05efdd 100644
  ‘‘‘
  $few_new
  ‘‘‘
-@@ -65,7 +67,7 @@ And the kernel you need to implement is:
+@@ -65,7 +65,7 @@ And the kernel you need to implement is:
  $kernel_src
  ```
  
@@ -54,7 +36,7 @@ index 4cfa22c..c05efdd 100644
  output architecture ModelNew. Output the new code in codeblocks. Please generate real
  code, NOT pseudocode, make sure the code compiles and is fully functional. Just output
  the new model code, no other text, and NO testing code!
-@@ -77,7 +79,7 @@ TEMPLATE = Template(
+@@ -77,7 +77,7 @@ TEMPLATE = Template(
          """
  Task
  ----
@@ -63,7 +45,7 @@ index 4cfa22c..c05efdd 100644
  inside the original `class Model` (shown later).  You may fuse multiple
  operators into a single kernel if that yields better performance.  Leave any
  non‑replaced parts of the model unchanged.
-@@ -85,9 +87,9 @@ non‑replaced parts of the model unchanged.
+@@ -85,11 +85,11 @@ non‑replaced parts of the model unchanged.
  OUTPUT RULES (STRICT) ────────────────────────────────────────────────
  1. Inside the block, follow **exactly** this order:
     1. Imports – `torch`, `torch.nn`, `load_inline`.
@@ -75,7 +57,9 @@ index 4cfa22c..c05efdd 100644
 -      your CUDA kernels.
 +      your $BACKEND_LABEL kernels.
  2. **Do NOT include** testing code, `if __name__ == "__main__"`, or extra prose.
-@@ -108,7 +110,7 @@ Target architecture (to optimise):
+ 
+ 
+@@ -108,7 +108,7 @@ Target architecture (to optimise):
  $arch_src
  ```
  
@@ -84,7 +68,7 @@ index 4cfa22c..c05efdd 100644
  output architecture ModelNew. Output the new code in codeblocks. Please generate real
  code, NOT pseudocode, make sure the code compiles and is fully functional. Just output
  the new model code, no other text, and NO testing code!
-@@ -122,8 +124,8 @@ Example:
+@@ -122,8 +122,8 @@ Example:
      )
  )
  default_system_prompt = """\
@@ -95,15 +79,16 @@ index 4cfa22c..c05efdd 100644
  
  OUTPUT RULES (STRICT):
  output the code within:
-@@ -158,6 +160,7 @@ def _load_gpu_spec() -> dict:  # noqa: D401
+@@ -158,6 +158,8 @@ def _load_gpu_spec() -> dict:  # noqa: D401
  def build_seed_prompt(
      arch_path: Path,
      gpu_name: str | None = None,
 +    backend: str = "cuda",
++    hip_fewshot_new: Path | None = None,
  ) -> str:
      """Build LLM prompt for CUDA‑kernel optimisation (seed generation)."""
      gpu_info = _load_gpu_spec()
-@@ -170,24 +173,34 @@ def build_seed_prompt(
+@@ -170,24 +172,33 @@ def build_seed_prompt(
          except Exception as exc:  # pragma: no cover
              raise RuntimeError("CUDA device not found – pass --gpu <name>.") from exc
  
@@ -124,15 +109,13 @@ index 4cfa22c..c05efdd 100644
          f"• {k}: {v}" for k, v in info.items() if k != "GPU Architecture"
      ) if gpu_arch != "Unknown" else "Not Specified"
  
--    few_base = FEWSHOT_BASE.read_text().strip()
--    few_new = FEWSHOT_NEW.read_text().strip()
 +    backend_is_hip = (backend or "cuda").lower() == "hip"
 +    backend_label = "HIP/ROCm" if backend_is_hip else "CUDA"
-+    few_base_path = FEWSHOT_BASE_HIP if backend_is_hip and FEWSHOT_BASE_HIP.exists() else FEWSHOT_BASE
-+    few_new_path = FEWSHOT_NEW_HIP if backend_is_hip and FEWSHOT_NEW_HIP.exists() else FEWSHOT_NEW
++    few_new_path = hip_fewshot_new if backend_is_hip and hip_fewshot_new is not None else FEWSHOT_NEW
 +
-+    few_base = few_base_path.read_text().strip()
-+    few_new = few_new_path.read_text().strip()
+     few_base = FEWSHOT_BASE.read_text().strip()
+-    few_new = FEWSHOT_NEW.read_text().strip()
++    few_new = Path(few_new_path).read_text().strip()
      kernel_src = Path(arch_path).read_text().strip()
  
      return test.substitute(
@@ -145,3 +128,22 @@ index 4cfa22c..c05efdd 100644
      )
  
  
+@@ -202,10 +213,17 @@ def _cli() -> None:  # noqa: D401
+     )
+     parser.add_argument("model_py", help="Path to .py containing class Model")
+     parser.add_argument("--gpu", default=None, help="GPU name key in gpu_specs.py")
++    parser.add_argument("--backend", choices=["cuda", "hip"], default="cuda", help="GPU backend")
++    parser.add_argument("--hip-fewshot-new", type=Path, default=None, help="HIP ModelNew few-shot example")
+     parser.add_argument("-o", "--out", help="Save prompt to file")
+     args = parser.parse_args()
+ 
+-    prompt = build_seed_prompt(Path(args.model_py), args.gpu)
++    prompt = build_seed_prompt(
++        Path(args.model_py),
++        args.gpu,
++        backend=args.backend,
++        hip_fewshot_new=args.hip_fewshot_new,
++    )
+ 
+     if args.out:
+         Path(args.out).write_text(prompt)

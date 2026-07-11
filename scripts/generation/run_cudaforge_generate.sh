@@ -46,6 +46,7 @@ TASK="$(canonical_task "${TASK}")"
 PROMPT_ROOT="${PROMPT_ROOT:-${REPO_ROOT}/scripts/generation/prompts}"
 STAGE_SCRIPT="${REPO_ROOT}/scripts/generation/stage_cudaforge_output.py"
 CUDAFORGE_ROOT="${CUDAFORGE_ROOT:-${THIRD_PARTY_ROOT}/CUDAForge}"
+HIP_FEWSHOT_NEW_PATH="${HIP_FEWSHOT_NEW_PATH:-${PROMPT_ROOT}/cudaforge/few_shot_hip/model_new_ex_add.py}"
 REF_PATH="$(task_reference_path "${TASK}")"
 RUN_TAG="${RUN_TAG:-${TASK}_cudaforge_$(date -u +%Y%m%d_%H%M%S)}"
 TRACE_ROOT="${TRACE_ROOT:-$(resolve_repo_path "logs/generation/$(task_data_dir "${TASK}")")/${RUN_TAG}}"
@@ -57,6 +58,7 @@ configure_api_provider
 require_generation_key
 ensure_path "${CUDAFORGE_ROOT}"
 ensure_path "${REF_PATH}"
+ensure_path "${HIP_FEWSHOT_NEW_PATH}"
 
 run_with_trace "02_cudaforge_${TASK}_${SERVER_TYPE}" "
 set -euo pipefail
@@ -68,6 +70,7 @@ export ROCR_VISIBLE_DEVICES='${ROCR_VISIBLE_DEVICES}'
 python3 main.py '${REF_PATH}' \
   --backend hip \
   --gpu MI300X \
+  --hip-fewshot-new '${HIP_FEWSHOT_NEW_PATH}' \
   --server_type '${SERVER_TYPE}' \
   --model_name '${MODEL_NAME}' \
   --reasoning_effort '${REASONING_EFFORT}' \

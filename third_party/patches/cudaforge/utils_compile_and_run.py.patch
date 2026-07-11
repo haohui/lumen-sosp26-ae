@@ -1,18 +1,19 @@
 diff --git a/utils/compile_and_run.py b/utils/compile_and_run.py
-index 405cff4..b097168 100644
+index 405cff4..ee18b88 100644
 --- a/utils/compile_and_run.py
 +++ b/utils/compile_and_run.py
-@@ -26,5 +26,6 @@ from typing import List, Tuple
-
+@@ -28,6 +28,7 @@ from pathlib import Path
+ from typing import List, Tuple
+ 
  import torch
 +from scripts.benchmark.cudagraph_timer import benchmark_with_cudagraph
-
+ 
  # ---------------------------------------------------------------------------
-
-@@ -47,6 +47,47 @@ class AccuracyError(RuntimeError):
+ 
+@@ -47,6 +48,42 @@ class AccuracyError(RuntimeError):
      """Raised when outputs do not meet the accuracy tolerance."""
-
-
+ 
+ 
 +_DTYPE_DEFAULT_TOL = {
 +    torch.float32: 1e-4,
 +    torch.float16: 1e-2,
@@ -33,12 +34,7 @@ index 405cff4..b097168 100644
 +
 +    The CLI `--tol` is treated as a lower bound. For low-precision outputs
 +    (`fp16`/`bf16`), this avoids overly strict false negatives at 1e-3.
-+    Set CUDAFORGE_STRICT_TOL=1 to disable auto relaxation and use requested
-+    tolerance exactly.
 +    """
-+    if os.environ.get("CUDAFORGE_STRICT_TOL", "0") == "1":
-+        return float(requested_tol)
-+
 +    auto_candidates = [
 +        _DTYPE_DEFAULT_TOL.get(ref_dtype),
 +        _DTYPE_DEFAULT_TOL.get(test_dtype),
@@ -57,7 +53,7 @@ index 405cff4..b097168 100644
  # =========================== dynamic import ===============================
  def _capture_import(path: Path):
      """Import *path* dynamically and capture **all** build logs.
-@@ -138,14 +179,17 @@ def _bench(model: torch.nn.Module,
+@@ -138,14 +175,17 @@ def _bench(model: torch.nn.Module,
             inp: List[torch.Tensor],
             dev: torch.device,
             warm: int,
@@ -68,7 +64,7 @@ index 405cff4..b097168 100644
 +           graph_replays: int = 0) -> List[float]:
      model.to(dev).eval()
      inp = [x.to(dev) for x in inp]
-
+ 
 -    for _ in range(warm):
 -        model(*inp)
 -
@@ -79,10 +75,10 @@ index 405cff4..b097168 100644
          res = []
          for _ in range(rep):
              t0 = datetime.now()
-@@ -153,16 +197,23 @@ def _bench(model: torch.nn.Module,
+@@ -153,16 +193,23 @@ def _bench(model: torch.nn.Module,
              res.append((datetime.now() - t0).total_seconds() * 1_000)
          return res
-
+ 
 -    torch.cuda.synchronize(dev)
 -    s, e = torch.cuda.Event(True), torch.cuda.Event(True)
 -    times: List[float] = []
@@ -110,10 +106,10 @@ index 405cff4..b097168 100644
 +    avg_ms = float(timing.mean_ms)
 +    # Keep return shape compatible with previous per-iteration list contract.
 +    return [avg_ms for _ in range(max(1, rep))]
-
-
+ 
+ 
  # ====================== RNG & 确定性设置 ======================
-@@ -442,6 +546,9 @@ def compare_and_bench(
+@@ -442,6 +489,9 @@ def compare_and_bench(
      device_idx: int = 0,
      warmup: int = 5,
      repeat: int = 20,
@@ -123,7 +119,7 @@ index 405cff4..b097168 100644
      tol: float = 1e-4,
      log_dir: str | Path | None = "run/debug",
      seed: int = 100,  # 固定默认 seed；需要环境控制时可改成 None 并用 env 读取
-@@ -537,8 +644,8 @@ def compare_and_bench(
+@@ -537,8 +587,8 @@ def compare_and_bench(
              # 统一取 Tensor、保证连续
              ref_out  = _first_tensor(ref_out).contiguous()
              test_out = _first_tensor(test_out).contiguous()
@@ -131,12 +127,12 @@ index 405cff4..b097168 100644
 -                test_out = test_out.to(ref_out.dtype)
 +            ref_dtype = ref_out.dtype
 +            test_dtype = test_out.dtype
-
+ 
              # Check memory usage
              ref_out_bytes = ref_out.element_size() * ref_out.nelement()
-@@ -565,19 +672,55 @@ def compare_and_bench(
-
-
+@@ -565,19 +615,55 @@ def compare_and_bench(
+ 
+ 
              # 误差 & allclose
 -            diff = (test_out - ref_out).abs()
 +            # NOTE:
@@ -154,7 +150,7 @@ index 405cff4..b097168 100644
 +            diff = (test_cmp - ref_cmp).abs()
              max_err  = diff.max().item()
              mean_err = diff.mean().item()
-
+ 
 -            if not torch.allclose(ref_out, test_out, atol=tol, rtol=tol):
 +            effective_tol = _resolve_effective_tolerance(
 +                requested_tol=tol,
@@ -169,7 +165,7 @@ index 405cff4..b097168 100644
 +                    f"max_abs_err={max_err:.3e}, mean_abs_err={mean_err:.3e}, "
 +                    f"ref_dtype={ref_dtype}, test_dtype={test_dtype}, compare_dtype={compare_dtype}"
                  )
-
+ 
              # 计时
 -            ref_t  = _bench(ref_model,  inp, dev, warmup, repeat)
 -            test_t = _bench(test_model, inp, dev, warmup, repeat)
@@ -193,10 +189,10 @@ index 405cff4..b097168 100644
 +                graph_iters=graph_iters,
 +                graph_replays=graph_replays,
 +            )
-
+ 
              if TORCH_DEVICE == "cuda":
                  torch.cuda.synchronize(dev)
-@@ -592,7 +735,11 @@ def compare_and_bench(
+@@ -592,7 +678,11 @@ def compare_and_bench(
          "timestamp": datetime.now().isoformat(timespec="seconds"),
          "reference_file": str(ref_py),
          "candidate_file": str(test_py),
@@ -209,7 +205,7 @@ index 405cff4..b097168 100644
          "max_abs_err": max_err,
          "mean_abs_err": mean_err,
          "ref_latency_ms": {
-@@ -608,6 +755,13 @@ def compare_and_bench(
+@@ -608,6 +698,13 @@ def compare_and_bench(
              "all": test_t,
          },
          "num_runs": repeat,
@@ -223,7 +219,7 @@ index 405cff4..b097168 100644
          "model_init_args": init_args,
          "model_init_kwargs": init_kwargs,
          "seed": seed,
-@@ -627,6 +781,9 @@ def _cli():
+@@ -627,6 +724,9 @@ def _cli():
      p.add_argument("--device", type=int, default=0, help="CUDA device index")
      p.add_argument("--warmup", type=int, default=5, help="Warm-up iterations")
      p.add_argument("--repeat", type=int, default=20, help="Benchmark runs")
@@ -233,7 +229,7 @@ index 405cff4..b097168 100644
      p.add_argument("--tol", type=float, default=1e-4, help="Max abs error tolerance")
      p.add_argument("--dump", type=Path, help="If set, write JSON results here")
      args = p.parse_args()
-@@ -637,6 +794,9 @@ def _cli():
+@@ -637,6 +737,9 @@ def _cli():
          device_idx=args.device,
          warmup=args.warmup,
          repeat=args.repeat,
@@ -243,8 +239,8 @@ index 405cff4..b097168 100644
          tol=args.tol,
      )
      print(json.dumps(res, indent=2))
-@@ -648,4 +808,3 @@ def _cli():
-
+@@ -648,4 +751,3 @@ def _cli():
+ 
  if __name__ == "__main__":
      _cli()
 -

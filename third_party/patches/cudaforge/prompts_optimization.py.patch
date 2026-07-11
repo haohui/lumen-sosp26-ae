@@ -11,13 +11,13 @@ index 57e0a04..17c9f5f 100644
 @@ -18,9 +19,9 @@ $gpu_items
  # ----------  Previously generated kernels ----------
  $history_block
-
+ 
 -You are a CUDA-kernel optimization specialist.
 +You are a $BACKEND_LABEL-kernel optimization specialist.
-
+ 
 -Analyze the provided architecture and kernel history and **strictly apply the following STRATEGY** to produce an improved CUDA kernel.
 +Analyze the provided architecture and kernel history and **strictly apply the following STRATEGY** to produce an improved $BACKEND_LABEL kernel.
-
+ 
  [ARCHITECTURE FILE]
  ```python
 @@ -39,11 +40,11 @@ GOAL
@@ -32,7 +32,7 @@ index 57e0a04..17c9f5f 100644
 -      your CUDA kernels.
 +      your $BACKEND_LABEL kernels.
  2. **Do NOT include** testing code, `if __name__ == "__main__"`, or extra prose.
-
+ 
  ```python
 @@ -82,6 +83,7 @@ def _format_problem(problem: Optional[Any]) -> str:
  def build_optimization_prompt(
@@ -45,7 +45,7 @@ index 57e0a04..17c9f5f 100644
 @@ -96,16 +98,21 @@ def build_optimization_prompt(
          except Exception as exc:
              raise RuntimeError("CUDA device not found – pass --gpu <name>.") from exc
-
+ 
 -    if gpu_name not in gpu_info:
 -        raise KeyError(f"{gpu_name} not present in GPU_SPEC_INFO")
 -
@@ -60,7 +60,7 @@ index 57e0a04..17c9f5f 100644
 +        }
      gpu_arch = info.get("GPU Architecture", "Unknown")
      gpu_items = "\n".join(f"• {k}: {v}" for k, v in info.items() if k != "GPU Architecture")
-
+ 
      arch_src = Path(arch_path).read_text().strip()
      hist = history_block or "(None)\n"
      optimization_suggestion_text = _format_problem(optimization_suggestion)

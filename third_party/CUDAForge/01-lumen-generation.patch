@@ -1,4 +1,3 @@
-
 diff --git a/agents/query_server.py b/agents/query_server.py
 index 6ffb8d3..986d5e0 100644
 --- a/agents/query_server.py
@@ -34,31 +33,31 @@ index 6ffb8d3..986d5e0 100644
          if isinstance(prompt, str):
              messages = [
                  {"role": "system", "content": system_prompt},
-
 diff --git a/main.py b/main.py
-index 0085c71..a8cb518 100644
+index 0085c71..fab3bf8 100644
 --- a/main.py
 +++ b/main.py
-@@ -23,6 +23,18 @@ from prompts.error import build_error_prompt
+@@ -10,6 +10,11 @@ from datetime import datetime
+ from pathlib import Path
+ from typing import Optional, List, Dict, Any
+ from run_ncu import profile_bench, load_ncu_metrics, metrics_to_prompt
++from run_rocprof import (
++    load_rocm_metrics,
++    metrics_to_prompt_rocm,
++    profile_bench_rocm,
++)
+ import matplotlib
+ matplotlib.use("Agg")  # headless save
+ import matplotlib.pyplot as plt
+@@ -23,6 +28,7 @@ from prompts.error import build_error_prompt
  from prompts.optimization import build_optimization_prompt
  from prompts.judger_repair import build_correctness_prompts
  from prompts.judger_optimization import build_judger_optimization_prompts
 +
-+try:
-+    from scripts.generation.profiler_tools import (
-+        load_rocm_metrics,
-+        metrics_to_prompt_rocm,
-+        profile_bench_rocm,
-+    )
-+except Exception:
-+    profile_bench_rocm = None
-+    load_rocm_metrics = None
-+    metrics_to_prompt_rocm = None
-+
  _INVOCATION_SPLITTER = "Invoked with:"
  
  def _sanitize_error_message(exc: Exception) -> str:
-@@ -45,20 +57,37 @@ def _build_arg_parser() -> argparse.ArgumentParser:
+@@ -45,15 +51,24 @@ def _build_arg_parser() -> argparse.ArgumentParser:
      p.add_argument("--server_address", default="localhost", help="LLM server address (for vllm/sglang)")
      p.add_argument("--server_port", type=int, default=8000, help="LLM server port (for vllm/sglang)")
      p.add_argument("--model_name", default="deepseek-ai/deepseek-coder-6.7b-instruct", help="LLM model")
@@ -70,9 +69,6 @@ index 0085c71..a8cb518 100644
      p.add_argument("--warmup", type=int, default=5, help="Warm-up iterations")
      p.add_argument("--repeat", type=int, default=20, help="Timed iterations per benchmark")
 -    p.add_argument("--tol", type=float, default=1e-3, help="Max |err| tolerated")
-+    p.add_argument("--graph_warmup", type=int, default=-1, help="CUDA graph warm-up iterations (-1 uses --warmup)")
-+    p.add_argument("--graph_iters", type=int, default=10, help="CUDA graph iterations per replay")
-+    p.add_argument("--graph_replays", type=int, default=0, help="CUDA graph replay count (0 derives from --repeat)")
 +    p.add_argument("--tol", type=float, default=1e-2, help="Max abs/relative error tolerance")
      p.add_argument("--max_tokens", type=int, default=16384, help="LLM max new tokens")
      p.add_argument("--temperature", type=float, default=0.2, help="LLM temperature")
@@ -88,17 +84,7 @@ index 0085c71..a8cb518 100644
      # multi-task controls
      p.add_argument("--first_n", type=int, default=0, help="When arch_py is a directory, take the first N tasks (sorted)")
      p.add_argument("--num_tasks", type=int, default=1, help="When sampling, how many tasks to pick (if >0 and first_n=0)")
-     p.add_argument("--shuffle_seed", type=int, default=0, help="Random seed for sampling (0 = time)")
-     
-+    p.add_argument(
-+        "--enable_profiler_feedback",
-+        action="store_true",
-+        help="Enable profiler-guided optimization on HIP backend.",
-+    )
-     p.add_argument("--subproc_id", type=int, default=0, help="Identifier for sub-process (e.g., when running multiple in parallel)")
-     
-     return p
-@@ -131,8 +160,23 @@ def _build_history_block(code_dir: Path, keep_last: int = 10) -> str:
+@@ -131,8 +146,23 @@ def _build_history_block(code_dir: Path, keep_last: int = 10) -> str:
      return "## Existing kernels\n" + "\n\n".join(snippets) + "\n"
  
  
@@ -122,7 +108,7 @@ index 0085c71..a8cb518 100644
  
      def call_llm(
          prompt: str,
-@@ -141,15 +185,19 @@ def _make_llm_caller(args):
+@@ -141,15 +171,19 @@ def _make_llm_caller(args):
          call_type: str = "unknown",
          round_idx: int = -1,
      ) -> str:
@@ -143,7 +129,7 @@ index 0085c71..a8cb518 100644
              server_address=args.server_address,
              server_port=args.server_port,
              log_path=str(log_path) if log_path else None,
-@@ -181,6 +229,7 @@ def _llm_to_kernel(
+@@ -181,6 +215,7 @@ def _llm_to_kernel(
          round_idx=round_idx,
      )
      reply_file = io_dir / f"{round_idx}_raw_reply.txt"
@@ -151,47 +137,7 @@ index 0085c71..a8cb518 100644
      reply_file.write_text(raw, encoding="utf-8")
      code = extract_code_block(raw) or raw  # fallback
      path = save_kernel_code(code, code_dir)
-@@ -194,6 +243,9 @@ def _bench_worker_entry(test_py: str,
-                         device_idx: int,
-                         warmup: int,
-                         repeat: int,
-+                        graph_warmup: int,
-+                        graph_iters: int,
-+                        graph_replays: int,
-                         tol: float,
-                         conn) -> None:
-     """
-@@ -215,6 +267,9 @@ def _bench_worker_entry(test_py: str,
-             device_idx=device_idx,
-             warmup=warmup,
-             repeat=repeat,
-+            graph_warmup=(None if graph_warmup < 0 else graph_warmup),
-+            graph_iters=graph_iters,
-+            graph_replays=graph_replays,
-             tol=tol,
-         )
-         conn.send(("ok", res))
-@@ -255,6 +310,9 @@ def _bench_and_score(
-     device_idx: int,
-     warmup: int,
-     repeat: int,
-+    graph_warmup: int,
-+    graph_iters: int,
-+    graph_replays: int,
-     tol: float,
-     phase: str = "seed",
-     metrics_dir: Path | None = None,
-@@ -280,6 +338,9 @@ def _bench_and_score(
-             device_idx,
-             warmup,
-             repeat,
-+            graph_warmup,
-+            graph_iters,
-+            graph_replays,
-             tol,
-             child_conn,
-         ),
-@@ -291,9 +352,33 @@ def _bench_and_score(
+@@ -291,9 +326,33 @@ def _bench_and_score(
      except Exception:
          pass
  
@@ -228,7 +174,7 @@ index 0085c71..a8cb518 100644
      try:
          parent_conn.close()
      except Exception:
-@@ -495,7 +580,12 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -495,7 +554,12 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
  
          if round_idx == 0:
              print("[Seed] Generating the initial kernel ...")
@@ -242,17 +188,7 @@ index 0085c71..a8cb518 100644
              prompt_file = io_dir / f"round{round_idx:03d}_seed_prompt.txt"
              prompt_file.write_text(seed_prompt, encoding="utf-8")
              ind = _llm_to_kernel(seed_prompt, code_dir, call_llm, io_dir,
-@@ -506,6 +596,9 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
-                 device_idx=args.device,
-                 warmup=args.warmup,
-                 repeat=args.repeat,
-+                graph_warmup=args.graph_warmup,
-+                graph_iters=args.graph_iters,
-+                graph_replays=args.graph_replays,
-                 tol=args.tol,
-                 phase="seed",
-                 metrics_dir=eval_dir,
-@@ -521,7 +614,8 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -521,7 +585,8 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
  
                  problem_system_prompt, problem_prompt = build_correctness_prompts(error_log=error_log,
                                                                                    arch_path=task_path,
@@ -262,7 +198,7 @@ index 0085c71..a8cb518 100644
                  prompt_file = io_dir / f"round{round_idx:03d}_problem_identify_prompt.txt"
                  prompt_file.write_text(problem_prompt, encoding="utf-8")
                  raw = call_llm(problem_prompt, problem_system_prompt, log_path=log_path,
-@@ -535,6 +629,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -535,6 +600,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                      error_log=error_log,
                      problem=problem_json,
                      gpu_name=args.gpu,
@@ -270,17 +206,7 @@ index 0085c71..a8cb518 100644
                  )
                  prompt_file = io_dir / f"round{round_idx:03d}_repair_prompt.txt"
                  prompt_file.write_text(repair_prompt, encoding="utf-8")
-@@ -546,6 +641,9 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
-                     device_idx=args.device,
-                     warmup=args.warmup,
-                     repeat=args.repeat,
-+                    graph_warmup=args.graph_warmup,
-+                    graph_iters=args.graph_iters,
-+                    graph_replays=args.graph_replays,
-                     tol=args.tol,
-                     phase="repair",
-                     metrics_dir=eval_dir,
-@@ -555,29 +653,73 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -555,16 +621,28 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                  kernel_names = extract_cuda_kernel_names(test_kernel)
                  print("=============================================================")
                  print(f"Detected kernel names: {kernel_names}")
@@ -289,82 +215,32 @@ index 0085c71..a8cb518 100644
 -                metrics_df = load_ncu_metrics(csv_path, extra_keep=("Kernel Name",),
 -                                              name_list=kernel_names, select="last")
 -                metrics_block = metrics_to_prompt(metrics_df)
--                sys_judge__prompt, judge_prompt = build_judger_optimization_prompts(
--                    arch_path=task_path,
--                    gpu_name=args.gpu,
--                    ncu_metrics_block=metrics_block,
--                    cuda_code=current_kernel.code,  # type: ignore[union-attr]
--                )
--                prompt_file = io_dir / f"round{round_idx:03d}_judge_optimization_prompt.txt"
--                prompt_file.write_text(judge_prompt, encoding="utf-8")
--                raw = call_llm(judge_prompt, sys_judge__prompt, log_path=log_path,
--                               call_type="judge_optimization", round_idx=round_idx)
--                reply_file = io_dir / f"{round_idx}_optimization_strategy_reply.txt"
--                reply_file.write_text(raw, encoding="utf-8")
--                strategy_json = extract_json(raw)
-+                strategy_json = None
-+                use_profiler_feedback = args.backend == "cuda" or args.enable_profiler_feedback
-+
 +                if args.backend == "cuda":
-+                    try:
-+                        csv_path = profile_bench(
-+                            bench_py=f"bench_ref_inputs_{args.subproc_id}.py",
-+                            out_csv=str(eval_dir / f"ncu_temp_{args.subproc_id}.csv"),
-+                        )
-+                        metrics_df = load_ncu_metrics(csv_path, extra_keep=("Kernel Name",),
-+                                                      name_list=kernel_names, select="last")
-+                        metrics_block = metrics_to_prompt(metrics_df)
-+                        sys_judge__prompt, judge_prompt = build_judger_optimization_prompts(
-+                            arch_path=task_path,
-+                            gpu_name=args.gpu,
-+                            ncu_metrics_block=metrics_block,
-+                            cuda_code=current_kernel.code,  # type: ignore[union-attr]
-+                            backend=args.backend,
-+                        )
-+                        prompt_file = io_dir / f"round{round_idx:03d}_judge_optimization_prompt.txt"
-+                        prompt_file.write_text(judge_prompt, encoding="utf-8")
-+                        raw = call_llm(judge_prompt, sys_judge__prompt, log_path=log_path,
-+                                       call_type="judge_optimization", round_idx=round_idx)
-+                        reply_file = io_dir / f"{round_idx}_optimization_strategy_reply.txt"
-+                        reply_file.write_text(raw, encoding="utf-8")
-+                        strategy_json = extract_json(raw)
-+                    except Exception as prof_exc:
-+                        print(f"[CUDA profiler] fallback to latency-only mode: {prof_exc}")
-+                elif use_profiler_feedback and profile_bench_rocm and load_rocm_metrics and metrics_to_prompt_rocm:
-+                    try:
-+                        csv_path = profile_bench_rocm(
-+                            bench_py=f"bench_ref_inputs_{args.subproc_id}.py",
-+                            out_csv=eval_dir / f"rocprof_temp_{args.subproc_id}.csv",
-+                            kernel_names=kernel_names,
-+                        )
-+                        metrics_df = load_rocm_metrics(csv_path, name_list=kernel_names, select="last")
-+                        metrics_block = metrics_to_prompt_rocm(metrics_df, compact=True)
-+                        sys_judge__prompt, judge_prompt = build_judger_optimization_prompts(
-+                            arch_path=task_path,
-+                            gpu_name=args.gpu,
-+                            ncu_metrics_block=metrics_block,
-+                            cuda_code=current_kernel.code,  # type: ignore[union-attr]
-+                            backend=args.backend,
-+                        )
-+                        prompt_file = io_dir / f"round{round_idx:03d}_judge_optimization_prompt.txt"
-+                        prompt_file.write_text(judge_prompt, encoding="utf-8")
-+                        raw = call_llm(judge_prompt, sys_judge__prompt, log_path=log_path,
-+                                       call_type="judge_optimization", round_idx=round_idx)
-+                        reply_file = io_dir / f"{round_idx}_optimization_strategy_reply.txt"
-+                        reply_file.write_text(raw, encoding="utf-8")
-+                        strategy_json = extract_json(raw)
-+                    except Exception as prof_exc:
-+                        print(f"[HIP profiler] fallback to latency-only mode: {prof_exc}")
-+
-+                if strategy_json is None:
-+                    latency_avg = getattr(current_kernel, "metrics", {}).get("test_latency_ms", {}).get("avg")
-+                    strategy_json = {
-+                        "bottleneck": f"latency-only mode on backend={args.backend}",
-+                        "optimisation method": "apply one backend-compatible optimization while preserving correctness",
-+                        "modification plan": f"target lower latency than current avg {latency_avg}",
-+                    }
- 
-                 history_block = _build_history_block(code_dir, keep_last=0)
++                    csv_path = profile_bench(
++                        bench_py=f"bench_ref_inputs_{args.subproc_id}.py",
++                        out_csv=str(eval_dir / f"ncu_temp_{args.subproc_id}.csv"),
++                    )
++                    metrics_df = load_ncu_metrics(csv_path, extra_keep=("Kernel Name",),
++                                                  name_list=kernel_names, select="last")
++                    metrics_block = metrics_to_prompt(metrics_df)
++                else:
++                    csv_path = profile_bench_rocm(
++                        bench_py=f"bench_ref_inputs_{args.subproc_id}.py",
++                        out_csv=eval_dir / f"rocprof_temp_{args.subproc_id}.csv",
++                        kernel_names=kernel_names,
++                    )
++                    metrics_df = load_rocm_metrics(csv_path, name_list=kernel_names, select="last")
++                    metrics_block = metrics_to_prompt_rocm(metrics_df)
+                 sys_judge__prompt, judge_prompt = build_judger_optimization_prompts(
+                     arch_path=task_path,
+                     gpu_name=args.gpu,
+                     ncu_metrics_block=metrics_block,
+                     cuda_code=current_kernel.code,  # type: ignore[union-attr]
++                    backend=args.backend,
+                 )
+                 prompt_file = io_dir / f"round{round_idx:03d}_judge_optimization_prompt.txt"
+                 prompt_file.write_text(judge_prompt, encoding="utf-8")
+@@ -578,6 +656,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                  opt_prompt = build_optimization_prompt(
                      arch_path=current_kernel.code_path,  # type: ignore[union-attr]
                      gpu_name=args.gpu,
@@ -372,17 +248,6 @@ index 0085c71..a8cb518 100644
                      optimization_suggestion=strategy_json
                  )
                  prompt_file = io_dir / f"round{round_idx:03d}_opt_prompt.txt"
-@@ -590,6 +732,9 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
-                     device_idx=args.device,
-                     warmup=args.warmup,
-                     repeat=args.repeat,
-+                    graph_warmup=args.graph_warmup,
-+                    graph_iters=args.graph_iters,
-+                    graph_replays=args.graph_replays,
-                     tol=args.tol,
-                     phase="opt",
-                     metrics_dir=eval_dir,
-
 diff --git a/prompts/error.py b/prompts/error.py
 index a72d492..d973a3f 100644
 --- a/prompts/error.py
@@ -471,7 +336,6 @@ index a72d492..d973a3f 100644
 -    )
 \ No newline at end of file
 +    )
-
 diff --git a/prompts/generate_custom_cuda.py b/prompts/generate_custom_cuda.py
 index 4cfa22c..5a0d902 100644
 --- a/prompts/generate_custom_cuda.py
@@ -621,7 +485,6 @@ index 4cfa22c..5a0d902 100644
  
      if args.out:
          Path(args.out).write_text(prompt)
-
 diff --git a/prompts/judger_optimization.py b/prompts/judger_optimization.py
 index 43fdc35..3806eda 100644
 --- a/prompts/judger_optimization.py
@@ -725,7 +588,6 @@ index 43fdc35..3806eda 100644
 -    return system_prompt, instruction
 \ No newline at end of file
 +    return system_prompt, instruction
-
 diff --git a/prompts/judger_repair.py b/prompts/judger_repair.py
 index 6c17768..2ed57f4 100644
 --- a/prompts/judger_repair.py
@@ -783,7 +645,6 @@ index 6c17768..2ed57f4 100644
 +        BACKEND_LABEL=backend_label,
      )
      return system_prompt, instruction
-
 diff --git a/prompts/optimization.py b/prompts/optimization.py
 index 57e0a04..17c9f5f 100644
 --- a/prompts/optimization.py
@@ -862,86 +723,222 @@ index 57e0a04..17c9f5f 100644
 \ No newline at end of file
 +        BACKEND_LABEL=backend_label,
 +    )
-
+diff --git a/run_rocprof.py b/run_rocprof.py
+new file mode 100644
+index 0000000..a052c6f
+--- /dev/null
++++ b/run_rocprof.py
+@@ -0,0 +1,205 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import json
++import math
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++from typing import Any, Optional, Sequence, Union
++
++import numpy as np
++import pandas as pd
++
++__all__ = [
++    "profile_bench_rocm",
++    "load_rocm_metrics",
++    "metrics_to_prompt_rocm",
++]
++
++KERNEL_COLUMNS = (
++    "Kernel Name",
++    "Kernel_Name",
++    "KernelName",
++    "Name",
++)
++VALUE_COLUMNS = (
++    "DurationNs",
++    "Duration_ns",
++    "Duration (ns)",
++    "Duration",
++    "gpu-id",
++    "queue-id",
++    "queue-index",
++    "pid",
++    "tid",
++)
++
++
++def profile_bench_rocm(
++    bench_py: str = "bench_ref_inputs.py",
++    kernel_names: Optional[list[str]] = None,
++    out_csv: Union[str, Path] = "rocprof_temp.csv",
++    repeat: int = 100,
++) -> Path:
++    rocprof_bin = shutil.which("rocprofv3")
++    if not rocprof_bin:
++        raise FileNotFoundError("rocprofv3 was not found in PATH")
++
++    csv_path = Path(out_csv).resolve()
++    out_dir = csv_path.with_suffix("")
++    if out_dir.exists():
++        shutil.rmtree(out_dir)
++    out_dir.mkdir(parents=True, exist_ok=True)
++
++    cmd = [
++        rocprof_bin,
++        "--kernel-trace",
++        "--stats",
++        "--output-format",
++        "csv",
++        "-d",
++        str(out_dir),
++        sys.executable,
++        bench_py,
++        "--repeat",
++        str(repeat),
++    ]
++    print("[rocprofv3] running:", " ".join(cmd))
++    proc = subprocess.run(cmd, text=True, capture_output=True)
++    if proc.returncode != 0:
++        sys.stderr.write(proc.stderr or "")
++        raise SystemExit(proc.returncode)
++
++    raw_csv = _find_kernel_csv(out_dir)
++    df = pd.read_csv(raw_csv, low_memory=False)
++    df = _normalize_columns(df)
++    if kernel_names:
++        df = _filter_kernel_names(df, kernel_names)
++    csv_path.parent.mkdir(parents=True, exist_ok=True)
++    df.to_csv(csv_path, index=False)
++    print(f"[ok] CSV written: {csv_path}")
++    return csv_path
++
++
++def load_rocm_metrics(
++    csv_path: Union[str, Path] = "rocprof_temp.csv",
++    columns: Optional[Sequence[str]] = None,
++    extra_keep: Optional[Sequence[str]] = ("Kernel Name",),
++    coerce_numeric: bool = True,
++    name_list: Optional[Sequence[str]] = None,
++    select: str = "last",
++) -> pd.DataFrame:
++    csv_path = Path(csv_path)
++    if not csv_path.exists():
++        raise FileNotFoundError(f"CSV not found: {csv_path}")
++
++    df = pd.read_csv(csv_path, low_memory=False)
++    df = _normalize_columns(df)
++    if name_list:
++        df = _filter_kernel_names(df, name_list, select=select)
++
++    keep_cols: list[str] = []
++    if extra_keep:
++        keep_cols.extend([c for c in extra_keep if c in df.columns])
++    metric_cols = list(columns) if columns is not None else [
++        c for c in VALUE_COLUMNS if c in df.columns
++    ]
++    keep_cols.extend([c for c in metric_cols if c in df.columns and c not in keep_cols])
++    if keep_cols:
++        df = df[keep_cols].copy()
++
++    if coerce_numeric:
++        for col in df.columns:
++            if col != "Kernel Name":
++                df[col] = pd.to_numeric(df[col], errors="ignore")
++    return df
++
++
++def metrics_to_prompt_rocm(
++    df: pd.DataFrame,
++    key_by: str = "Kernel Name",
++    round_digits: Optional[int] = 3,
++    compact: bool = False,
++    keep_cols: Optional[list[str]] = None,
++) -> str:
++    if df is None or df.empty:
++        return "{}"
++
++    if round_digits is not None:
++        num_cols = df.select_dtypes(include="number").columns
++        if len(num_cols) > 0:
++            df = df.copy()
++            df[num_cols] = df[num_cols].round(round_digits)
++
++    if key_by not in df.columns:
++        rows = [{k: _safe_json(v) for k, v in rec.items()} for rec in df.to_dict("records")]
++        return json.dumps(rows, ensure_ascii=False, indent=None if compact else 2)
++
++    value_cols = [c for c in df.columns if c != key_by]
++    if keep_cols is not None:
++        value_cols = [c for c in value_cols if c in keep_cols]
++
++    data: dict[str, Any] = {}
++    for rec in df[[key_by] + value_cols].to_dict("records"):
++        key = str(rec.pop(key_by))
++        data[key] = {k: _safe_json(v) for k, v in rec.items()}
++    return json.dumps(data, ensure_ascii=False, indent=None if compact else 2)
++
++
++def _find_kernel_csv(out_dir: Path) -> Path:
++    csvs = sorted(out_dir.rglob("*.csv"))
++    for csv_path in csvs:
++        try:
++            header = pd.read_csv(csv_path, nrows=0).columns
++        except Exception:
++            continue
++        if any(col in header for col in KERNEL_COLUMNS):
++            return csv_path
++    raise FileNotFoundError(f"no rocprofv3 kernel CSV found under {out_dir}")
++
++
++def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
++    rename: dict[str, str] = {}
++    for col in df.columns:
++        if col in KERNEL_COLUMNS:
++            rename[col] = "Kernel Name"
++    if rename:
++        df = df.rename(columns=rename)
++    return df
++
++
++def _filter_kernel_names(
++    df: pd.DataFrame,
++    names: Sequence[str],
++    select: str = "last",
++) -> pd.DataFrame:
++    if "Kernel Name" not in df.columns:
++        return df
++    rows = []
++    for name in names:
++        if not name:
++            continue
++        matched = df[df["Kernel Name"].astype(str).str.contains(name, regex=False, na=False)]
++        if matched.empty:
++            continue
++        if select == "first":
++            rows.append(matched.iloc[[0]])
++        elif select == "max_duration" and "DurationNs" in matched.columns:
++            rows.append(matched.sort_values("DurationNs", ascending=False).head(1))
++        else:
++            rows.append(matched.iloc[[-1]])
++    if rows:
++        return pd.concat(rows, ignore_index=True)
++    return df.iloc[0:0].copy()
++
++
++def _safe_json(value: Any) -> Any:
++    if value is None or (isinstance(value, float) and math.isnan(value)):
++        return None
++    if isinstance(value, np.generic):
++        return value.item()
++    if isinstance(value, float) and math.isinf(value):
++        return "inf" if value > 0 else "-inf"
++    return value
 diff --git a/utils/compile_and_run.py b/utils/compile_and_run.py
-index 405cff4..7050b16 100644
+index 405cff4..7fad0dd 100644
 --- a/utils/compile_and_run.py
 +++ b/utils/compile_and_run.py
-@@ -28,6 +28,7 @@ from pathlib import Path
- from typing import List, Tuple
- 
- import torch
-+from scripts.benchmark.cudagraph_timer import benchmark_with_cudagraph
- 
- # ---------------------------------------------------------------------------
- 
-@@ -138,14 +139,17 @@ def _bench(model: torch.nn.Module,
-            inp: List[torch.Tensor],
-            dev: torch.device,
-            warm: int,
--           rep: int) -> List[float]:
-+           rep: int,
-+           graph_warmup: int | None = None,
-+           graph_iters: int = 10,
-+           graph_replays: int = 0) -> List[float]:
-     model.to(dev).eval()
-     inp = [x.to(dev) for x in inp]
- 
--    for _ in range(warm):
--        model(*inp)
--
-     if TORCH_DEVICE == "cpu":
-+        for _ in range(warm):
-+            model(*inp)
-+
-         res = []
-         for _ in range(rep):
-             t0 = datetime.now()
-@@ -153,16 +157,23 @@ def _bench(model: torch.nn.Module,
-             res.append((datetime.now() - t0).total_seconds() * 1_000)
-         return res
- 
--    torch.cuda.synchronize(dev)
--    s, e = torch.cuda.Event(True), torch.cuda.Event(True)
--    times: List[float] = []
--    for _ in range(rep):
--        s.record()
--        model(*inp)
--        e.record()
--        e.synchronize()
--        times.append(s.elapsed_time(e))
--    return times
-+    graph_warmup = warm if graph_warmup is None else graph_warmup
-+    graph_warmup = max(1, graph_warmup)
-+    graph_iters = max(1, graph_iters)
-+    if graph_replays > 0:
-+        repeat_graphs = int(graph_replays)
-+    else:
-+        repeat_graphs = (max(1, rep) + graph_iters - 1) // graph_iters
-+    with torch.cuda.device(dev):
-+        timing = benchmark_with_cudagraph(
-+            lambda: model(*inp),
-+            warmup=graph_warmup,
-+            repeat=max(1, repeat_graphs),
-+            graph_iters=graph_iters,
-+        )
-+    avg_ms = float(timing.mean_ms)
-+    # Keep return shape compatible with previous per-iteration list contract.
-+    return [avg_ms for _ in range(max(1, rep))]
- 
- 
- # ====================== RNG & 确定性设置 ======================
-@@ -442,6 +453,9 @@ def compare_and_bench(
-     device_idx: int = 0,
-     warmup: int = 5,
-     repeat: int = 20,
-+    graph_warmup: int | None = None,
-+    graph_iters: int = 10,
-+    graph_replays: int = 0,
-     tol: float = 1e-4,
-     log_dir: str | Path | None = "run/debug",
-     seed: int = 100,  # 固定默认 seed；需要环境控制时可改成 None 并用 env 读取
-@@ -537,8 +551,8 @@ def compare_and_bench(
+@@ -537,8 +537,8 @@ def compare_and_bench(
              # 统一取 Tensor、保证连续
              ref_out  = _first_tensor(ref_out).contiguous()
              test_out = _first_tensor(test_out).contiguous()
@@ -952,7 +949,7 @@ index 405cff4..7050b16 100644
  
              # Check memory usage
              ref_out_bytes = ref_out.element_size() * ref_out.nelement()
-@@ -565,19 +579,46 @@ def compare_and_bench(
+@@ -565,14 +565,23 @@ def compare_and_bench(
  
  
              # 误差 & allclose
@@ -979,32 +976,7 @@ index 405cff4..7050b16 100644
                  )
  
              # 计时
--            ref_t  = _bench(ref_model,  inp, dev, warmup, repeat)
--            test_t = _bench(test_model, inp, dev, warmup, repeat)
-+            ref_t  = _bench(
-+                ref_model,
-+                inp,
-+                dev,
-+                warmup,
-+                repeat,
-+                graph_warmup=graph_warmup,
-+                graph_iters=graph_iters,
-+                graph_replays=graph_replays,
-+            )
-+            test_t = _bench(
-+                test_model,
-+                inp,
-+                dev,
-+                warmup,
-+                repeat,
-+                graph_warmup=graph_warmup,
-+                graph_iters=graph_iters,
-+                graph_replays=graph_replays,
-+            )
- 
-             if TORCH_DEVICE == "cuda":
-                 torch.cuda.synchronize(dev)
-@@ -593,6 +634,9 @@ def compare_and_bench(
+@@ -593,6 +602,9 @@ def compare_and_bench(
          "reference_file": str(ref_py),
          "candidate_file": str(test_py),
          "tolerance": tol,
@@ -1014,43 +986,16 @@ index 405cff4..7050b16 100644
          "max_abs_err": max_err,
          "mean_abs_err": mean_err,
          "ref_latency_ms": {
-@@ -608,6 +652,13 @@ def compare_and_bench(
-             "all": test_t,
-         },
-         "num_runs": repeat,
-+        "timing_config": {
-+            "warmup": warmup,
-+            "repeat": repeat,
-+            "graph_warmup": warmup if graph_warmup is None else graph_warmup,
-+            "graph_iters": graph_iters,
-+            "graph_replays": graph_replays,
-+        },
-         "model_init_args": init_args,
-         "model_init_kwargs": init_kwargs,
-         "seed": seed,
-@@ -627,7 +678,10 @@ def _cli():
+@@ -627,7 +639,7 @@ def _cli():
      p.add_argument("--device", type=int, default=0, help="CUDA device index")
      p.add_argument("--warmup", type=int, default=5, help="Warm-up iterations")
      p.add_argument("--repeat", type=int, default=20, help="Benchmark runs")
 -    p.add_argument("--tol", type=float, default=1e-4, help="Max abs error tolerance")
-+    p.add_argument("--graph_warmup", type=int, default=-1, help="CUDA graph warm-up iterations (-1 uses --warmup)")
-+    p.add_argument("--graph_iters", type=int, default=10, help="CUDA graph iterations per replay")
-+    p.add_argument("--graph_replays", type=int, default=0, help="CUDA graph replay count (0 derives from --repeat)")
 +    p.add_argument("--tol", type=float, default=1e-2, help="Max abs/relative error tolerance")
      p.add_argument("--dump", type=Path, help="If set, write JSON results here")
      args = p.parse_args()
  
-@@ -637,6 +691,9 @@ def _cli():
-         device_idx=args.device,
-         warmup=args.warmup,
-         repeat=args.repeat,
-+        graph_warmup=(None if args.graph_warmup < 0 else args.graph_warmup),
-+        graph_iters=args.graph_iters,
-+        graph_replays=args.graph_replays,
-         tol=args.tol,
-     )
-     print(json.dumps(res, indent=2))
-@@ -648,4 +705,3 @@ def _cli():
+@@ -648,4 +660,3 @@ def _cli():
  
  if __name__ == "__main__":
      _cli()

@@ -75,7 +75,6 @@ python3 main.py '${REF_PATH}' \
   --model_name '${MODEL_NAME}' \
   --reasoning_effort '${REASONING_EFFORT}' \
   --prompt-suffix-file '${PROMPT_SUFFIX_FILE}' \
-  --enable_profiler_feedback \
   --tol '${CF_TOL}' \
   --device '${GPU_ID}' \
   --round '${ROUNDS}' \

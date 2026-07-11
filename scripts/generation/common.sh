@@ -62,9 +62,10 @@ prepare_prompt_suffix_file() {
   local task="$1"
   local baseline="$2"
   local out="$3"
+  local baseline_prompt_root="${BASELINE_PROMPT_ROOT:-${PROMPT_ROOT}/${baseline}}"
   local common_src="${PROMPT_ROOT}/common/${task}.md"
-  local baseline_common_src="${PROMPT_ROOT}/${baseline}/common.md"
-  local baseline_src="${PROMPT_ROOT}/${baseline}/${task}.md"
+  local baseline_common_src="${baseline_prompt_root}/common.md"
+  local baseline_src="${baseline_prompt_root}/${task}.md"
   ensure_path "${common_src}"
   if [[ "${DRY_RUN:-0}" != "1" ]]; then
     mkdir -p "$(dirname "${out}")"

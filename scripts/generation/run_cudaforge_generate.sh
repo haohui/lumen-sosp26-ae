@@ -48,7 +48,6 @@ STAGE_SCRIPT="${REPO_ROOT}/scripts/generation/stage_cudaforge_output.py"
 CUDAFORGE_ROOT="${CUDAFORGE_ROOT:-${THIRD_PARTY_ROOT}/CUDAForge}"
 CUDAFORGE_RESOURCE_ROOT="${CUDAFORGE_RESOURCE_ROOT:-${REPO_ROOT}/datasets/inference/cudaforge/resources}"
 BASELINE_PROMPT_ROOT="${BASELINE_PROMPT_ROOT:-${CUDAFORGE_RESOURCE_ROOT}/prompts}"
-HIP_FEWSHOT_NEW_PATH="${HIP_FEWSHOT_NEW_PATH:-${BASELINE_PROMPT_ROOT}/few_shot_hip/model_new_ex_add.py}"
 REF_PATH="$(task_reference_path "${TASK}")"
 RUN_TAG="${RUN_TAG:-${TASK}_cudaforge_$(date -u +%Y%m%d_%H%M%S)}"
 TRACE_ROOT="${TRACE_ROOT:-$(resolve_repo_path "logs/generation/$(task_data_dir "${TASK}")")/${RUN_TAG}}"
@@ -58,19 +57,19 @@ configure_api_provider
 require_generation_key
 ensure_path "${CUDAFORGE_ROOT}"
 ensure_path "${REF_PATH}"
-ensure_path "${HIP_FEWSHOT_NEW_PATH}"
+ensure_path "${CUDAFORGE_RESOURCE_ROOT}"
 
 run_with_trace "02_cudaforge_${TASK}_${SERVER_TYPE}" "
 set -euo pipefail
 cd '${CUDAFORGE_ROOT}'
 if [[ -f '${ENV_FILE}' ]]; then set -a; source '${ENV_FILE}'; set +a; fi
 export PYTHONPATH='${REPO_ROOT}'\${PYTHONPATH:+:\"\${PYTHONPATH}\"}
+export CUDAFORGE_PROMPT_PATH_OVERRIDE='${CUDAFORGE_RESOURCE_ROOT}'
 unset CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
 export ROCR_VISIBLE_DEVICES='${ROCR_VISIBLE_DEVICES}'
 python3 main.py '${REF_PATH}' \
   --backend hip \
   --gpu MI300X \
-  --hip-fewshot-new '${HIP_FEWSHOT_NEW_PATH}' \
   --server_type '${SERVER_TYPE}' \
   --model_name '${MODEL_NAME}' \
   --reasoning_effort '${REASONING_EFFORT}' \

@@ -46,7 +46,15 @@ task_data_dir() {
 task_reference_path() {
   local task ref
   task="$(canonical_task "$1")"
-  ref="${REFERENCE_PY:-${PROMPT_ROOT}/${task}/reference.py}"
+  if [[ -n "${REFERENCE_PY:-}" ]]; then
+    ref="${REFERENCE_PY}"
+  else
+    case "${task}" in
+      attention) ref="datasets/inference/kernelbench/2_attention.py" ;;
+      gemm) ref="datasets/inference/kernelbench/1_gemm.py" ;;
+      moe) ref="datasets/inference/kernelbench/3_fused_moe.py" ;;
+    esac
+  fi
   resolve_repo_path "${ref}"
 }
 
@@ -122,5 +130,15 @@ run_with_trace() {
     "${TRACE_WRAP}" "${out}" -- bash -lc "${cmd}"
   else
     bash -lc "${cmd}"
+  fi
+}
+
+run_stage_command() {
+  [[ "${STAGE_GENERATED}" == "1" ]] || return 0
+  local cmd=(python3 "${STAGE_SCRIPT}" --task "${TASK}" "$@")
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "[DRY-RUN] ${cmd[*]}"
+  else
+    "${cmd[@]}"
   fi
 }

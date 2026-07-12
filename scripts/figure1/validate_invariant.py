@@ -32,9 +32,9 @@ def main():
     q = torch.randn((seq_len, q_heads, head_dim), dtype=torch.bfloat16, device="cuda")
     k = torch.randn((seq_len, kv_heads, head_dim), dtype=torch.bfloat16, device="cuda")
     v = torch.randn((seq_len, kv_heads, head_dim), dtype=torch.bfloat16, device="cuda")
-    seq_ptr = torch.tensor([0, seq_len], dtype=torch.int32)
+    seq_ptr = torch.tensor([0, seq_len], dtype=torch.int32, device="cuda")
 
-    load_kernel().flash_attn(q, k, v, seq_ptr)
+    load_kernel().flash_attn(q, k, v, seq_ptr, seq_len)
     print("FlashAttention invariant validation passed.")
 
 

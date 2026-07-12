@@ -110,7 +110,7 @@ def _validate_packed_flash_attn_inputs(
     k: torch.Tensor,
     v: torch.Tensor,
     seq_ptr: torch.Tensor,
-) -> list[int]:
+) -> None:
     if q.ndim != 3 or k.ndim != 3 or v.ndim != 3:
         raise ValueError(
             "q, k, and v must be rank-3 packed tensors shaped [tokens, heads, dim] "
@@ -159,18 +159,10 @@ def _validate_packed_flash_attn_inputs(
         raise ValueError("seq_ptr must have at least two elements")
     if seq_ptr.dtype not in (torch.int32, torch.int64):
         raise TypeError(f"seq_ptr must be torch.int32 or torch.int64 (got {seq_ptr.dtype})")
+    if seq_ptr.device != q.device:
+        raise ValueError(f"seq_ptr must be on {q.device} (got {seq_ptr.device})")
     if not seq_ptr.is_contiguous():
         raise ValueError("seq_ptr must be contiguous")
-
-    seq_ptr_cpu = seq_ptr.detach().to(device="cpu", dtype=torch.int64).tolist()
-    if seq_ptr_cpu[0] != 0:
-        raise ValueError(f"seq_ptr must start at 0 (got {seq_ptr_cpu[0]})")
-    if seq_ptr_cpu[-1] != q.shape[0]:
-        raise ValueError(f"seq_ptr must end at total_tokens={q.shape[0]} (got {seq_ptr_cpu[-1]})")
-    for idx in range(len(seq_ptr_cpu) - 1):
-        if seq_ptr_cpu[idx] > seq_ptr_cpu[idx + 1]:
-            raise ValueError("seq_ptr must be nondecreasing")
-    return seq_ptr_cpu
 
 
 @avelang.jit
@@ -1244,9 +1236,14 @@ def flash_attn(
     k: torch.Tensor,
     v: torch.Tensor,
     seq_ptr: torch.Tensor,
+    max_seq_len: int,
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    seq_ptr_cpu = _validate_packed_flash_attn_inputs(q, k, v, seq_ptr)
+    _validate_packed_flash_attn_inputs(q, k, v, seq_ptr)
+    if not isinstance(max_seq_len, int) or max_seq_len < 0:
+        raise ValueError(
+            f"max_seq_len must be a non-negative int (got {max_seq_len!r})"
+        )
     if out is None:
         out = torch.empty_like(q)
     else:
@@ -1260,8 +1257,11 @@ def flash_attn(
             raise ValueError("out must be contiguous")
 
     total_tokens = q.shape[0]
-    seq_lens = [seq_ptr_cpu[idx + 1] - seq_ptr_cpu[idx] for idx in range(len(seq_ptr_cpu) - 1)]
-    max_seq_len = max(seq_lens, default=0)
+    num_seqs = seq_ptr.numel() - 1
+    if total_tokens > 0 and max_seq_len > total_tokens:
+        raise ValueError(
+            f"max_seq_len ({max_seq_len}) cannot exceed total_tokens ({total_tokens})"
+        )
     if total_tokens == 0 or max_seq_len == 0:
         return out
 
@@ -1270,14 +1270,14 @@ def flash_attn(
     seq_ptr_device = seq_ptr.to(device=q.device, dtype=torch.int32)
     row_tiles = math.ceil(max_seq_len / BLOCK_ROWS)
     physical_tiles = math.ceil(row_tiles / 2)
-    _flash_attn_packed_kernel[lambda: ((physical_tiles, q_heads, len(seq_ptr_cpu) - 1), (THREADS, 1, 1))](
+    _flash_attn_packed_kernel[lambda: ((physical_tiles, q_heads, num_seqs), (THREADS, 1, 1))](
         q,
         k,
         v,
         seq_ptr_device,
         out,
         total_tokens,
-        len(seq_ptr_cpu) - 1,
+        num_seqs,
         num_warps=NUM_WARPS,
     )
     return out

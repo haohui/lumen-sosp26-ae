@@ -36,6 +36,11 @@ def parse_args() -> argparse.Namespace:
         default=MOE_DEFAULTS["input_dtype"],
         choices=["fp8", "bf16"],
     )
+    p.add_argument(
+        "--check-correctness",
+        action="store_true",
+        help="Compare each backend result with a routed PyTorch reference.",
+    )
     add_timer_args(p, TIMER_DEFAULTS)
     return p.parse_args()
 
@@ -86,6 +91,7 @@ def main() -> None:
         warmup=args.warmup,
         repeat=args.repeat,
         graph_iters=args.graph_iters,
+        check_correctness=args.check_correctness,
     )
 
 

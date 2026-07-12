@@ -77,24 +77,41 @@ def default_workspace() -> Path:
     return Path(__file__).resolve().parent / "workspace" / run_id
 
 
-def _env() -> dict[str, str]:
+def _env(*, backend: str) -> dict[str, str]:
     env = os.environ.copy()
     pythonpath = str(BENCHMARK_DIR)
     existing = env.get("PYTHONPATH")
     if existing:
         pythonpath = pythonpath + os.pathsep + existing
+
+    if backend == "lumen":
+        lumen_pythonpath = env.get("LUMEN_PYTHONPATH")
+        if lumen_pythonpath:
+            pythonpath = lumen_pythonpath + os.pathsep + pythonpath
+
+        lumen_rocm_path = env.get("LUMEN_ROCM_PATH")
+        if lumen_rocm_path:
+            env["ROCM_PATH"] = lumen_rocm_path
+            env["ROCM_HOME"] = lumen_rocm_path
+            env["HIP_PATH"] = lumen_rocm_path
+            env["PATH"] = (
+                str(Path(lumen_rocm_path) / "bin")
+                + os.pathsep
+                + env.get("PATH", "")
+            )
+
     env["PYTHONPATH"] = pythonpath
     env["AITER_JIT_DIR"] = str(REPO_ROOT / ".aiter" / "jit")
     return env
 
 
-def _run_jsonl_command(cmd: list[str], out_path: Path) -> None:
+def _run_jsonl_command(cmd: list[str], out_path: Path, *, backend: str) -> None:
     cp = subprocess.run(
         cmd,
         check=False,
         capture_output=True,
         text=True,
-        env=_env(),
+        env=_env(backend=backend),
     )
     if cp.returncode != 0:
         print("command failed:", " ".join(cmd), file=sys.stderr)
@@ -137,7 +154,7 @@ def run_benchmarks(
     for name in ("gemm", "attention", "moe"):
         (workspace / f"{name}.jsonl").write_text("", encoding="utf-8")
 
-    for backend in ("lumen", "aiter", "hipblaslt", "hipkittens", "triton"):
+    for backend in GEMM_BACKENDS:
         _run_jsonl_command(
             [
                 python_bin,
@@ -151,9 +168,10 @@ def run_benchmarks(
                 *_timer_args(warmup=warmup, repeat=repeat, graph_iters=graph_iters),
             ],
             workspace / "gemm.jsonl",
+            backend=backend,
         )
 
-    for backend in ("lumen", "aiter", "triton"):
+    for backend in ATTENTION_BACKENDS:
         _run_jsonl_command(
             [
                 python_bin,
@@ -175,9 +193,10 @@ def run_benchmarks(
                 *_timer_args(warmup=warmup, repeat=repeat, graph_iters=graph_iters),
             ],
             workspace / "attention.jsonl",
+            backend=backend,
         )
 
-    for backend in ("lumen", "aiter"):
+    for backend in MOE_BACKENDS:
         _run_jsonl_command(
             [
                 python_bin,
@@ -199,6 +218,7 @@ def run_benchmarks(
                 *_timer_args(warmup=warmup, repeat=repeat, graph_iters=graph_iters),
             ],
             workspace / "moe.jsonl",
+            backend=backend,
         )
 
 

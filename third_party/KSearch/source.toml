@@ -1,0 +1,6 @@
+[repo]
+name = "K-Search"
+upstream = "https://github.com/caoshiyi/K-Search.git"
+base_commit = "7270f2f1c415c3d2dfa009fca6f2f779c6d998ec"
+
+patches = ["01-lumen-generation.patch"]

@@ -1,0 +1,1056 @@
+diff --git a/generate_kernels_and_eval.py b/generate_kernels_and_eval.py
+index 06ce681..933abc4 100644
+--- a/generate_kernels_and_eval.py
++++ b/generate_kernels_and_eval.py
+@@ -127,6 +127,8 @@ def _probe_environment(
+     lang = str(language or "").strip().lower()
+     if lang == "triton" and not triton_ok:
+         raise RuntimeError("language=triton requested but Triton is not importable in this environment")
++    if lang == "hip" and runtime != "rocm":
++        raise RuntimeError("language=hip requires runtime=rocm")
+ 
+     if torch_mod is None:
+         raise RuntimeError("PyTorch is required to validate runtime/backend but torch could not be imported")
+@@ -240,6 +242,7 @@ def generate_and_evaluate(
+     wm_stagnation_window: int = 5,
+     wm_max_difficulty: Optional[int] = None,
+     artifacts_dir: Optional[str] = None,
++    prompt_suffix_file: Optional[str] = None,
+ ) -> None:
+     """
+     Generate exactly one solution for the task, then run final evaluation.
+@@ -319,6 +322,7 @@ def generate_and_evaluate(
+             base_url=base_url,
+             artifacts_dir=artifacts_dir,
+             wm_max_difficulty=wm_max_difficulty,
++            prompt_suffix=(Path(prompt_suffix_file).read_text(encoding="utf-8").strip() if prompt_suffix_file else ""),
+         )
+     else:
+         # Non-world-model mode: baseline-style generator (task-driven).
+@@ -332,6 +336,8 @@ def generate_and_evaluate(
+             runtime=runtime,
+             api_key=api_key,
+             base_url=base_url,
++            artifacts_dir=artifacts_dir,
++            prompt_suffix=(Path(prompt_suffix_file).read_text(encoding="utf-8").strip() if prompt_suffix_file else ""),
+         )
+ 
+     # Generate exactly one solution.
+@@ -386,7 +392,7 @@ def generate_and_evaluate(
+ 
+ 
+ def main():
+-    parser = argparse.ArgumentParser(description="Generate kernels with GPT/Gemini (OpenAI-compatible) and evaluate via task backends.")
++    parser = argparse.ArgumentParser(description="Generate kernels with OpenAI-compatible APIs and evaluate via task backends.")
+     parser.add_argument("--local", required=False, default=None, help="Path to flashinfer-trace dataset root (flashinfer only)")
+     parser.add_argument(
+         "--task-source",
+@@ -403,7 +409,12 @@ def main():
+     parser.add_argument("--model-name", required=True, help="LLM model name (e.g., gpt-4.1, gpt-5, gemini-2.5-pro via compatible endpoint)")
+     parser.add_argument("--base-url", default=None, help="OpenAI-compatible base URL for non-OpenAI providers (e.g. Gemini proxy)")
+     parser.add_argument("--api-key", default=None, help="API key; if omitted, uses LLM_API_KEY env var")
+-    parser.add_argument("--language", default="triton", choices=["triton", "python", "cuda"], help="Target language for generated kernel")
++    parser.add_argument(
++        "--language",
++        default="triton",
++        choices=["triton", "python", "cuda", "hip"],
++        help="Target language for generated kernel",
++    )
+     parser.add_argument(
+         "--target-gpu",
+         default=os.getenv("TARGET_GPU", ""),
+@@ -493,7 +504,6 @@ def main():
+     parser.add_argument("--gpumode-mode", default="benchmark", help="GPUMode eval mode (e.g., benchmark/test/leaderboard/profile)")
+     parser.add_argument("--gpumode-keep-tmp", action="store_true", help="Keep GPUMode temp working dir for debugging")
+     parser.add_argument("--gpumode-task-dir", default=None, help="Override GPUMode task dir (defaults to vendored trimul task)")
+-
+     args = parser.parse_args()
+ 
+     api_key = args.api_key or os.getenv("LLM_API_KEY")
+@@ -507,8 +517,16 @@ def main():
+         runtime=args.runtime,
+     )
+     if not target_gpu:
+-        target_gpu = "generic-gpu"
+-        print("[config] target_gpu was empty; using generic-gpu for prompt text.")
++        target_gpu = "MI300X" if runtime == "rocm" else "generic-gpu"
++        print(f"[config] target_gpu was empty; using {target_gpu} for prompt text.")
++    if runtime == "rocm":
++        tg_up = target_gpu.upper()
++        nvidia_markers = ("NVIDIA", "H100", "H200", "A100", "L40", "RTX", "GEFORCE", "TESLA", "T4", "A10")
++        if any(m in tg_up for m in nvidia_markers):
++            raise ValueError(
++                f"runtime=rocm but target_gpu={target_gpu!r} looks NVIDIA-oriented; "
++                "please use an AMD target like MI300X."
++            )
+ 
+     _probe_environment(
+         language=str(args.language or ""),
+@@ -578,6 +596,7 @@ def main():
+         wm_stagnation_window=args.wm_stagnation_window,
+         wm_max_difficulty=args.wm_max_difficulty,
+         artifacts_dir=args.artifacts_dir,
++        prompt_suffix_file=os.getenv("KSEARCH_PROMPT_SUFFIX_FILE"),
+         enable_wandb=args.wandb,
+         wandb_project=args.wandb_project,
+         run_name=args.run_name,
+diff --git a/k_search/kernel_generators/kernel_generator.py b/k_search/kernel_generators/kernel_generator.py
+index a337bd0..4f76875 100644
+--- a/k_search/kernel_generators/kernel_generator.py
++++ b/k_search/kernel_generators/kernel_generator.py
+@@ -4,8 +4,10 @@ import tempfile
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional
+ import os
++import time
+ 
+ import openai
++
+ from .kernel_generator_prompts import (
+     get_optimization_prompt_from_definition_text,
+     get_prompt_from_definition_text,
+@@ -35,6 +37,7 @@ class KernelGenerator:
+         api_key: Optional[str] = None,
+         base_url: Optional[str] = None,
+         reasoning_effort: str = "medium",  # only used for openai reasoning models
++        prompt_suffix: str = "",
+     ):
+         """
+         Args:
+@@ -46,6 +49,7 @@ class KernelGenerator:
+             api_key: API key (if None, uses LLM_API_KEY environment variable)
+             base_url: Base URL for the API (need to provide for non-openai api models)
+             reasoning_effort: Reasoning effort for OpenAI reasoning models ("low", "medium", "high", default: "medium")
++            prompt_suffix: Optional text appended to each LLM prompt
+         """
+         self.model_name = model_name
+         self.language = language
+@@ -53,6 +57,7 @@ class KernelGenerator:
+         self.gpu_vendor = str(gpu_vendor or "").strip().lower() or None
+         self.runtime = str(runtime or "").strip().lower() or None
+         self.reasoning_effort = reasoning_effort
++        self._prompt_suffix = str(prompt_suffix or "").strip()
+ 
+         if api_key is None:
+             api_key = os.getenv("LLM_API_KEY")
+@@ -67,11 +72,22 @@ class KernelGenerator:
+ 
+         self.client = openai.OpenAI(**client_kwargs)
+ 
++    def _append_prompt_suffix(self, prompt: str) -> str:
++        if not self._prompt_suffix:
++            return str(prompt or "")
++        return (
++            str(prompt or "").rstrip()
++            + "\n\n[Additional task requirements]\n"
++            + self._prompt_suffix
++            + "\n"
++        )
++
+     def _get_supported_language(self) -> SupportedLanguages:
+         language_map = {
+             "python": SupportedLanguages.PYTHON,
+             "triton": SupportedLanguages.TRITON,
+             "cuda": SupportedLanguages.CUDA,
++            "hip": SupportedLanguages.HIP,
+         }
+         if self.language.lower() in language_map:
+             return language_map[self.language.lower()]
+@@ -79,6 +95,23 @@ class KernelGenerator:
+             # Default Python
+             return SupportedLanguages.PYTHON
+ 
++    @staticmethod
++    def _strip_cdata(content: str) -> str:
++        text = str(content or "").strip()
++        if text.startswith("<![CDATA[") and text.endswith("]]>"):
++            return text[len("<![CDATA[") : -len("]]>")].strip()
++        return text
++
++    @staticmethod
++    def _validate_hip_cpp_files(files: Dict[str, str]) -> None:
++        for name in ("kernel.h", "kernel.cu", "main.cpp"):
++            text = str(files.get(name, "") or "")
++            if "hip/amd_detail/" in text:
++                raise ValueError(f"{name} includes private HIP headers under hip/amd_detail")
++        main_cpp = str(files.get("main.cpp", "") or "")
++        if "<<<" in main_cpp or "hipLaunchKernelGGL" in main_cpp:
++            raise ValueError("main.cpp must call host wrappers, not launch kernels directly")
++
+     # NOTE: baseline-aware generation lives on `KernelGenerator.generate(task=..., ...)`.
+ 
+     def _parse_xml_files(self, code: str) -> Dict[str, str]:
+@@ -92,8 +125,11 @@ class KernelGenerator:
+ 
+         for filename, pattern in patterns.items():
+             match = re.search(pattern, code, re.DOTALL)
++            if (not match) and filename == "kernel.cu":
++                # HIP prompts may emit <hip_file ...>; accept both for robustness.
++                match = re.search(r'<hip_file name="kernel\.cu">(.*?)</hip_file>', code, re.DOTALL)
+             if match:
+-                content = match.group(1).strip()
++                content = self._strip_cdata(match.group(1))
+                 files[filename] = content
+             else:
+                 print(f"Warning: Could not find {filename} in generated code")
+@@ -101,11 +137,14 @@ class KernelGenerator:
+         return files
+ 
+     def _clean_generated_code(self, code: str) -> str:
+-        """Clean up generated code. For CUDA, parse XML and return dict. For others, clean Python syntax."""
+-        if self.language.lower() == "cuda":
+-            return self._parse_xml_files(code)
+-
+-        # For non-CUDA languages (triton, python), clean up markdown and hex floats
++        """Clean up generated code. For CUDA/HIP, parse XML and return dict. For others, clean Python syntax."""
++        if self.language.lower() in ("cuda", "hip"):
++            files = self._parse_xml_files(code)
++            if self.language.lower() == "hip":
++                self._validate_hip_cpp_files(files)
++            return files
++
++        # For non-CUDA/HIP languages (triton, python), clean up markdown and hex floats
+         if "```" in code:
+             # Prefer parsing the first fenced block anywhere in the response. This mirrors the
+             # CUDA path's "structured output" parsing and is robust to models emitting extra text.
+@@ -150,43 +189,77 @@ class KernelGenerator:
+         return code
+ 
+     def _generate_code_from_prompt(self, prompt: str):
+-        # If we fail to parse CUDA XML (missing kernel.h/kernel.cu/main.cpp), retry generation.
++        # If we fail to parse CUDA/HIP XML (missing kernel.h/kernel.cu/main.cpp), retry generation.
+         max_parse_retries = 5
+-        is_cuda = (self.language or "").lower() == "cuda"
++        is_gpu_cpp = (self.language or "").lower() in ("cuda", "hip")
+ 
++        prompt = str(prompt or "")
++        print(
++            "[codegen] generate_from_prompt_start "
++            f"is_gpu_cpp={is_gpu_cpp} parse_retry_budget={(max_parse_retries if is_gpu_cpp else 1)} "
++            f"prompt_chars={len(prompt)}"
++        )
+         last_err: Exception | None = None
+-        for attempt in range(1, (max_parse_retries if is_cuda else 1) + 1):
++        for attempt in range(1, (max_parse_retries if is_gpu_cpp else 1) + 1):
++            attempt_t0 = time.perf_counter()
++            print(
++                "[codegen] parse_attempt_start "
++                f"attempt={attempt}/{(max_parse_retries if is_gpu_cpp else 1)} prompt_chars={len(prompt)}"
++            )
+             try:
+-                effective_prompt = prompt
++                effective_prompt = self._append_prompt_suffix(prompt)
+ 
+                 if self.model_name.startswith("gpt-5") or self.model_name.startswith("o3"):
+                     response = self.client.responses.create(
+-                        model=self.model_name, input=effective_prompt, reasoning={"effort": self.reasoning_effort}
++                        model=self.model_name,
++                        input=effective_prompt,
++                        reasoning={"effort": self.reasoning_effort},
+                     )
+                     generated_code = response.output_text.strip()
+                 else:  # We use the completions api for OpenAI SDK compatible models
+                     response = self.client.chat.completions.create(
+-                        model=self.model_name, messages=[{"role": "user", "content": effective_prompt}]
++                        model=self.model_name,
++                        messages=[{"role": "user", "content": effective_prompt}],
+                     )
+                     generated_code = response.choices[0].message.content.strip()
+ 
+                 cleaned_code = self._clean_generated_code(generated_code)
+ 
+-                if is_cuda:
+-                    # cleaned_code should be a dict of required files for CUDA.
++                if is_gpu_cpp:
++                    # cleaned_code should be a dict of required files for CUDA/HIP-style XML.
+                     if not isinstance(cleaned_code, dict):
+-                        raise ValueError("CUDA generation did not return a parsed file dict")
++                        raise ValueError("GPU C++ generation did not return a parsed file dict")
+                     required = ("kernel.h", "kernel.cu", "main.cpp")
+                     missing = [k for k in required if (k not in cleaned_code) or (not str(cleaned_code.get(k, "")).strip())]
+                     if missing:
+                         raise ValueError(f"missing required XML files: {missing}")
++                print(
++                    "[codegen] parse_attempt_ok "
++                    f"attempt={attempt} elapsed_s={time.perf_counter() - attempt_t0:.2f} "
++                    f"raw_chars={len(generated_code)} cleaned_type={type(cleaned_code).__name__}"
++                )
+ 
+                 return {"raw": generated_code, "cleaned": cleaned_code}
+ 
+             except Exception as e:
+                 last_err = e
+-                if is_cuda and attempt < max_parse_retries:
+-                    print(f"[WARN] CUDA XML parse failed ({e}); retrying generation ({attempt}/{max_parse_retries})...")
++                print(
++                    "[codegen] parse_attempt_fail "
++                    f"attempt={attempt}/{(max_parse_retries if is_gpu_cpp else 1)} "
++                    f"elapsed_s={time.perf_counter() - attempt_t0:.2f} "
++                    f"type={type(e).__name__} message={e}"
++                )
++                if is_gpu_cpp and attempt < max_parse_retries:
++                    print(f"[WARN] GPU C++ XML parse failed ({e}); retrying generation ({attempt}/{max_parse_retries})...")
++                    prompt = (
++                        str(prompt or "")
++                        + "\n\n[FORMAT RETRY REQUIREMENT]\n"
++                        + "Return ONLY valid XML with exactly these three tags and names:\n"
++                        + "<header_file name=\"kernel.h\">...</header_file>\n"
++                        + "<cuda_file name=\"kernel.cu\">...</cuda_file>\n"
++                        + "<cpp_file name=\"main.cpp\">...</cpp_file>\n"
++                        + "No markdown fences. No prose. No extra tags.\n"
++                    )
+                     continue
+                 print(f"Error while generating code: {e}")
+                 raise
+@@ -235,8 +308,8 @@ class KernelGenerator:
+             )
+ 
+         # Handle different code formats based on language
+-        if self.language.lower() == "cuda" and isinstance(cleaned_code, dict):
+-            # For CUDA, we have multiple files
++        if self.language.lower() in ("cuda", "hip") and isinstance(cleaned_code, dict):
++            # For CUDA/HIP-style generation, we have multiple files.
+             sources = []
+             for filename, content in cleaned_code.items():
+                 sources.append(SourceFile(path=filename, content=content))
+@@ -326,7 +399,7 @@ class KernelGenerator:
+             if base_sol.definition != task.name:
+                 raise ValueError(
+                     f"Solution '{continue_from_solution}' does not belong to definition '{task.name}'"
+-                )
++            )
+             seed_solution = base_sol
+             current_code, current_raw_code = code_from_solution(self.language, base_sol)
+         else:
+diff --git a/k_search/kernel_generators/kernel_generator_prompts.py b/k_search/kernel_generators/kernel_generator_prompts.py
+index 557760b..e4a095f 100644
+--- a/k_search/kernel_generators/kernel_generator_prompts.py
++++ b/k_search/kernel_generators/kernel_generator_prompts.py
+@@ -5,7 +5,8 @@ This file contains the prompts for baseline agent generation.
+ from __future__ import annotations
+ 
+ # CUDA-specific hints
+-# Note: keep these hints generic (avoid naming specific low-level instructions).
++# Keep task-specific AE constraints outside the third-party template; the
++# launcher appends them through KSEARCH_PROMPT_SUFFIX_FILE.
+ CUDA_OPTIMIZATION_HINTS = "** You MUST use MMA to utilize the tensor cores on H100! ** For each round, you can see your current best solution and the previous round's summary, therefore you can implement the kernel step by step."
+ 
+ # Triton-appropriate subset
+@@ -13,6 +14,12 @@ TRITON_OPTIMIZATION_HINTS = """
+ ** For each round, you can see your current best solution and the previous round's summary, therefore you can implement the kernel step by step.
+ """
+ 
++HIP_OPTIMIZATION_HINTS = (
++    "** You MUST use MFMA to utilize the matrix cores on MI300X! ** "
++    "For each round, you can see your current best solution and the previous round's summary, "
++    "therefore you can implement the kernel step by step."
++)
++
+ 
+ TRITON_PROMPT = """Generate a Triton kernel optimized for {target_gpu} GPU for
+ 
+@@ -80,31 +87,36 @@ Generate the corrected and optimized implementation:"""
+ def get_prompt_from_definition_text(
+     language: str,
+     definition_text: str,
+-    target_gpu: str = "H100",
++    target_gpu: str = "generic-gpu",
+     *,
+     per_task_requirement: str = "",
+ ) -> str:
+     """
+     Task-agnostic prompt builder: takes a fully-rendered definition text.
+     """
+-    prompts = {"triton": TRITON_PROMPT, "cuda": CUDA_PROMPT}
++    prompts = {
++        "triton": TRITON_PROMPT,
++        "cuda": CUDA_PROMPT,
++    }
+ 
+     if language not in prompts:
+         raise ValueError(f"Unsupported language: {language}")
+ 
+-    # Only Triton/CUDA prompts include advanced hints
++    requirement = str(per_task_requirement or "").strip()
++
++    # Only Triton/CUDA prompts include advanced hints.
+     if language == "triton":
+         return prompts[language].format(
+             definition=str(definition_text or "").strip(),
+             target_gpu=target_gpu,
+-            per_task_requirement=str(per_task_requirement or "").strip(),
++            per_task_requirement=requirement,
+             hints=TRITON_OPTIMIZATION_HINTS,
+         )
+     if language == "cuda":
+         return prompts[language].format(
+             definition=str(definition_text or "").strip(),
+             target_gpu=target_gpu,
+-            per_task_requirement=str(per_task_requirement or "").strip(),
++            per_task_requirement=requirement,
+             hints=CUDA_OPTIMIZATION_HINTS,
+         )
+     return prompts[language].format(definition=str(definition_text or "").strip(), target_gpu=target_gpu)
+@@ -116,7 +128,7 @@ def get_optimization_prompt_from_definition_text(
+     definition_text: str,
+     trace_logs: str,
+     current_code: str,
+-    target_gpu: str = "H100",
++    target_gpu: str = "generic-gpu",
+     current_best: str | None = None,
+     previous_round_summary: str | None = None,
+     per_task_requirement: str = "",
+@@ -124,7 +136,10 @@ def get_optimization_prompt_from_definition_text(
+     """
+     Task-agnostic optimization prompt builder: takes rendered definition + rendered trace logs.
+     """
+-    optimization_prompts = {"triton": TRITON_OPTIMIZATION_PROMPT, "cuda": CUDA_OPTIMIZATION_PROMPT}
++    optimization_prompts = {
++        "triton": TRITON_OPTIMIZATION_PROMPT,
++        "cuda": CUDA_OPTIMIZATION_PROMPT,
++    }
+ 
+     if language not in optimization_prompts:
+         raise ValueError(f"Unsupported language for optimization: {language}")
+@@ -134,13 +149,15 @@ def get_optimization_prompt_from_definition_text(
+         previous_round_summary=previous_round_summary,
+     )
+ 
++    requirement = str(per_task_requirement or "").strip()
++
+     if language == "triton":
+         return optimization_prompts[language].format(
+             definition=str(definition_text or "").strip(),
+             trace_logs=str(trace_logs or "").strip(),
+             current_code=current_code,
+             target_gpu=target_gpu,
+-            per_task_requirement=str(per_task_requirement or "").strip(),
++            per_task_requirement=requirement,
+             hints=TRITON_OPTIMIZATION_HINTS,
+             extra_context=extra_context,
+         )
+@@ -150,7 +167,7 @@ def get_optimization_prompt_from_definition_text(
+             trace_logs=str(trace_logs or "").strip(),
+             current_code=current_code,
+             target_gpu=target_gpu,
+-            per_task_requirement=str(per_task_requirement or "").strip(),
++            per_task_requirement=requirement,
+             hints=CUDA_OPTIMIZATION_HINTS,
+             extra_context=extra_context,
+         )
+diff --git a/k_search/kernel_generators/kernel_generator_world_model.py b/k_search/kernel_generators/kernel_generator_world_model.py
+index 8b091e1..491a251 100644
+--- a/k_search/kernel_generators/kernel_generator_world_model.py
++++ b/k_search/kernel_generators/kernel_generator_world_model.py
+@@ -101,15 +101,17 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+         self._artifacts_dir = artifacts_dir
+ 
+         def _llm_call(prompt: str) -> str:
++            effective_prompt = self._append_prompt_suffix(prompt)
+             if self.model_name.startswith("gpt-5") or self.model_name.startswith("o3"):
+                 response = self.client.responses.create(
+                     model=self.model_name,
+-                    input=prompt,
++                    input=effective_prompt,
+                     reasoning={"effort": self.reasoning_effort},
+                 )
+                 return (response.output_text or "").strip()
+             response = self.client.chat.completions.create(
+-                model=self.model_name, messages=[{"role": "user", "content": prompt}]
++                model=self.model_name,
++                messages=[{"role": "user", "content": effective_prompt}],
+             )
+             return (response.choices[0].message.content or "").strip()
+ 
+@@ -212,7 +214,6 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                 f"Task '{getattr(task, 'name', '')}' does not provide get_definition_text(); "
+                 "cannot build world-model prompts without a definition."
+             )
+-
+         # Optional: resume world model from a JSON snapshot on disk.
+         wm_ref = str(continue_from_world_model or "").strip()
+         if wm_ref:
+@@ -361,6 +362,9 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                 + "\n- Optimize for overall mean latency across the listed workloads while maintaining correctness."
+             )
+ 
++        def _trace_logs_for_prompt() -> str:
++            return str(getattr(task, "get_last_round_trace_logs_for_prompt", lambda: "")() or "").strip()
++
+         def _code_format_text() -> str:
+             hook = getattr(task, "get_code_format_text", None)
+             if not callable(hook):
+@@ -373,8 +377,8 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                 return ""
+ 
+         def _emit_kernel_cu(cleaned: object) -> None:
+-            """Print the generated CUDA kernel.cu to stdout (bounded for readability)."""
+-            if (self.language or "").lower() != "cuda":
++            """Print the generated GPU kernel.cu to stdout (bounded for readability)."""
++            if (self.language or "").lower() not in ("cuda", "hip"):
+                 return
+             if not isinstance(cleaned, dict):
+                 return
+@@ -496,6 +500,9 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                     recb = self._solution_db.get(sid)
+                     if recb is not None and recb.code:
+                         base_raw_code = recb.code
++            # Fallback for resumed runs: if WM/DB parent resolution misses, keep using current code as base.
++            if not str(base_raw_code or "").strip() and isinstance(current_raw_code, str) and current_raw_code.strip():
++                base_raw_code = current_raw_code
+ 
+             prediction = None
+             try:
+@@ -571,12 +578,12 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                             target_gpu=self.target_gpu,
+                         )
+                 else:
+-                    if parent_is_root or not base_raw_code:
++                    if not base_raw_code:
+                         has_passed_in_cycle = cycle_best_solution is not None
+                         # Reference base shown in prompts: prefer whichever is better by score (base_score vs cycle_best_score).
+                         # If parent is root (no base score), fall back to cycle_best if present.
+                         base_for_debug = "(no base code; start from spec)"
+-                        if isinstance(base_raw_code, str) and base_raw_code.strip() and base_score > 0:
++                        if isinstance(base_raw_code, str) and base_raw_code.strip():
+                             base_for_debug = base_raw_code
+                         if (
+                             isinstance(cycle_best_raw, str)
+@@ -603,7 +610,7 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                             prompt = get_debug_and_improve_from_spec_prompt_from_text(
+                                 self.language,
+                                 definition_text=definition_text,
+-                                trace_logs=str(getattr(task, "get_last_round_trace_logs_for_prompt", lambda: "")() or ""),
++                                trace_logs=_trace_logs_for_prompt(),
+                                 current_code=str(current_raw_code or ""),
+                                 action_text=str(chosen_action_text or ""),
+                                 code_format=_code_format_text(),
+@@ -617,7 +624,7 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                             prompt = get_improve_from_spec_prompt_from_text(
+                                 self.language,
+                                 definition_text=definition_text,
+-                                trace_logs=str(getattr(task, "get_last_round_trace_logs_for_prompt", lambda: "")() or ""),
++                                trace_logs=_trace_logs_for_prompt(),
+                                 current_code=str(current_raw_code or ""),
+                                 code_format=_code_format_text(),
+                                 debug_round=min(attempt_idx, max_dai),
+@@ -654,7 +661,7 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                             prompt = get_debug_generated_code_prompt_from_text(
+                                 self.language,
+                                 definition_text=definition_text,
+-                                trace_logs=str(getattr(task, "get_last_round_trace_logs_for_prompt", lambda: "")() or ""),
++                                trace_logs=_trace_logs_for_prompt(),
+                                 base_code=base_for_debug,
+                                 buggy_code=str(current_raw_code or ""),
+                                 action_text=str(chosen_action_text or ""),
+@@ -668,7 +675,7 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                             prompt = get_improve_generated_code_prompt_from_text(
+                                 self.language,
+                                 definition_text=definition_text,
+-                                trace_logs=str(getattr(task, "get_last_round_trace_logs_for_prompt", lambda: "")() or ""),
++                                trace_logs=_trace_logs_for_prompt(),
+                                 base_code=base_for_debug,
+                                 current_code=str(current_raw_code or ""),
+                                 code_format=_code_format_text(),
+@@ -687,7 +694,7 @@ class WorldModelKernelGeneratorWithBaseline(KernelGenerator):
+                 _emit_kernel_cu(current_code)
+                 current_wm_code = (
+                     (current_code.get("kernel.cu") if isinstance(current_code, dict) else None)
+-                    if (self.language or "").lower() == "cuda"
++                    if (self.language or "").lower() in ("cuda", "hip")
+                     else None
+                 )
+                 if not isinstance(current_wm_code, str) or not current_wm_code.strip():
+diff --git a/k_search/kernel_generators/world_model_prompts.py b/k_search/kernel_generators/world_model_prompts.py
+index 935ed1e..33f2a27 100644
+--- a/k_search/kernel_generators/world_model_prompts.py
++++ b/k_search/kernel_generators/world_model_prompts.py
+@@ -9,6 +9,7 @@ from __future__ import annotations
+ 
+ from .kernel_generator_prompts import (
+     CUDA_OPTIMIZATION_HINTS,
++    HIP_OPTIMIZATION_HINTS,
+     TRITON_OPTIMIZATION_HINTS,
+ )
+ 
+@@ -37,7 +38,7 @@ Rules:
+ Generate the updated implementation:"""
+ 
+ 
+-CUDA_ACTION_PROMPT = """You are implementing a SPECIFIC NEXT ACTION on top of a known-good CUDA baseline for {target_gpu}.
++CXX_XML_ACTION_PROMPT = """You are implementing a SPECIFIC NEXT ACTION on top of a known-good {baseline_name} baseline for {target_gpu}.
+ 
+ Original Specification:
+ {definition}
+@@ -98,7 +99,7 @@ Rules:
+ Generate the corrected implementation:"""
+ 
+ 
+-CUDA_DEBUG_PROMPT = """You are in a debug-and-improve loop for a CUDA kernel on {target_gpu}.
++CXX_XML_DEBUG_PROMPT = """You are in a debug-and-improve loop for a {kernel_name} on {target_gpu}.
+ The current implementation may be buggy OR already correct-but-slower-than-desired.
+ 
+ Original Specification:
+@@ -168,7 +169,7 @@ Rules:
+ Generate the improved implementation:"""
+ 
+ 
+-CUDA_IMPROVE_PROMPT = """You are improving a CUDA kernel on {target_gpu}.
++CXX_XML_IMPROVE_PROMPT = """You are improving a {kernel_name} on {target_gpu}.
+ The current implementation may be correct-but-slower-than-desired, or it may have regressed.
+ 
+ Original Specification:
+@@ -200,6 +201,22 @@ Rules:
+ 
+ Generate the improved implementation:"""
+ 
++def _cxx_xml_prompt_args(language: str) -> dict[str, str]:
++    lang = (language or "").lower()
++    if lang == "cuda":
++        return {
++            "baseline_name": "CUDA",
++            "kernel_name": "CUDA kernel",
++            "hints": CUDA_OPTIMIZATION_HINTS,
++        }
++    if lang == "hip":
++        return {
++            "baseline_name": "HIP C++",
++            "kernel_name": "HIP C++ kernel",
++            "hints": HIP_OPTIMIZATION_HINTS,
++        }
++    raise ValueError(f"Unsupported C++ XML prompt language: {language}")
++
+ def get_generate_code_from_action_prompt_from_text(
+     language: str,
+     *,
+@@ -207,27 +224,28 @@ def get_generate_code_from_action_prompt_from_text(
+     base_code: str,
+     action_text: str,
+     code_format: str = "",
+-    target_gpu: str = "H100",
++    target_gpu: str = "generic-gpu",
+ ) -> str:
+     """Task-agnostic variant: accepts rendered definition text."""
+     lang = (language or "").lower()
++    code_format_text = str(code_format or "").strip()
+     if lang == "triton":
+         return TRITON_ACTION_PROMPT.format(
+             definition=str(definition_text or "").strip(),
+             base_code=base_code,
+             action_text=action_text,
+             target_gpu=target_gpu,
+-            code_format=str(code_format or "").strip(),
++            code_format=code_format_text,
+             hints=TRITON_OPTIMIZATION_HINTS,
+         )
+-    if lang == "cuda":
+-        return CUDA_ACTION_PROMPT.format(
++    if lang in ("cuda", "hip"):
++        return CXX_XML_ACTION_PROMPT.format(
+             definition=str(definition_text or "").strip(),
+             base_code=base_code,
+             action_text=action_text,
+             target_gpu=target_gpu,
+-            code_format=str(code_format or "").strip(),
+-            hints=CUDA_OPTIMIZATION_HINTS,
++            code_format=code_format_text,
++            **_cxx_xml_prompt_args(lang),
+         )
+     raise ValueError(f"Unsupported language for action prompt: {language}")
+ 
+@@ -238,13 +256,14 @@ def get_generate_code_from_spec_with_action_prompt_from_text(
+     definition_text: str,
+     action_text: str,
+     code_format: str = "",
+-    target_gpu: str = "H100",
++    target_gpu: str = "generic-gpu",
+ ) -> str:
+     """
+     Task-agnostic variant: accepts rendered definition text.
+     Used when the chosen action's parent is the WM root: start from spec + action only.
+     """
+     lang = (language or "").lower()
++    code_format_text = str(code_format or "").strip()
+     if lang == "triton":
+         return (
+             "You are implementing a SPECIFIC NEXT ACTION starting from the specification.\n\n"
+@@ -253,20 +272,20 @@ def get_generate_code_from_spec_with_action_prompt_from_text(
+                 base_code="(no base code; start from spec)",
+                 action_text=action_text,
+                 target_gpu=target_gpu,
+-                code_format=str(code_format or "").strip(),
++                code_format=code_format_text,
+                 hints=TRITON_OPTIMIZATION_HINTS,
+             )
+         )
+-    if lang == "cuda":
++    if lang in ("cuda", "hip"):
+         return (
+             "You are implementing a SPECIFIC NEXT ACTION starting from the specification.\n\n"
+-            + CUDA_ACTION_PROMPT.format(
++            + CXX_XML_ACTION_PROMPT.format(
+                 definition=str(definition_text or "").strip(),
+                 base_code="(no base code; start from spec)",
+                 action_text=action_text,
+                 target_gpu=target_gpu,
+-                code_format=str(code_format or "").strip(),
+-                hints=CUDA_OPTIMIZATION_HINTS,
++                code_format=code_format_text,
++                **_cxx_xml_prompt_args(lang),
+             )
+         )
+     raise ValueError(f"Unsupported language for spec+action prompt: {language}")
+@@ -282,7 +301,7 @@ def get_debug_and_improve_from_spec_prompt_from_text(
+     code_format: str = "",
+     debug_round: int,
+     max_rounds: int = 5,
+-    target_gpu: str = "H100",
++    target_gpu: str = "generic-gpu",
+     perf_summary: str = "",
+     base_code: str = "(no base code; start from spec)",
+ ) -> str:
+@@ -312,11 +331,12 @@ def get_debug_generated_code_prompt_from_text(
+     code_format: str = "",
+     debug_round: int,
+     max_rounds: int = 5,
+-    target_gpu: str = "H100",
++    target_gpu: str = "generic-gpu",
+     perf_summary: str = "",
+ ) -> str:
+     """Task-agnostic variant: accepts rendered definition + rendered trace logs."""
+     lang = (language or "").lower()
++    code_format_text = str(code_format or "").strip()
+     dr = int(debug_round)
+     if dr < 1:
+         dr = 1
+@@ -336,11 +356,11 @@ def get_debug_generated_code_prompt_from_text(
+             debug_round=dr,
+             max_rounds=mr,
+             target_gpu=target_gpu,
+-            code_format=str(code_format or "").strip(),
++            code_format=code_format_text,
+             hints=TRITON_OPTIMIZATION_HINTS,
+         )
+-    if lang == "cuda":
+-        return CUDA_DEBUG_PROMPT.format(
++    if lang in ("cuda", "hip"):
++        return CXX_XML_DEBUG_PROMPT.format(
+             definition=str(definition_text or "").strip(),
+             base_code=base_code,
+             buggy_code=buggy_code,
+@@ -350,8 +370,8 @@ def get_debug_generated_code_prompt_from_text(
+             debug_round=dr,
+             max_rounds=mr,
+             target_gpu=target_gpu,
+-            code_format=str(code_format or "").strip(),
+-            hints=CUDA_OPTIMIZATION_HINTS,
++            code_format=code_format_text,
++            **_cxx_xml_prompt_args(lang),
+         )
+     raise ValueError(f"Unsupported language for debug prompt: {language}")
+ 
+@@ -365,7 +385,7 @@ def get_improve_from_spec_prompt_from_text(
+     code_format: str = "",
+     debug_round: int,
+     max_rounds: int = 5,
+-    target_gpu: str = "H100",
++    target_gpu: str = "generic-gpu",
+     perf_summary: str = "",
+     base_code: str = "(no base code; start from spec)",
+ ) -> str:
+@@ -393,11 +413,12 @@ def get_improve_generated_code_prompt_from_text(
+     code_format: str = "",
+     debug_round: int,
+     max_rounds: int = 5,
+-    target_gpu: str = "H100",
++    target_gpu: str = "generic-gpu",
+     perf_summary: str = "",
+ ) -> str:
+     """Task-agnostic variant: accepts rendered definition + rendered trace logs."""
+     lang = (language or "").lower()
++    code_format_text = str(code_format or "").strip()
+     dr = int(debug_round)
+     if dr < 1:
+         dr = 1
+@@ -416,11 +437,11 @@ def get_improve_generated_code_prompt_from_text(
+             debug_round=dr,
+             max_rounds=mr,
+             target_gpu=target_gpu,
+-            code_format=str(code_format or "").strip(),
++            code_format=code_format_text,
+             hints=TRITON_OPTIMIZATION_HINTS,
+         )
+-    if lang == "cuda":
+-        return CUDA_IMPROVE_PROMPT.format(
++    if lang in ("cuda", "hip"):
++        return CXX_XML_IMPROVE_PROMPT.format(
+             definition=str(definition_text or "").strip(),
+             base_code=base_code,
+             current_code=current_code,
+@@ -429,9 +450,7 @@ def get_improve_generated_code_prompt_from_text(
+             debug_round=dr,
+             max_rounds=mr,
+             target_gpu=target_gpu,
+-            code_format=str(code_format or "").strip(),
+-            hints=CUDA_OPTIMIZATION_HINTS,
++            code_format=code_format_text,
++            **_cxx_xml_prompt_args(lang),
+         )
+     raise ValueError(f"Unsupported language for improve prompt: {language}")
+-
+-
+diff --git a/k_search/tasks/flashinfer_bench_amd_helpers.py b/k_search/tasks/flashinfer_bench_amd_helpers.py
+new file mode 100644
+index 0000000..d8d5344
+--- /dev/null
++++ b/k_search/tasks/flashinfer_bench_amd_helpers.py
+@@ -0,0 +1,114 @@
++"""AE MoE input compatibility for FlashInfer-Bench tasks."""
++
++from __future__ import annotations
++
++import sys
++from typing import Any, Dict, Optional
++
++_PATCH_INSTALLED = False
++
++
++def _is_target_moe_definition(definition: Any) -> bool:
++    try:
++        if str(getattr(definition, "op_type", "") or "").strip().lower() != "moe":
++            return False
++        inputs = getattr(definition, "inputs", None)
++        if not isinstance(inputs, dict):
++            return False
++        required = {
++            "input_q",
++            "w1_q",
++            "w2_q",
++            "topk_weights",
++            "topk_ids",
++            "input_scale",
++            "fc1_scale",
++            "fc2_scale",
++        }
++        return required.issubset(set(inputs.keys()))
++    except Exception:
++        return False
++
++
++def install_flashinfer_moe_inputs_patch() -> None:
++    """
++    Patch only AE MoE constrained random inputs.
++
++    FlashInfer-Bench's generic random generator is valid for GEMM/attention, but
++    it cannot express MoE routing/scaling constraints: topk_ids must be valid
++    expert IDs, topk_weights should be normalized routing weights, and block
++    scales must be positive.
++    """
++    global _PATCH_INSTALLED
++    if _PATCH_INSTALLED:
++        return
++
++    try:
++        import torch  # type: ignore
++        import flashinfer_bench.bench.utils as fb_utils  # type: ignore
++        from flashinfer_bench.utils import dtype_str_to_torch_dtype  # type: ignore
++    except Exception:
++        return
++
++    orig_gen_inputs = fb_utils.gen_inputs
++
++    def _patch_moe_constrained_inputs(
++        definition: Any,
++        wl: Any,
++        device: str,
++        out: Dict[str, Any],
++    ) -> Dict[str, Any]:
++        shapes = definition.get_input_shapes(wl.axes)
++        dev = torch.device(device)
++        seed_base = 20260331
++        tokens = int(shapes["input_q"][0])
++        num_experts = int(shapes["w1_q"][0])
++        topk = int(shapes["topk_ids"][1])
++
++        def _dtype(name: str):
++            return dtype_str_to_torch_dtype(definition.inputs[name].dtype)
++
++        generator = torch.Generator(device=str(dev))
++        generator.manual_seed(seed_base + tokens)
++
++        def _rand_pos(name: str, mean: float, std: float) -> "torch.Tensor":
++            shape = tuple(int(x) for x in shapes[name])
++            value = torch.randn(shape, dtype=torch.float32, device=dev, generator=generator) * std + mean
++            return value.clamp_min(1e-8).to(_dtype(name))
++
++        scores = torch.randn(
++            (tokens, num_experts),
++            dtype=torch.float32,
++            device=dev,
++            generator=generator,
++        )
++        topk_val, topk_idx = torch.topk(scores, k=topk, dim=-1, largest=True, sorted=True)
++        out["topk_weights"] = torch.softmax(topk_val, dim=-1).to(_dtype("topk_weights"))
++        out["topk_ids"] = topk_idx.to(_dtype("topk_ids"))
++        out["input_scale"] = _rand_pos("input_scale", mean=1e-1, std=2e-2)
++        out["fc1_scale"] = _rand_pos("fc1_scale", mean=1e-2, std=2e-3)
++        out["fc2_scale"] = _rand_pos("fc2_scale", mean=1e-2, std=2e-3)
++        return out
++
++    def patched_gen_inputs(
++        definition: Any,
++        wl: Any,
++        device: str,
++        stensors: Optional[Dict[str, Any]] = None,
++    ) -> Dict[str, Any]:
++        out = orig_gen_inputs(definition, wl, device=device, stensors=stensors)
++        if _is_target_moe_definition(definition):
++            return _patch_moe_constrained_inputs(definition, wl, device, out)
++        return out
++
++    fb_utils.gen_inputs = patched_gen_inputs
++
++    for module_name in (
++        "flashinfer_bench.bench.evaluators.default",
++        "flashinfer_bench.bench.evaluators.sampling",
++    ):
++        module = sys.modules.get(module_name)
++        if module is not None:
++            setattr(module, "gen_inputs", patched_gen_inputs)
++
++    _PATCH_INSTALLED = True
+diff --git a/k_search/tasks/flashinfer_bench_task.py b/k_search/tasks/flashinfer_bench_task.py
+index 06890d6..c2a70eb 100644
+--- a/k_search/tasks/flashinfer_bench_task.py
++++ b/k_search/tasks/flashinfer_bench_task.py
+@@ -15,6 +15,7 @@ from __future__ import annotations
+ from dataclasses import dataclass
+ from typing import Any, Dict, List, Optional
+ 
++from .flashinfer_bench_amd_helpers import install_flashinfer_moe_inputs_patch
+ from .task_base import BuildSpec as TaskBuildSpec
+ from .task_base import EvalResult
+ from .task_base import Solution as TaskSolution
+@@ -106,6 +107,7 @@ class FlashInferBenchTask:
+         self._ksearch_artifacts_dir: str | None = (str(artifacts_dir) if artifacts_dir is not None else None)
+         self._traceset = traceset
+         self._definition = definition
++        install_flashinfer_moe_inputs_patch()
+         self._feedback_trace_selector = (
+             feedback_trace_selector if feedback_trace_selector is not None else FeedbackTraceSelector(feedback_trace_policy)
+         )
+@@ -291,6 +293,8 @@ class FlashInferBenchTask:
+             s = ""
+         if s == "cuda":
+             return TaskSupportedLanguages.CUDA
++        if s == "hip":
++            return TaskSupportedLanguages.HIP
+         if s == "triton":
+             return TaskSupportedLanguages.TRITON
+         if s == "cpp":
+@@ -307,7 +311,7 @@ class FlashInferBenchTask:
+             s = str(s or "").strip().lower()
+         except Exception:
+             s = "python"
+-        if s == "cuda":
++        if s in ("cuda", "hip"):
+             return FBSupportedLanguages.CUDA
+         if s == "triton":
+             return FBSupportedLanguages.TRITON
+@@ -405,6 +409,7 @@ class FlashInferBenchTask:
+ 
+     def set_definition(self, definition: Any) -> None:
+         self._definition = definition
++        install_flashinfer_moe_inputs_patch()
+         # If workload selection config was provided at init, select workloads once we have a definition.
+         if not self._selected_workloads and (
+             self._init_num_feedback_workloads is not None or self._init_feedback_workloads is not None
+@@ -892,8 +897,16 @@ Reference Implementation:
+     def has_last_round_feedback_trace(self) -> bool:
+         return self.get_last_round_feedback_trace() is not None
+ 
++    @staticmethod
++    def _limit_prompt_text(text: str, max_chars: int = 40000) -> str:
++        s = str(text or "")
++        if len(s) <= max_chars:
++            return s
++        return s[: int(max_chars)] + "\n...<trace logs truncated for prompt>..."
++
+     def get_last_round_trace_logs_for_prompt(self) -> str:
+-        return str(getattr(self, "_last_round_trace_logs_for_prompt", "") or "")
++        txt = str(getattr(self, "_last_round_trace_logs_for_prompt", "") or "")
++        return self._limit_prompt_text(txt)
+ 
+     def get_last_round_summary_line(self) -> str:
+         return str(getattr(self, "_last_round_summary_line", "") or "")
+@@ -1343,7 +1356,8 @@ Reference Implementation:
+                 continue
+             requested_names.append(str(getattr(sol, "name", "") or ""))
+             try:
+-                backend_solutions.append(self._to_backend_solution(sol))
++                backend_sol = self._to_backend_solution(sol)
++                backend_solutions.append(backend_sol)
+             except Exception:
+                 backend_solutions.append(sol)
+ 
+@@ -1740,5 +1754,3 @@ Reference Implementation:
+                 "score_name": score_name,
+             },
+         )
+-
+-
+diff --git a/k_search/tasks/task_base.py b/k_search/tasks/task_base.py
+index 488c824..923cf50 100644
+--- a/k_search/tasks/task_base.py
++++ b/k_search/tasks/task_base.py
+@@ -167,6 +167,7 @@ class SupportedLanguages(str, Enum):
+     PYTHON = "python"
+     TRITON = "triton"
+     CUDA = "cuda"
++    HIP = "hip"
+     CPP = "cpp"
+ 
+ 
+@@ -258,11 +259,11 @@ class Solution:
+ def code_from_solution(language: str, solution: Solution) -> tuple[Any, Any]:
+     """
+     Convert a task_base.Solution back into (current_code, current_raw_code) expected by generators:
+-    - For CUDA: return ({path: content} dict, reconstructed XML blocks string)
+-    - For Triton/Python: return (entry_source_content, entry_source_content)
++    - For CUDA/HIP: return ({path: content} dict, reconstructed XML blocks string)
++    - For Triton/Python/Substrate: return (entry_source_content, entry_source_content)
+     """
+     lang = str(language or "").strip().lower()
+-    if lang == "cuda":
++    if lang in ("cuda", "hip"):
+         code_dict: Dict[str, str] = {sf.path: sf.content for sf in (solution.sources or [])}
+ 
+         def _xml_block(tag: str, name: str, content: str) -> str:
+@@ -271,11 +272,12 @@ def code_from_solution(language: str, solution: Solution) -> tuple[Any, Any]:
+         h = code_dict.get("kernel.h", "")
+         cu = code_dict.get("kernel.cu", "")
+         cpp = code_dict.get("main.cpp", "")
++        cu_tag = "hip_file" if lang == "hip" else "cuda_file"
+         parts: list[str] = []
+         if h:
+             parts.append(_xml_block("header_file", "kernel.h", h))
+         if cu:
+-            parts.append(_xml_block("cuda_file", "kernel.cu", cu))
++            parts.append(_xml_block(cu_tag, "kernel.cu", cu))
+         if cpp:
+             parts.append(_xml_block("cpp_file", "main.cpp", cpp))
+         current_raw_code = "\n\n".join(parts) if parts else ""
+@@ -364,6 +366,7 @@ def solution_from_json_dict(d: dict[str, Any]) -> Solution:
+         "python": SupportedLanguages.PYTHON,
+         "triton": SupportedLanguages.TRITON,
+         "cuda": SupportedLanguages.CUDA,
++        "hip": SupportedLanguages.HIP,
+         "cpp": SupportedLanguages.CPP,
+     }
+     lang = lang_map.get(lang_s, SupportedLanguages.PYTHON)
+@@ -388,5 +391,3 @@ def solution_from_json_dict(d: dict[str, Any]) -> Solution:
+         ),
+         sources=sources,
+     )
+-
+-

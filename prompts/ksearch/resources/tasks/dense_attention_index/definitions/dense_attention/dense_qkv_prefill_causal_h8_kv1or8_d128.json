@@ -1,0 +1,79 @@
+{
+  "name": "dense_qkv_prefill_causal_h8_kv1or8_d128",
+  "description": "Dense Q/K/V causal prefill attention (forward only) with q_heads=8, kv_heads in {8,1}, head_dim=128 Layout: [B, S, H, D].",
+  "op_type": "dense_attention",
+  "tags": [
+    "stage:prefill",
+    "layout:dense_qkv",
+    "status:custom"
+  ],
+  "axes": {
+    "batch_size": {
+      "type": "var",
+      "description": "Batch size."
+    },
+    "num_q_heads": {
+      "type": "const",
+      "value": 8
+    },
+    "num_kv_heads": {
+      "type": "var",
+      "description": "KV heads for dense prefill; must be 8 (MHA) or 1 (GQA-style shared KV)."
+    },
+    "seq_len": {
+      "type": "var",
+      "description": "Sequence length for prefill. q/k/v share the same sequence length."
+    },
+    "head_dim": {
+      "type": "const",
+      "value": 128
+    }
+  },
+  "inputs": {
+    "q": {
+      "shape": [
+        "batch_size",
+        "seq_len",
+        "num_q_heads",
+        "head_dim"
+      ],
+      "dtype": "bfloat16"
+    },
+    "k": {
+      "shape": [
+        "batch_size",
+        "seq_len",
+        "num_kv_heads",
+        "head_dim"
+      ],
+      "dtype": "bfloat16"
+    },
+    "v": {
+      "shape": [
+        "batch_size",
+        "seq_len",
+        "num_kv_heads",
+        "head_dim"
+      ],
+      "dtype": "bfloat16"
+    },
+    "sm_scale": {
+      "shape": null,
+      "dtype": "float32",
+      "description": "Softmax scale, usually 1/sqrt(head_dim)."
+    }
+  },
+  "outputs": {
+    "output": {
+      "shape": [
+        "batch_size",
+        "seq_len",
+        "num_q_heads",
+        "head_dim"
+      ],
+      "dtype": "bfloat16",
+      "description": "Dense causal prefill attention output."
+    }
+  },
+  "reference": "import torch\n\n\n@torch.no_grad()\ndef run(q, k, v, sm_scale):\n    # AITER-style main path only (branches removed):\n    # causal=True, dropout=0, no padding/window/alibi.\n    # input/output layout for this task: [B, S, H, D]\n    assert q.ndim == 4 and k.ndim == 4 and v.ndim == 4\n    bq, sq, hq, dq = q.shape\n    bk, sk, hk, dk = k.shape\n    bv, sv, hv, dv = v.shape\n\n    assert (bq, sq, dq) == (bk, sk, dk) == (bv, sv, dv)\n    assert hq == 8\n    assert hk in (1, 8)\n    assert hv == hk\n    assert dq == 128\n\n    if hk != hq:\n        groups = hq // hk\n        k = k.repeat_interleave(groups, dim=2)\n        v = v.repeat_interleave(groups, dim=2)\n\n    qf = q.to(torch.float32)\n    kf = k.to(torch.float32)\n    vf = v.to(torch.float32)\n\n    scores = torch.einsum(\"bthd,bshd->bhts\", qf * float(sm_scale), kf)\n    causal_mask = torch.triu(\n        torch.ones((sq, sk), device=q.device, dtype=torch.bool),\n        diagonal=1,\n    )\n    scores = scores.masked_fill(causal_mask.unsqueeze(0).unsqueeze(0), float(\"-inf\"))\n    probs = torch.softmax(scores, dim=-1)\n    out = torch.einsum(\"bhts,bshd->bthd\", probs, vf)\n    return out.to(torch.bfloat16)\n"
+}

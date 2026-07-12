@@ -1,0 +1,54 @@
+{
+  "name": "gemm_bf16_var_mnk",
+  "description": "General matrix multiply (GEMM) C = A @ B.T with BF16 and variable M/N/K.",
+  "op_type": "gemm",
+  "axes": {
+    "M": {
+      "type": "var",
+      "description": "rows of A and output"
+    },
+    "N": {
+      "type": "var",
+      "description": "rows of B (before transpose) and cols of output"
+    },
+    "K": {
+      "type": "var",
+      "description": "reduction dimension"
+    }
+  },
+  "inputs": {
+    "A": {
+      "shape": [
+        "M",
+        "K"
+      ],
+      "dtype": "bfloat16",
+      "description": "lhs matrix"
+    },
+    "B": {
+      "shape": [
+        "N",
+        "K"
+      ],
+      "dtype": "bfloat16",
+      "description": "rhs matrix, transposed in matmul"
+    }
+  },
+  "outputs": {
+    "C": {
+      "shape": [
+        "M",
+        "N"
+      ],
+      "dtype": "bfloat16",
+      "description": "gemm output"
+    }
+  },
+  "reference": "import torch\n\ndef run(A, B):\n    C = torch.matmul(A, B.T)\n    return C\n",
+  "tags": [
+    "gemm",
+    "bf16",
+    "ksearch",
+    "rocm"
+  ]
+}

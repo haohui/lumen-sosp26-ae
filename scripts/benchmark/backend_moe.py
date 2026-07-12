@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from backends import build_model_fn, load_module
+from backends import build_model_instance, exit_after_success_if_requested, load_module
 from cli_utils import emit_jsonl
 from cudagraph_timer import benchmark_with_cudagraph
 
@@ -26,7 +26,7 @@ class BackendSpec:
 
 BACKENDS = {
     name: BackendSpec(directory=name, variant=name)
-    for name in ("cudaforge", "kernelbench", "kernelfalcon", "ksearch")
+    for name in ("cudaforge", "kernelbench", "kernelfalcon", "ksearch", "lumen")
 }
 BACKENDS.update(
     {
@@ -237,10 +237,11 @@ def _emit_record(
     )
 
 
-def _run_aiter_variant(
+def _run_case_backend(
     *,
     backend: str,
-    moe_root: Path,
+    mod,
+    spec: BackendSpec,
     token_counts: list[int],
     shared_inputs: dict[int, SharedInputs],
     shared_weights: dict[str, torch.Tensor],
@@ -256,12 +257,10 @@ def _run_aiter_variant(
     graph_iters: int,
 ) -> None:
     del device, input_dtype
-    aiter_entry = moe_root / BACKENDS[backend].directory / "model.py"
-    aiter_mod = load_module(aiter_entry)
-    model_cls = getattr(aiter_mod, "Model", None)
+    model_cls = getattr(mod, "Model", None)
     if model_cls is None:
-        raise RuntimeError(f"missing Model in {aiter_entry}")
-    model = model_cls(variant=BACKENDS[backend].variant)
+        raise RuntimeError(f"missing Model for backend {backend}")
+    model = model_cls(variant=spec.variant)
 
     for tokens in token_counts:
         cases = model.build_cases(
@@ -296,7 +295,7 @@ def _run_aiter_variant(
 def _run_python_backend(
     *,
     backend: str,
-    moe_root: Path,
+    mod,
     token_counts: list[int],
     shared_inputs: dict[int, SharedInputs],
     shared_weights: dict[str, torch.Tensor],
@@ -311,8 +310,7 @@ def _run_python_backend(
     repeat: int,
     graph_iters: int,
 ) -> None:
-    path = moe_root / BACKENDS[backend].directory / "model.py"
-    fn = build_model_fn(load_module(path), device=device, dtype=input_dtype)
+    fn = build_model_instance(mod, device=device, dtype=input_dtype)
     for tokens in token_counts:
         x = shared_inputs[tokens]
         timing = _time_call(
@@ -344,7 +342,14 @@ def _run_python_backend(
 
 def run_backend(*, backend: str, **kwargs) -> None:
     spec = BACKENDS[backend]
-    if spec.directory == "aiter":
-        _run_aiter_variant(backend=backend, **kwargs)
+    mod = load_module(kwargs["moe_root"] / spec.directory / "model.py")
+    model_cls = getattr(mod, "Model", None)
+    if model_cls is not None and hasattr(model_cls, "build_cases"):
+        case_kwargs = dict(kwargs)
+        case_kwargs.pop("moe_root", None)
+        _run_case_backend(backend=backend, mod=mod, spec=spec, **case_kwargs)
     else:
-        _run_python_backend(backend=backend, **kwargs)
+        python_kwargs = dict(kwargs)
+        python_kwargs.pop("moe_root", None)
+        _run_python_backend(backend=backend, mod=mod, **python_kwargs)
+    exit_after_success_if_requested(mod)

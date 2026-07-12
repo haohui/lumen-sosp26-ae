@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from backends import build_model_fn, load_module
+from backends import build_model_instance, exit_after_success_if_requested, load_module
 from cli_utils import emit_jsonl
 from cudagraph_timer import benchmark_with_cudagraph
 
@@ -27,10 +27,10 @@ BACKENDS = {
         "kernelbench",
         "kernelfalcon",
         "ksearch",
+        "lumen",
         "triton",
     )
 }
-
 
 @dataclass
 class SharedInputs:
@@ -105,11 +105,16 @@ def run_backend(
     graph_iters: int,
 ) -> None:
     path = attn_root / BACKENDS[backend].directory / "model.py"
-    fn = build_model_fn(load_module(path), device=device, dtype=dtype)
+    mod = load_module(path)
+    model = build_model_instance(mod, device=device, dtype=dtype)
     for s in seq_lens:
         x = shared[s]
+        if hasattr(model, "build_call"):
+            call = model.build_call(q_bshd=x.q_bshd, k_bshd=x.k_bshd, v_bshd=x.v_bshd)
+        else:
+            call = lambda x=x, model=model: model(x.q_bshd, x.k_bshd, x.v_bshd)
         timing = benchmark_with_cudagraph(
-            lambda x=x: fn(x.q_bshd, x.k_bshd, x.v_bshd),
+            call,
             warmup=warmup,
             repeat=repeat,
             graph_iters=graph_iters,
@@ -128,3 +133,4 @@ def run_backend(
                 "mean_ms": timing.mean_ms,
             }
         )
+    exit_after_success_if_requested(mod)

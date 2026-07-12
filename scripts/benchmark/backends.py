@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +65,32 @@ class ModelBackend:
             return lambda *xs: target(*xs)
         raise ValueError(f"unsupported backend kind: {self.kind}")
 
+    def build_instance(
+        self,
+        module: ModuleType,
+        *,
+        device: torch.device,
+        dtype: torch.dtype | None,
+        model_kwargs: dict[str, Any],
+    ):
+        target = getattr(module, self.entrypoint)
+        if self.kind == "class":
+            model = target(**model_kwargs)
+            if hasattr(model, "to"):
+                if dtype is None:
+                    model = model.to(device=device)
+                else:
+                    model = model.to(device=device, dtype=dtype)
+            return model
+        if self.kind == "function":
+            if model_kwargs:
+                raise RuntimeError(
+                    f"function backend {self.entrypoint} does not accept model kwargs"
+                )
+            del device, dtype
+            return target
+        raise ValueError(f"unsupported backend kind: {self.kind}")
+
 
 BACKEND_MAP = {
     "model_new": ModelBackend(entrypoint="ModelNew", kind="class"),
@@ -92,3 +119,33 @@ def build_model_fn(
         f"{name} ({backend.entrypoint})" for name, backend in BACKEND_MAP.items()
     )
     raise RuntimeError(f"expected one of: {expected}")
+
+
+def build_model_instance(
+    module: ModuleType,
+    *,
+    device: torch.device,
+    dtype: torch.dtype | None = None,
+    model_kwargs: dict[str, Any] | None = None,
+):
+    model_kwargs = {} if model_kwargs is None else model_kwargs
+    for backend in BACKEND_MAP.values():
+        if backend.supports(module):
+            return backend.build_instance(
+                module,
+                device=device,
+                dtype=dtype,
+                model_kwargs=model_kwargs,
+            )
+    expected = ", ".join(
+        f"{name} ({backend.entrypoint})" for name, backend in BACKEND_MAP.items()
+    )
+    raise RuntimeError(f"expected one of: {expected}")
+
+
+def exit_after_success_if_requested(module: ModuleType) -> None:
+    if not bool(getattr(module, "DIRECT_EXIT_AFTER_SUCCESS", False)):
+        return
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)

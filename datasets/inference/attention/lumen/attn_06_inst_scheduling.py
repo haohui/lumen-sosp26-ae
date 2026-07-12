@@ -700,7 +700,9 @@ def _flash_attn_update_o_batch0(
     block_max = _compute_row_max_batch0(score_acc, wtid)
     mi_new = block_max
     if partition_idx != 0:
-        if mi > block_max:
+        if (block_max - mi) * scale_log2 <= al.convert(40.0, al.f32):
+            mi_new = mi
+        elif mi > block_max:
             mi_new = mi
     if block_max <= al.convert(NEG_INF, al.f32):
         if partition_idx == 0:
@@ -713,9 +715,12 @@ def _flash_attn_update_o_batch0(
     if partition_idx == 0:
         l = row_sum
     else:
-        scaling = al.exp2((mi - mi_new) * scale_log2)
-        l = al.fma(scaling, l, row_sum)
-        _multiply_alpha_o_mfma(scaling, out_acc)
+        if (block_max - mi) * scale_log2 <= al.convert(40.0, al.f32):
+            l = l + row_sum
+        else:
+            scaling = al.exp2((mi - mi_new) * scale_log2)
+            l = al.fma(scaling, l, row_sum)
+            _multiply_alpha_o_mfma(scaling, out_acc)
     mi = mi_new
 
     _gemm_o_mfma_v_word_regs_batch0_direct(out_acc, score_acc, v_regs)
@@ -741,7 +746,9 @@ def _flash_attn_update_o_batch1(
     block_max = _compute_row_max_batch1(score_acc, wtid)
     mi_new = block_max
     if partition_idx != 0:
-        if mi > block_max:
+        if (block_max - mi) * scale_log2 <= al.convert(40.0, al.f32):
+            mi_new = mi
+        elif mi > block_max:
             mi_new = mi
     if block_max <= al.convert(NEG_INF, al.f32):
         if partition_idx == 0:
@@ -754,9 +761,12 @@ def _flash_attn_update_o_batch1(
     if partition_idx == 0:
         l = row_sum
     else:
-        scaling = al.exp2((mi - mi_new) * scale_log2)
-        l = al.fma(scaling, l, row_sum)
-        _multiply_alpha_o_mfma(scaling, out_acc)
+        if (block_max - mi) * scale_log2 <= al.convert(40.0, al.f32):
+            l = l + row_sum
+        else:
+            scaling = al.exp2((mi - mi_new) * scale_log2)
+            l = al.fma(scaling, l, row_sum)
+            _multiply_alpha_o_mfma(scaling, out_acc)
     mi = mi_new
 
     _gemm_o_mfma_v_word_regs_batch1_direct(out_acc, score_acc, v_regs)
@@ -781,7 +791,7 @@ def _flash_attn_prepare_o_batch0(
     block_max = _compute_row_max_batch0(score_acc, wtid)
     mi_new = block_max
     if partition_idx != 0:
-        if (block_max - mi) * scale_log2 <= al.convert(8.0, al.f32):
+        if (block_max - mi) * scale_log2 <= al.convert(40.0, al.f32):
             mi_new = mi
         elif mi > block_max:
             mi_new = mi
@@ -796,7 +806,7 @@ def _flash_attn_prepare_o_batch0(
     if partition_idx == 0:
         l = row_sum
     else:
-        if (block_max - mi) * scale_log2 <= al.convert(8.0, al.f32):
+        if (block_max - mi) * scale_log2 <= al.convert(40.0, al.f32):
             l = l + row_sum
         else:
             scaling = al.exp2((mi - mi_new) * scale_log2)
@@ -825,7 +835,7 @@ def _flash_attn_prepare_o_batch1(
     block_max = _compute_row_max_batch1(score_acc, wtid)
     mi_new = block_max
     if partition_idx != 0:
-        if (block_max - mi) * scale_log2 <= al.convert(8.0, al.f32):
+        if (block_max - mi) * scale_log2 <= al.convert(40.0, al.f32):
             mi_new = mi
         elif mi > block_max:
             mi_new = mi
@@ -840,7 +850,7 @@ def _flash_attn_prepare_o_batch1(
     if partition_idx == 0:
         l = row_sum
     else:
-        if (block_max - mi) * scale_log2 <= al.convert(8.0, al.f32):
+        if (block_max - mi) * scale_log2 <= al.convert(40.0, al.f32):
             l = l + row_sum
         else:
             scaling = al.exp2((mi - mi_new) * scale_log2)

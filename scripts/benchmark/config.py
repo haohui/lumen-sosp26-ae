@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from pathlib import Path
-
-
-def benchmark_root(repo_root: Path) -> Path:
-    return repo_root / "datasets" / "inference"
-
-
 WORKLOADS = [1024, 2048, 4096, 8192, 16384]
 GEMM_WORKLOADS = list(WORKLOADS)
 ATTENTION_WORKLOADS = list(WORKLOADS)

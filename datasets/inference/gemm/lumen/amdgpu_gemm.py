@@ -126,9 +126,6 @@ def _make_batch2_kernel(config: GemmConfig):
     LOOP_SCHEDULER = config.loop_scheduler
     LOAD_MODE = config.load_mode
     STORE_VEC = config.store_vec
-    PREFETCH_BEFORE_ZERO = config.prefetch_before_zero
-    PREFETCH1_BEFORE_READ = config.prefetch1_before_read
-    PIPELINE_INTERLEAVE = config.pipeline_interleave
 
     @avelang.jit
     def _k_tile(group_m: al.u32, group_n: al.u32, k_total: al.u32, offset: al.u32) -> al.u32:
@@ -344,7 +341,7 @@ def _make_batch2_kernel(config: GemmConfig):
     @avelang.jit
     def kernel(A: al.Pointer(al.bf16), B: al.Pointer(al.bf16), C: al.Pointer(al.bf16), m: al.u32, n: al.u32, k: al.u32):
         tid = al.thread_id(0)
-        wid = tid // WARP_SIZE
+        wid = al.amdgpu.readfirstlane(tid // WARP_SIZE)
         wtid = tid % WARP_SIZE
         warp_row = wid // WARP_PER_COL
         warp_col = wid % WARP_PER_COL
@@ -376,39 +373,25 @@ def _make_batch2_kernel(config: GemmConfig):
         acc = al.make_local((M_TILES_PER_WARP, N_TILES_PER_WARP, 4), al.f32)
         k_total = k // GROUP_K
 
-        if PREFETCH_BEFORE_ZERO:
-            _load_global_ab(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, 0), tid, reg_a, reg_b)
-
         for tile_m in al.range(M_TILES_PER_WARP):
             for tile_n in al.range(N_TILES_PER_WARP):
                 for acc_idx in al.range(4):
                     acc[tile_m, tile_n, acc_idx] = al.convert(0.0, al.f32)
 
-        if not PREFETCH_BEFORE_ZERO:
-            _load_global_ab(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, 0), tid, reg_a, reg_b)
+        _load_global_ab(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, 0), tid, reg_a, reg_b)
 
         _store_shm_ab(shm_a, shm_b, reg_a, reg_b, tid)
         al.syncthreads()
 
-        if PREFETCH1_BEFORE_READ:
-            _load_global_next(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, 1), tid, reg_a, reg_b)
-            _read_shm_ab(shm_a, shm_b, wid, 0, wtid, data_a0, data_b0)
-        else:
-            _read_shm_ab(shm_a, shm_b, wid, 0, wtid, data_a0, data_b0)
-            _load_global_next(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, 1), tid, reg_a, reg_b)
+        _read_shm_ab(shm_a, shm_b, wid, 0, wtid, data_a0, data_b0)
+        _load_global_next(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, 1), tid, reg_a, reg_b)
 
         for k_idx in al.range(0, k_total - 3, 2):
             _read_shm_ab(shm_a, shm_b, wid, 1, wtid, data_a1, data_b1)
             _matmul(data_a0, data_b0, acc)
             al.syncthreads()
-            if PIPELINE_INTERLEAVE:
-                _store_shm_b(shm_b, reg_b, tid)
-                _load_global_b(b_rsrc, k, group_n, _k_tile(group_m, group_n, k_total, k_idx + 2), tid, reg_b)
-                _store_shm_a(shm_a, reg_a, tid)
-                _load_global_a(a_rsrc, k, group_m, _k_tile(group_m, group_n, k_total, k_idx + 2), tid, reg_a)
-            else:
-                _store_shm_ab(shm_a, shm_b, reg_a, reg_b, tid)
-                _load_global_ab(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, k_idx + 2), tid, reg_a, reg_b)
+            _store_shm_ab(shm_a, shm_b, reg_a, reg_b, tid)
+            _load_global_ab(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, k_idx + 2), tid, reg_a, reg_b)
             al.syncthreads()
 
             _read_shm_ab(shm_a, shm_b, wid, 0, wtid, data_a0, data_b0)
@@ -417,14 +400,8 @@ def _make_batch2_kernel(config: GemmConfig):
             _read_shm_ab(shm_a, shm_b, wid, 1, wtid, data_a1, data_b1)
             _matmul(data_a0, data_b0, acc)
             al.syncthreads()
-            if PIPELINE_INTERLEAVE:
-                _store_shm_b(shm_b, reg_b, tid)
-                _load_global_b(b_rsrc, k, group_n, _k_tile(group_m, group_n, k_total, k_idx + 3), tid, reg_b)
-                _store_shm_a(shm_a, reg_a, tid)
-                _load_global_a(a_rsrc, k, group_m, _k_tile(group_m, group_n, k_total, k_idx + 3), tid, reg_a)
-            else:
-                _store_shm_ab(shm_a, shm_b, reg_a, reg_b, tid)
-                _load_global_ab(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, k_idx + 3), tid, reg_a, reg_b)
+            _store_shm_ab(shm_a, shm_b, reg_a, reg_b, tid)
+            _load_global_ab(a_rsrc, b_rsrc, k, group_m, group_n, _k_tile(group_m, group_n, k_total, k_idx + 3), tid, reg_a, reg_b)
             al.syncthreads()
 
             _read_shm_ab(shm_a, shm_b, wid, 0, wtid, data_a0, data_b0)
@@ -478,8 +455,6 @@ def _make_batch4_kernel(config: GemmConfig):
     WGM_MODE = config.wgm_mode
     LOAD_MODE = config.load_mode
     STORE_VEC = config.store_vec
-    PREFETCH_BEFORE_ZERO = config.prefetch_before_zero
-    PIPELINE_INTERLEAVE = config.pipeline_interleave
     LOOP_SCHEDULER = config.loop_scheduler
 
     @avelang.jit
@@ -795,7 +770,7 @@ def _make_batch4_kernel(config: GemmConfig):
         k: al.u32,
     ):
         tid = al.thread_id(0)
-        wid = tid // WARP_SIZE
+        wid = al.amdgpu.readfirstlane(tid // WARP_SIZE)
         wtid = tid % WARP_SIZE
         group_m, group_n = _wgm_mapping(
             m,
@@ -828,22 +803,15 @@ def _make_batch4_kernel(config: GemmConfig):
         acc = al.make_local((M_TILES_PER_WARP, N_TILES_PER_WARP, 4), al.f32)
         k_total = k // GROUP_K
 
-        if PREFETCH_BEFORE_ZERO:
-            _load_global_ab(
-                a_rsrc, b_rsrc, k, group_m, group_n, al.convert(0, al.u32),
-                tid, reg_a, reg_b
-            )
-
         for tile_m in al.range(M_TILES_PER_WARP):
             for tile_n in al.range(N_TILES_PER_WARP):
                 for acc_idx in al.range(4):
                     acc[tile_m, tile_n, acc_idx] = al.convert(0.0, al.f32)
 
-        if not PREFETCH_BEFORE_ZERO:
-            _load_global_ab(
-                a_rsrc, b_rsrc, k, group_m, group_n, al.convert(0, al.u32),
-                tid, reg_a, reg_b
-            )
+        _load_global_ab(
+            a_rsrc, b_rsrc, k, group_m, group_n, al.convert(0, al.u32),
+            tid, reg_a, reg_b
+        )
 
         _config_batch4_store_shm_ba(shm_a, shm_b, reg_a, reg_b, tid)
         al.syncthreads()
@@ -861,17 +829,11 @@ def _make_batch4_kernel(config: GemmConfig):
             _config_batch4_read_shm_ba(shm_a, shm_b, wid, 3, wtid, data_a3, data_b3)
             _matmul(data_a2, data_b2, acc)
             al.syncthreads()
-            if PIPELINE_INTERLEAVE:
-                _config_batch4_store_shm_b(shm_b, reg_b, tid)
-                _load_global_b(b_rsrc, k, group_n, k_idx + 2, tid, reg_b)
-                _config_batch4_store_shm_a(shm_a, reg_a, tid)
-                _load_global_a(a_rsrc, k, group_m, k_idx + 2, tid, reg_a)
-            else:
-                _config_batch4_store_shm_ba(shm_a, shm_b, reg_a, reg_b, tid)
-                _load_global_ab(
-                    a_rsrc, b_rsrc, k, group_m, group_n, k_idx + 2,
-                    tid, reg_a, reg_b
-                )
+            _config_batch4_store_shm_ba(shm_a, shm_b, reg_a, reg_b, tid)
+            _load_global_ab(
+                a_rsrc, b_rsrc, k, group_m, group_n, k_idx + 2,
+                tid, reg_a, reg_b
+            )
             al.syncthreads()
             _config_batch4_read_shm_ba(shm_a, shm_b, wid, 0, wtid, data_a0, data_b0)
             _matmul(data_a3, data_b3, acc)

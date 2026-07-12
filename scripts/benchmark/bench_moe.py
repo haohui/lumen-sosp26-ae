@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from backend_moe import (
     BACKENDS,
@@ -12,7 +13,7 @@ from backend_moe import (
     validate_config,
 )
 from cli_utils import add_timer_args, cuda_runtime
-from config import MOE_DEFAULTS, MOE_WORKLOADS, TIMER_DEFAULTS, benchmark_root
+from config import MOE_DEFAULTS, MOE_WORKLOADS, TIMER_DEFAULTS
 from paths import resolve_repo_root
 
 
@@ -40,6 +41,12 @@ def parse_args() -> argparse.Namespace:
         "--check-correctness",
         action="store_true",
         help="Compare each backend result with a routed PyTorch reference.",
+    )
+    p.add_argument(
+        "--model-path",
+        type=Path,
+        default=None,
+        help="Backend model.py to load instead of the selected backend's default.",
     )
     add_timer_args(p, TIMER_DEFAULTS)
     return p.parse_args()
@@ -77,7 +84,10 @@ def main() -> None:
 
     run_backend(
         backend=args.backend,
-        moe_root=benchmark_root(resolve_repo_root()) / "moe",
+        moe_root=resolve_repo_root() / "datasets" / "inference" / "moe",
+        model_path=(
+            args.model_path.expanduser().resolve() if args.model_path else None
+        ),
         token_counts=args.tokens,
         shared_inputs=shared_inputs,
         shared_weights=shared_weights,

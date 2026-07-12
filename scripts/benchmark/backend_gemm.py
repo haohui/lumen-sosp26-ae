@@ -73,6 +73,7 @@ def run_backend(
     *,
     backend: str,
     gemm_root: Path,
+    model_path: Path | None = None,
     matrix_sizes: list[int],
     shared: dict[int, SharedInputs],
     device: torch.device,
@@ -84,7 +85,7 @@ def run_backend(
     check_correctness: bool = False,
 ) -> None:
     spec = BACKENDS[backend]
-    path = gemm_root / spec.directory / "model.py"
+    path = model_path or gemm_root / spec.directory / "model.py"
     mod = load_module(path)
     model = build_model_instance(mod, device=device, dtype=dtype)
     for s in matrix_sizes:

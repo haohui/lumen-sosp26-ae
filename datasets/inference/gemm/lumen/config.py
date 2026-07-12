@@ -36,9 +36,6 @@ class GemmConfig:
     loop_scheduler: int
     load_mode: int
     store_vec: int
-    prefetch_before_zero: bool = False
-    prefetch1_before_read: bool = False
-    pipeline_interleave: bool = False
     source: str = ""
 
     @property
@@ -62,9 +59,6 @@ class GemmConfig:
             self.loop_scheduler,
             self.load_mode,
             self.store_vec,
-            int(self.prefetch_before_zero),
-            int(self.prefetch1_before_read),
-            int(self.pipeline_interleave),
         )
 
     def supports(self, m: int, n: int, k: int) -> bool:
@@ -100,9 +94,6 @@ CONFIGS: tuple[GemmConfig, ...] = (
         loop_scheduler=1,
         load_mode=LOAD_MODE_DEFAULT,
         store_vec=1,
-        prefetch_before_zero=False,
-        prefetch1_before_read=False,
-        pipeline_interleave=True,
         source="1024 tuned batch2 stagger variant",
     ),
     GemmConfig(
@@ -125,9 +116,6 @@ CONFIGS: tuple[GemmConfig, ...] = (
         loop_scheduler=0,
         load_mode=LOAD_MODE_BASE_OFFSET,
         store_vec=2,
-        prefetch_before_zero=True,
-        prefetch1_before_read=True,
-        pipeline_interleave=False,
         source="2048 tuned batch2 stagger variant",
     ),
     GemmConfig(
@@ -150,9 +138,6 @@ CONFIGS: tuple[GemmConfig, ...] = (
         loop_scheduler=0,
         load_mode=LOAD_MODE_DEFAULT,
         store_vec=2,
-        prefetch_before_zero=False,
-        prefetch1_before_read=False,
-        pipeline_interleave=False,
         source="generic batch2 mapping32 variant",
     ),
     GemmConfig(
@@ -175,9 +160,6 @@ CONFIGS: tuple[GemmConfig, ...] = (
         loop_scheduler=1,
         load_mode=LOAD_MODE_BASE_OFFSET,
         store_vec=4,
-        prefetch_before_zero=True,
-        prefetch1_before_read=False,
-        pipeline_interleave=True,
         source="4096 tuned batch4 row-major variant",
     ),
     GemmConfig(
@@ -200,9 +182,6 @@ CONFIGS: tuple[GemmConfig, ...] = (
         loop_scheduler=1,
         load_mode=LOAD_MODE_BASE_OFFSET,
         store_vec=4,
-        prefetch_before_zero=True,
-        prefetch1_before_read=False,
-        pipeline_interleave=True,
         source="8192 tuned batch4 mapping8 x4 variant",
     ),
     GemmConfig(
@@ -225,9 +204,6 @@ CONFIGS: tuple[GemmConfig, ...] = (
         loop_scheduler=1,
         load_mode=LOAD_MODE_DEFAULT,
         store_vec=2,
-        prefetch_before_zero=False,
-        prefetch1_before_read=False,
-        pipeline_interleave=False,
         source="16384 tuned batch4 mapping8 x2 variant",
     ),
 )

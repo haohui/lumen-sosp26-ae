@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from backend_gemm import BACKENDS, build_shared_inputs, parse_dtype, run_backend
 from cli_utils import add_timer_args, cuda_runtime
-from config import GEMM_DEFAULTS, GEMM_WORKLOADS, TIMER_DEFAULTS, benchmark_root
+from config import GEMM_DEFAULTS, GEMM_WORKLOADS, TIMER_DEFAULTS
 from paths import resolve_repo_root
 
 
@@ -30,6 +31,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Compare each backend result with torch.matmul before benchmarking.",
     )
+    p.add_argument(
+        "--model-path",
+        type=Path,
+        default=None,
+        help="Backend model.py to load instead of the selected backend's default.",
+    )
     add_timer_args(p, TIMER_DEFAULTS)
     return p.parse_args()
 
@@ -47,7 +54,10 @@ def main() -> None:
     )
     run_backend(
         backend=args.backend,
-        gemm_root=benchmark_root(resolve_repo_root()) / "gemm",
+        gemm_root=resolve_repo_root() / "datasets" / "inference" / "gemm",
+        model_path=(
+            args.model_path.expanduser().resolve() if args.model_path else None
+        ),
         matrix_sizes=args.matrix_sizes,
         shared=shared,
         device=device,

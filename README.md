@@ -50,7 +50,8 @@ The experiments reported in the paper were run on a server with:
 ## Repository Layout
 
 The repository is organized so shared Python code lives under `python/`, while
-the benchmark datasets and kernel implementations live under `datasets/`:
+the benchmark datasets, generated outputs, and kernel implementations live
+under `datasets/`.
 
 - `python/lumen/`: shared Python implementation used by benchmarking,
   generation, and evaluation scripts. Common helpers, configuration loaders,
@@ -65,6 +66,8 @@ the benchmark datasets and kernel implementations live under `datasets/`:
 - `data/traces/`: compressed agent trajectories and their associated prompts,
   model inputs and outputs, evaluation results, and run metadata. See
   [Traces](#traces) for the available bundles.
+- `python/lumen/harness/datasets/kernelbench/`: KernelBench generation and
+  evaluation harness.
 
 ## Reproducing the evaluation
 
@@ -73,11 +76,25 @@ The repository provides a number of scripts under the `scripts/` directory to re
 - `figure1/validate_invariant.py` validates the data flow invariants described in Figure 1.
 - `table2/benchmark.py` reproduces the benchmark results of Table 2.
 - `table2/agent_generate.py` regenerates the GPU kernels with KernelFalcon, KSearch, KernelBench, CUDAForge. 
+- `table2/optimizer.py` optimizes the GEMM, Attention and MoE kernels.
 - `table3/run_kernelbench_table3.py` regenerates the KernelBench traces used by Table 3.
 - `table3/kernelbench_table.py` emits CSV/JSON summaries for the KernelBench rows of Table 3.
 - `figure2/bench_attn_ablation.py` regenerates the ablation of optimizations on the flash attention kernel.
 
-Note that for generation tasks, you will need to set the environment various `LUMEN_GENERATION_API_URL` and `LUMEN_GENERATION_API_KEY` to point to a valid API endpoint of the  chat completion API. 
+Note that for generation tasks, you will need to set the environment various `LUMEN_GENERATION_API_URL` and `LUMEN_GENERATION_API_KEY` to point to a valid API endpoint of the chat completion API. 
+
+We also provide a Codex-based harness for reproducing Lumen's optimization
+sequences for GEMM, Flash Attention, and fused MoE. The Codex CLI must be
+installed and configured before running the harness. For example, run the
+complete GEMM sequence from the repository root:
+
+```bash
+PYTHONPATH=python python -m lumen.tools.cli.lumen_optimize gemm --gpu-id 0
+```
+
+Use `attn` or `moe` instead of `gemm` for the other workloads. See the
+[Lumen optimization guide](python/lumen/harness/datasets/lumen/README.md) for
+complete usage and resume instructions.
 
 ## Traces
 

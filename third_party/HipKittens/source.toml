@@ -1,0 +1,5 @@
+[repo]
+name = "HipKittens"
+upstream = "https://github.com/HazyResearch/HipKittens.git"
+base_commit = "7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b"
+patches = []

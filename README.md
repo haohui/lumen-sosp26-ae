@@ -69,19 +69,24 @@ The experiments reported in the paper were run on a server with:
 
 ## Repository Layout
 
-The repository is organized so Python code lives under `python/`, while
-benchmark inputs and generated outputs live under `data/`:
+The repository is organized around executable reproduction scripts and their
+inputs:
 
-- `python/lumen/`: shared Python implementation used by benchmarking,
-  generation, and evaluation scripts. Common helpers, configuration loaders,
-  result parsing, and reusable benchmark utilities should live here.
-- `scripts/benchmark/`: standalone artifact benchmarking tools that emit JSONL
-  timing records.
-- `data/benchmarks/gemm/`, `data/benchmarks/attn/`, `data/benchmarks/moe/`: kernel
-  implementations produced by Lumen and by baseline agentic systems for GEMM,
-  flash attention, and fused MoE.
-- `data/benchmarks/kernelbench/lumen/`: Lumen-generated KernelBench solutions,
-  including multiple optimization rounds when applicable.
+- `docker/`: reproducible ROCm evaluation image and its build instructions.
+- `scripts/figure1/`, `scripts/figure2/`, and `scripts/table2/`: entry points
+  for reproducing the paper figures and tables.
+- `scripts/benchmark/`: shared CUDA-graph benchmark harnesses for GEMM,
+  attention, and MoE; they emit JSONL timing records.
+- `scripts/generation/`: generation and result-staging drivers.
+- `datasets/inference/`: Lumen and baseline kernel implementations consumed by
+  the benchmark scripts.
+- `python/lumen/`: shared Python implementation for generation, evaluation,
+  configuration, and reporting.
+- `packages/hipkittens/`: Python bindings for the pinned HipKittens kernels.
+- `third_party/`: pinned source manifests and local patches for external
+  baselines and dependencies.
+- `prompts/` and `skills/`: prompt resources and kernel-development context
+  used by the generation workflows.
 
 ## Reproducing the evaluation
 

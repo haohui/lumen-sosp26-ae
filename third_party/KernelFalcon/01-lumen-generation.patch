@@ -1,0 +1,692 @@
+diff --git a/Fuser/auto_agent.py b/Fuser/auto_agent.py
+index 21bc427..d4119bb 100644
+--- a/Fuser/auto_agent.py
++++ b/Fuser/auto_agent.py
+@@ -47,6 +47,7 @@ import argparse
+ import ast
+ import hashlib
+ import json
++import os
+ import sys
+ from dataclasses import dataclass
+ from pathlib import Path
+@@ -127,6 +128,13 @@ def _save_router_cache(cache: dict[str, Any]) -> None:
+         pass
+ 
+ 
++def _read_prompt_suffix_file(path: str | None) -> str:
++    path = path or os.getenv("KERNELFALCON_PROMPT_SUFFIX_FILE")
++    if not path:
++        return ""
++    return Path(path).read_text(encoding="utf-8").strip()
++
++
+ def _dotted_name(n: ast.AST) -> str:
+     parts: list[str] = []
+     cur = n
+@@ -350,6 +358,7 @@ class AutoKernelRouter:
+         use_router_cache: bool = True,
+         no_cusolver: bool = False,
+         test_timeout_s: int = 30,
++        prompt_suffix: str = "",
+     ) -> None:
+         self.ka_model = ka_model
+         self.ka_num_workers = ka_num_workers
+@@ -376,6 +385,7 @@ class AutoKernelRouter:
+         self.use_router_cache = use_router_cache
+         self.no_cusolver = no_cusolver
+         self.test_timeout_s = test_timeout_s
++        self.prompt_suffix = str(prompt_suffix or "").strip()
+ 
+     def _solve_with_kernelagent(self, problem_code: str) -> RouteResult:
+         agent = TritonKernelAgent(
+@@ -386,6 +396,7 @@ class AutoKernelRouter:
+             target_platform=self.platform_config,
+             no_cusolver=self.no_cusolver,
+             test_timeout_s=self.run_timeout_s,
++            prompt_suffix=self.prompt_suffix,
+         )
+         try:
+             # Ensure exceptions in KernelAgent do not abort routing; return a structured failure
+@@ -806,6 +817,7 @@ def main(argv: list[str] | None = None) -> int:
+             use_router_cache=(not args.no_router_cache),
+             no_cusolver=args.no_cusolver,
+             test_timeout_s=args.run_timeout_s,
++            prompt_suffix=_read_prompt_suffix_file(None),
+         )
+ 
+     try:
+diff --git a/triton_kernel_agent/agent.py b/triton_kernel_agent/agent.py
+index c90e103..65a77fe 100644
+--- a/triton_kernel_agent/agent.py
++++ b/triton_kernel_agent/agent.py
+@@ -21,7 +21,11 @@ from pathlib import Path
+ from typing import Any
+ from datetime import datetime
+ import logging
+-from dotenv import load_dotenv
++try:
++    from dotenv import load_dotenv
++except Exception:  # pragma: no cover - optional dependency in some containers
++    def load_dotenv(*args, **kwargs):
++        return False
+ 
+ from .manager import WorkerManager
+ from .prompt_manager import PromptManager
+@@ -43,6 +47,7 @@ class TritonKernelAgent:
+         target_platform: PlatformConfig | None = None,
+         no_cusolver: bool = False,
+         test_timeout_s: int = 30,
++        prompt_suffix: str = "",
+     ):
+         """
+         Initialize the Triton Kernel Agent.
+@@ -92,12 +97,15 @@ class TritonKernelAgent:
+         )
+         self.no_cusolver = no_cusolver
+         self.test_timeout_s = test_timeout_s
++        self.prompt_suffix = str(prompt_suffix or "").strip()
+ 
+         # Setup main logger
+         self._setup_logging()
+ 
+         # Initialize prompt manager
+-        self.prompt_manager = PromptManager(target_platform=target_platform)
++        self.prompt_manager = PromptManager(
++            target_platform=target_platform,
++        )
+ 
+         # Initialize worker manager
+         self.manager = WorkerManager(
+@@ -110,6 +118,7 @@ class TritonKernelAgent:
+             target_platform=self._platform_config.name,
+             no_cusolver=self.no_cusolver,
+             test_timeout_s=self.test_timeout_s,
++            prompt_suffix=self.prompt_suffix,
+         )
+ 
+     def _setup_logging(self):
+@@ -141,6 +150,17 @@ class TritonKernelAgent:
+         if not response_text:
+             return None
+ 
++        def _strip_partial_fence(text: str) -> str:
++            s = text.strip()
++            if not s.startswith("```"):
++                return s
++            lines = s.splitlines()
++            if lines and lines[0].lstrip().startswith("```"):
++                lines = lines[1:]
++            if lines and lines[-1].strip() == "```":
++                lines = lines[:-1]
++            return "\n".join(lines).strip()
++
+         # First, try to find code blocks with language markers
+         # Pattern matches ```python or ```language_name
+         pattern = rf"```{language}\s*\n(.*?)```"
+@@ -158,9 +178,12 @@ class TritonKernelAgent:
+             # Return the first match
+             return matches[0].strip()
+ 
++        # Handle partial fenced replies (opening ```python with missing closing fence).
++        normalized_text = _strip_partial_fence(response_text)
++
+         # If no code blocks found, check if the entire response looks like code
+         # This is a fallback for cases where LLM doesn't use code blocks
+-        lines = response_text.strip().split("\n")
++        lines = normalized_text.split("\n")
+ 
+         # Simple heuristic: if response contains import statements or function definitions
+         code_indicators = ["import ", "from ", "def ", "class ", "@", '"""', "'''"]
+@@ -170,7 +193,7 @@ class TritonKernelAgent:
+             for indicator in code_indicators
+         ):
+             # Likely the entire response is code
+-            return response_text.strip()
++            return normalized_text
+ 
+         # No code found
+         self.logger.warning("No code block found in LLM response")
+@@ -193,6 +216,8 @@ class TritonKernelAgent:
+         # Add high_reasoning_effort to kwargs if set
+         if self.high_reasoning_effort:
+             kwargs["high_reasoning_effort"] = True
++        if self.prompt_suffix and kwargs.get("apply_prompt_suffix", True):
++            kwargs["prompt_suffix"] = self.prompt_suffix
+ 
+         response = self.provider.get_response(self.model_name, messages, **kwargs)
+         return response.content
+@@ -231,7 +256,11 @@ class TritonKernelAgent:
+ 
+                 # Call LLM API
+                 messages = [{"role": "user", "content": prompt}]
+-                response_text = self._call_llm(messages, max_tokens=24000)
++                response_text = self._call_llm(
++                    messages,
++                    max_tokens=24000,
++                    apply_prompt_suffix=False,
++                )
+                 self.logger.info("Raw test generation response:\n%s", response_text)
+ 
+                 # Extract test code from response
+@@ -355,8 +384,6 @@ if __name__ == "__main__":
+                 messages = [{"role": "user", "content": prompt}]
+ 
+                 # Use provider's multiple response capability
+-                max_completion_tokens = 20000
+-
+                 if self.provider.supports_multiple_completions():
+                     # Provider supports native multiple completions
+                     responses = self.provider.get_multiple_responses(
+@@ -364,8 +391,9 @@ if __name__ == "__main__":
+                         messages,
+                         n=num_seeds,
+                         temperature=0.8,
+-                        max_tokens=max_completion_tokens,
++                        max_tokens=24000,
+                         high_reasoning_effort=self.high_reasoning_effort,
++                        prompt_suffix=self.prompt_suffix,
+                     )
+ 
+                     for i, response in enumerate(responses):
+@@ -381,7 +409,7 @@ if __name__ == "__main__":
+                     for i in range(num_seeds):
+                         response_text = self._call_llm(
+                             messages,
+-                            max_tokens=max_completion_tokens,
++                            max_tokens=24000,
+                             temperature=0.8 + (i * 0.1),
+                         )
+                         kernel_code = self._extract_code_from_response(response_text)
+diff --git a/triton_kernel_agent/manager.py b/triton_kernel_agent/manager.py
+index 412eca5..a5ce5a2 100644
+--- a/triton_kernel_agent/manager.py
++++ b/triton_kernel_agent/manager.py
+@@ -40,6 +40,7 @@ class WorkerManager:
+         target_platform: str = "cuda",
+         no_cusolver: bool = False,
+         test_timeout_s: int = 30,
++        prompt_suffix: str = "",
+     ):
+         """
+         Initialize the worker manager.
+@@ -65,6 +66,7 @@ class WorkerManager:
+         self.target_platform = target_platform
+         self.no_cusolver = no_cusolver
+         self.test_timeout_s = test_timeout_s
++        self.prompt_suffix = str(prompt_suffix or "").strip()
+ 
+         # Setup logging
+         if log_dir is None:
+@@ -172,6 +174,7 @@ class WorkerManager:
+                     self.target_platform,
+                     self.no_cusolver,
+                     self.test_timeout_s,
++                    self.prompt_suffix,
+                 )
+ 
+                 process = mp.Process(target=worker_process, args=args)
+@@ -238,6 +241,7 @@ def worker_process(
+     target_platform: str,
+     no_cusolver: bool = False,
+     test_timeout_s: int = 30,
++    prompt_suffix: str = "",
+ ):
+     """
+     Worker process for kernel verification and refinement.
+@@ -259,6 +263,7 @@ def worker_process(
+         target_platform=target_platform,
+         no_cusolver=no_cusolver,
+         test_timeout_s=test_timeout_s,
++        prompt_suffix=prompt_suffix,
+     )
+ 
+     result = worker.run(
+diff --git a/triton_kernel_agent/platform_config.py b/triton_kernel_agent/platform_config.py
+index f69c6b5..598591e 100644
+--- a/triton_kernel_agent/platform_config.py
++++ b/triton_kernel_agent/platform_config.py
+@@ -18,9 +18,9 @@ Platform configuration registry for multi-backend support.
+ Usage:
+     from triton_kernel_agent.platform_config import get_platform, get_platform_choices
+ 
+-    platform = get_platform("xpu")
+-    print(platform.device_string)  # "xpu"
+-    print(platform.guidance_block)  # Intel XPU-specific guidance
++    platform = get_platform("rocm")
++    print(platform.device_string)  # "HIP/ROCm" prompt device label
++    print(platform.guidance_block)  # empty; templates own ROCm wording
+ """
+ 
+ from dataclasses import dataclass, field
+@@ -92,6 +92,13 @@ PLATFORMS: dict[str, PlatformConfig] = {
+         kernel_guidance=_XPU_KERNEL_GUIDANCE,
+         cuda_hacks_to_strip=_XPU_CUDA_HACKS,
+     ),
++    "rocm": PlatformConfig(
++        name="rocm",
++        device_string="HIP/ROCm",
++        guidance_block="",
++        kernel_guidance="",
++        cuda_hacks_to_strip=(),
++    ),
+ }
+ 
+ 
+diff --git a/triton_kernel_agent/prompt_manager.py b/triton_kernel_agent/prompt_manager.py
+index 4538fbb..26a7695 100644
+--- a/triton_kernel_agent/prompt_manager.py
++++ b/triton_kernel_agent/prompt_manager.py
+@@ -14,6 +14,7 @@
+ 
+ """Prompt Manager for handling Jinja2 templates."""
+ 
++import os
+ from pathlib import Path
+ 
+ from triton_kernel_agent.platform_config import get_platform, PlatformConfig
+@@ -28,7 +29,6 @@ except ImportError:
+     FileSystemLoader = None
+     Template = None
+ 
+-
+ class PromptManager:
+     """
+     Manages Jinja2 templates for prompt generation.
+@@ -111,6 +111,9 @@ class PromptManager:
+             if template_path.exists():
+                 self.templates[template_name] = self.env.get_template(template_file)
+ 
++    def _finalize_prompt(self, text: str) -> str:
++        return str(text or "")
++
+     def render_test_generation_prompt(
+         self, problem_description: str, provided_test_code: str | None = None
+     ) -> str:
+@@ -125,11 +128,12 @@ class PromptManager:
+             Rendered prompt string
+         """
+         template = self.templates["test_generation"]
+-        return template.render(
++        rendered = template.render(
+             problem_description=problem_description,
+             provided_test_code=provided_test_code,
+             device_string=self.target_platform.device_string,
+         )
++        return self._finalize_prompt(rendered)
+ 
+     def render_kernel_generation_prompt(
+         self,
+@@ -154,15 +158,16 @@ class PromptManager:
+ 
+         # Load triton guidelines if not provided
+         if triton_guidelines is None:
+-            triton_guidelines = self.render_triton_guidelines()
++            triton_guidelines = self.render_triton_guidelines(problem_description)
+ 
+-        return template.render(
++        rendered = template.render(
+             problem_description=problem_description,
+             test_code=test_code,
+             triton_guidelines=triton_guidelines,
+             kernel_guidance=self.target_platform.kernel_guidance,
+             no_cusolver=no_cusolver,
+         )
++        return self._finalize_prompt(rendered)
+ 
+     def render_kernel_refinement_prompt(
+         self,
+@@ -193,9 +198,9 @@ class PromptManager:
+ 
+         # Load triton guidelines if not provided
+         if triton_guidelines is None:
+-            triton_guidelines = self.render_triton_guidelines()
++            triton_guidelines = self.render_triton_guidelines(problem_description)
+ 
+-        return template.render(
++        rendered = template.render(
+             problem_description=problem_description,
+             test_code=test_code,
+             kernel_code=kernel_code,
+@@ -205,6 +210,7 @@ class PromptManager:
+             kernel_guidance=self.target_platform.kernel_guidance,
+             no_cusolver=no_cusolver,
+         )
++        return self._finalize_prompt(rendered)
+ 
+     def render_kernel_optimization_prompt(
+         self,
+@@ -259,7 +265,7 @@ class PromptManager:
+             "recommended_fix": recommended_fix,
+         }
+ 
+-        return template.render(
++        rendered = template.render(
+             problem_description=problem_description,
+             kernel_code=kernel_code,
+             gpu_specs=gpu_specs,
+@@ -272,6 +278,7 @@ class PromptManager:
+             reflexions=reflexions,
+             rag_context=rag_context,
+         )
++        return self._finalize_prompt(rendered)
+ 
+     def render_reflexion_prompt(self, attempt) -> str:
+         """
+@@ -285,10 +292,10 @@ class PromptManager:
+         """
+         if "reflexion_prompt" not in self.templates:
+             # Fallback if template not loaded - return inline prompt
+-            return self._inline_reflexion_prompt(attempt)
++            return self._finalize_prompt(self._inline_reflexion_prompt(attempt))
+ 
+         template = self.templates["reflexion_prompt"]
+-        return template.render(attempt=attempt)
++        return self._finalize_prompt(template.render(attempt=attempt))
+ 
+     def _inline_reflexion_prompt(self, attempt) -> str:
+         """Generate inline reflexion prompt when template is not available."""
+@@ -325,7 +332,18 @@ Respond with JSON containing:
+     "try_patterns": ["pattern to try next"]
+ }}"""
+ 
+-    def render_triton_guidelines(self) -> str:
++    @staticmethod
++    def _infer_task_kind(problem_description: str | None) -> str:
++        text = str(problem_description or "").lower()
++        if any(token in text for token in ("qkv", "query", "key", "value", "attention", "scaled_dot_product")):
++            return "attention"
++        if any(token in text for token in ("moe", "mixture", "expert", "topk", "top-k", "router", "blockscale")):
++            return "moe"
++        if any(token in text for token in ("gemm", "matmul", "matrix multiply", "matrix multiplication")):
++            return "gemm"
++        return "generic"
++
++    def render_triton_guidelines(self, problem_description: str | None = None) -> str:
+         """
+         Render the Triton guidelines.
+ 
+@@ -333,7 +351,14 @@ Respond with JSON containing:
+             Rendered guidelines string
+         """
+         template = self.templates["triton_guidelines"]
+-        return template.render()
++        task_kind = self._infer_task_kind(problem_description)
++        return self._finalize_prompt(
++            template.render(
++                target_platform_name=self.target_platform.name,
++                task_kind=task_kind,
++                include_attention_example=(task_kind == "attention"),
++            )
++        )
+ 
+     def get_template(self, template_name: str) -> Template:
+         """
+@@ -364,7 +389,7 @@ Respond with JSON containing:
+             Rendered template string
+         """
+         template = self.get_template(template_name)
+-        return template.render(**kwargs)
++        return self._finalize_prompt(template.render(**kwargs))
+ 
+     def list_templates(self) -> list:
+         """
+diff --git a/triton_kernel_agent/templates/triton_guidelines.j2 b/triton_kernel_agent/templates/triton_guidelines.j2
+index 86f3a8d..c580e96 100644
+--- a/triton_kernel_agent/templates/triton_guidelines.j2
++++ b/triton_kernel_agent/templates/triton_guidelines.j2
+@@ -176,7 +176,9 @@ def matmul_persistent(a, b):
+         NUM_SMS=NUM_SMS,  #
+     )
+     return c
++```
+ 
++{% if include_attention_example %}
+ ## Example 2: Fused Attention Forward
+ 
+ ```python
+@@ -389,3 +391,5 @@ def fused_attention(q, k, v, causal=True, sm_scale=None):
+         sm_scale = 1.0 / (q.shape[-1] ** 0.5)
+     
+     return attention(q, k, v, causal, sm_scale)
++```
++{% endif %}
+diff --git a/triton_kernel_agent/worker.py b/triton_kernel_agent/worker.py
+index 627f526..0301744 100644
+--- a/triton_kernel_agent/worker.py
++++ b/triton_kernel_agent/worker.py
+@@ -135,6 +135,7 @@ class VerificationWorker:
+         target_platform: str = "cuda",
+         no_cusolver: bool = False,
+         test_timeout_s: int = 30,
++        prompt_suffix: str = "",
+     ):
+         """
+         Initialize a verification worker.
+@@ -162,6 +163,7 @@ class VerificationWorker:
+         self._platform_config = get_platform(target_platform)
+         self.no_cusolver = no_cusolver
+         self.test_timeout_s = test_timeout_s
++        self.prompt_suffix = str(prompt_suffix or "").strip()
+ 
+         # Setup files
+         self.kernel_file = self.workdir / "kernel.py"
+@@ -174,7 +176,9 @@ class VerificationWorker:
+         self._setup_logging()
+ 
+         # Initialize prompt manager with resolved config
+-        self.prompt_manager = PromptManager(target_platform=self._platform_config)
++        self.prompt_manager = PromptManager(
++            target_platform=self._platform_config,
++        )
+ 
+         # Initialize provider (may be unavailable in offline/test environments)
+         self.provider = None
+@@ -212,6 +216,17 @@ class VerificationWorker:
+         if not response_text:
+             return None
+ 
++        def _strip_partial_fence(text: str) -> str:
++            s = text.strip()
++            if not s.startswith("```"):
++                return s
++            lines = s.splitlines()
++            if lines and lines[0].lstrip().startswith("```"):
++                lines = lines[1:]
++            if lines and lines[-1].strip() == "```":
++                lines = lines[:-1]
++            return "\n".join(lines).strip()
++
+         # First, try to find code blocks with language markers
+         # Pattern matches ```python or ```language_name
+         pattern = rf"```{language}\s*\n(.*?)```"
+@@ -229,9 +244,12 @@ class VerificationWorker:
+             # Return the first match
+             return matches[0].strip()
+ 
++        # Handle partial fenced replies (opening ```python with missing closing fence).
++        normalized_text = _strip_partial_fence(response_text)
++
+         # If no code blocks found, check if the entire response looks like code
+         # This is a fallback for cases where LLM doesn't use code blocks
+-        lines = response_text.strip().split("\n")
++        lines = normalized_text.split("\n")
+ 
+         # Simple heuristic: if response contains import statements or function definitions
+         code_indicators = ["import ", "from ", "def ", "class ", "@", '"""', "'''"]
+@@ -241,7 +259,7 @@ class VerificationWorker:
+             for indicator in code_indicators
+         ):
+             # Likely the entire response is code
+-            return response_text.strip()
++            return normalized_text
+ 
+         # No code found
+         self.logger.warning("No code block found in LLM response")
+@@ -335,6 +353,8 @@ class VerificationWorker:
+         # Add high_reasoning_effort to kwargs if set
+         if self.high_reasoning_effort:
+             kwargs["high_reasoning_effort"] = True
++        if self.prompt_suffix and kwargs.get("apply_prompt_suffix", True):
++            kwargs["prompt_suffix"] = self.prompt_suffix
+ 
+         response = self.provider.get_response(self.openai_model, messages, **kwargs)
+         return response.content
+@@ -381,7 +401,7 @@ class VerificationWorker:
+ 
+                 # Call LLM API
+                 messages = [{"role": "user", "content": prompt}]
+-                response_text = self._call_llm(messages, max_tokens=20000)
++                response_text = self._call_llm(messages, max_tokens=28000)
+ 
+                 # Extract refined kernel from response
+                 refined_kernel = self._extract_code_from_response(response_text)
+@@ -453,7 +473,6 @@ class VerificationWorker:
+         self.logger.info(f"Starting verification for worker {self.worker_id}")
+ 
+         current_kernel = kernel_code
+-
+         for round_num in range(self.max_rounds):
+             # Check if another worker has succeeded
+             if success_event.is_set():
+diff --git a/utils/providers/available_models.py b/utils/providers/available_models.py
+index 0c5080f..de352cf 100644
+--- a/utils/providers/available_models.py
++++ b/utils/providers/available_models.py
+@@ -38,6 +38,16 @@ AVAILABLE_MODELS = [
+         provider_classes=[OpenAIProvider],
+         description="GPT-5.2 flagship model (Released Dec 2025)",
+     ),
++    ModelConfig(
++        name="gpt-5.3-codex",
++        provider_classes=[OpenAIProvider],
++        description="GPT-5.3 Codex model via OpenAI API",
++    ),
++    ModelConfig(
++        name="gpt-5.1-codex-mini",
++        provider_classes=[OpenAIProvider],
++        description="GPT-5.1 Codex Mini model via OpenAI API",
++    ),
+     # Anthropic Claude 4 Models (Latest)
+     ModelConfig(
+         name="claude-opus-4-6",
+diff --git a/utils/providers/openai_base.py b/utils/providers/openai_base.py
+index 3351ace..e1121d3 100644
+--- a/utils/providers/openai_base.py
++++ b/utils/providers/openai_base.py
+@@ -28,6 +28,27 @@ except ImportError:
+     OpenAI = None
+ 
+ 
++def _append_prompt_suffix_to_messages(
++    messages: list[dict[str, Any]], suffix: str
++) -> list[dict[str, Any]]:
++    suffix = str(suffix or "").strip()
++    if not suffix:
++        return messages
++    out = [dict(m) for m in messages]
++    target_idx = None
++    for idx, msg in enumerate(out):
++        if msg.get("role", "user") == "user":
++            target_idx = idx
++    if target_idx is None:
++        out.append({"role": "user", "content": suffix})
++        return out
++    msg = out[target_idx]
++    content = msg.get("content", "")
++    if isinstance(content, str) and suffix not in content:
++        msg["content"] = f"{content.rstrip()}\n\n{suffix}" if content.strip() else suffix
++    return out
++
++
+ class OpenAICompatibleProvider(BaseProvider):
+     """Base provider for OpenAI-compatible APIs."""
+ 
+@@ -59,6 +80,27 @@ class OpenAICompatibleProvider(BaseProvider):
+         """Get single response."""
+         if not self.is_available():
+             raise RuntimeError(f"{self.name} client not available")
++        prompt_suffix = str(kwargs.pop("prompt_suffix", "") or "").strip()
++        apply_prompt_suffix = bool(kwargs.pop("apply_prompt_suffix", True))
++        messages = [dict(m) for m in messages]
++        if apply_prompt_suffix and prompt_suffix:
++            messages = _append_prompt_suffix_to_messages(messages, prompt_suffix)
++        if self._use_responses_api(model_name):
++            params: dict[str, Any] = {
++                "model": model_name,
++                "input": self._messages_to_prompt(messages),
++                "max_output_tokens": min(
++                    kwargs.get("max_tokens", 8192), self.get_max_tokens_limit(model_name)
++                ),
++            }
++            if kwargs.get("high_reasoning_effort"):
++                params["reasoning"] = {"effort": "high"}
++            response = self.client.responses.create(**params)
++            return LLMResponse(
++                content=self._responses_text(response),
++                model=model_name,
++                provider=self.name,
++            )
+ 
+         api_params = self._build_api_params(model_name, messages, **kwargs)
+         response = self.client.chat.completions.create(**api_params)
+@@ -82,6 +124,16 @@ class OpenAICompatibleProvider(BaseProvider):
+         """Get multiple responses using n parameter."""
+         if not self.is_available():
+             raise RuntimeError(f"{self.name} client not available")
++        prompt_suffix = str(kwargs.pop("prompt_suffix", "") or "").strip()
++        apply_prompt_suffix = bool(kwargs.pop("apply_prompt_suffix", True))
++        messages = [dict(m) for m in messages]
++        if apply_prompt_suffix and prompt_suffix:
++            messages = _append_prompt_suffix_to_messages(messages, prompt_suffix)
++        if self._use_responses_api(model_name):
++            return [
++                self.get_response(model_name, messages, **kwargs)
++                for _ in range(max(1, n))
++            ]
+ 
+         api_params = self._build_api_params(model_name, messages, n=n, **kwargs)
+         response = self.client.chat.completions.create(**api_params)
+@@ -128,16 +180,36 @@ class OpenAICompatibleProvider(BaseProvider):
+         if "n" in kwargs:
+             params["n"] = kwargs["n"]
+ 
+-        # Auto-enable high reasoning for GPT-5
+-        if model_name.startswith("gpt-5"):
+-            params["reasoning_effort"] = "high"
+-        elif kwargs.get("high_reasoning_effort") and model_name.startswith(
+-            ("o3", "o1")
+-        ):
++        supports_reasoning = model_name.startswith(("gpt-5", "o3", "o1"))
++        if kwargs.get("high_reasoning_effort") and supports_reasoning:
+             params["reasoning_effort"] = "high"
+ 
+         return params
+ 
++    @staticmethod
++    def _use_responses_api(model_name: str) -> bool:
++        return "codex" in model_name
++
++    @staticmethod
++    def _messages_to_prompt(messages: list[dict[str, str]]) -> str:
++        return "\n\n".join(str(m.get("content", "")) for m in messages).strip()
++
++    @staticmethod
++    def _responses_text(response: Any) -> str:
++        output_text = getattr(response, "output_text", None)
++        if output_text:
++            return output_text
++
++        chunks: list[str] = []
++        for item in getattr(response, "output", []) or []:
++            for content in getattr(item, "content", []) or []:
++                text_value = getattr(content, "text", None)
++                if text_value:
++                    chunks.append(text_value)
++                elif isinstance(content, dict) and content.get("text"):
++                    chunks.append(content["text"])
++        return "".join(chunks).strip()
++
+     def is_available(self) -> bool:
+         """Check if provider is available."""
+         return OPENAI_AVAILABLE and self.client is not None

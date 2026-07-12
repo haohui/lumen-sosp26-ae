@@ -1,0 +1,6 @@
+[repo]
+name = "KernelFalcon"
+upstream = "https://github.com/meta-pytorch/KernelAgent.git"
+base_commit = "96ab423df68f6ee931eeeb2b8ebe131c98469cb5"
+
+patches = ["01-lumen-generation.patch"]

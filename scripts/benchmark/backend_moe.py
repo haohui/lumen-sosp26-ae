@@ -26,7 +26,7 @@ class BackendSpec:
 
 BACKENDS = {
     name: BackendSpec(directory=name, variant=name)
-    for name in ("cudaforge", "kernelbench", "kernelfalcon", "ksearch")
+    for name in ("cudaforge", "kernelbench", "kernelfalcon", "ksearch", "lumen")
 }
 BACKENDS.update(
     {
@@ -342,9 +342,147 @@ def _run_python_backend(
         )
 
 
+def _build_sorted_routes(
+    *,
+    topk_ids: "torch.Tensor",
+    topk_weights: "torch.Tensor",
+    experts: int,
+) -> tuple["torch.Tensor", "torch.Tensor", "torch.Tensor", "torch.Tensor"]:
+    tokens, topk = topk_ids.shape
+    route_group_size = 32
+    max_num_tokens_padded = tokens * topk + experts * route_group_size - topk
+    max_num_m_blocks = (
+        max_num_tokens_padded + route_group_size - 1
+    ) // route_group_size
+
+    init_val = (topk << 24) | tokens
+    sorted_token_ids = torch.full(
+        (max_num_tokens_padded,),
+        init_val,
+        dtype=torch.int32,
+        device=topk_ids.device,
+    )
+    sorted_weights = torch.zeros(
+        (max_num_tokens_padded,),
+        dtype=torch.float32,
+        device=topk_weights.device,
+    )
+    sorted_expert_ids = torch.full(
+        (max_num_m_blocks,),
+        -1,
+        dtype=torch.int32,
+        device=topk_ids.device,
+    )
+
+    sorted_ids_begin = 0
+    sorted_expert_ids_begin = 0
+    for expert in range(experts):
+        mask = topk_ids.eq(expert)
+        if not bool(mask.any()):
+            continue
+        token_ids, slot_ids = torch.nonzero(mask, as_tuple=True)
+        tokens_num = int(token_ids.numel())
+
+        route_ids = (slot_ids.to(torch.int32) << 24) | token_ids.to(torch.int32)
+        sorted_token_ids[sorted_ids_begin : sorted_ids_begin + tokens_num] = route_ids
+        sorted_weights[sorted_ids_begin : sorted_ids_begin + tokens_num] = topk_weights[
+            token_ids,
+            slot_ids,
+        ]
+
+        sorted_expert_ids_num = (tokens_num + route_group_size - 1) // route_group_size
+        tokens_num_pad = sorted_expert_ids_num * route_group_size
+        sorted_expert_ids[
+            sorted_expert_ids_begin : sorted_expert_ids_begin + sorted_expert_ids_num
+        ] = expert
+
+        sorted_ids_begin += tokens_num_pad
+        sorted_expert_ids_begin += sorted_expert_ids_num
+
+    num_valid_ids = torch.empty((2,), dtype=torch.int32, device=topk_ids.device)
+    num_valid_ids[0] = sorted_ids_begin
+    num_valid_ids[1] = tokens
+    return (
+        sorted_token_ids.contiguous(),
+        sorted_weights.contiguous(),
+        sorted_expert_ids.contiguous(),
+        num_valid_ids.contiguous(),
+    )
+
+
+def _run_lumen_backend(
+    *,
+    backend: str,
+    moe_root: Path,
+    token_counts: list[int],
+    shared_inputs: dict[int, SharedInputs],
+    shared_weights: dict[str, torch.Tensor],
+    device: torch.device,
+    input_dtype: torch.dtype,
+    input_dtype_name: str,
+    dim: int,
+    inter_dim: int,
+    experts: int,
+    topk: int,
+    warmup: int,
+    repeat: int,
+    graph_iters: int,
+) -> None:
+    del device, input_dtype
+    mod = load_module(moe_root / BACKENDS[backend].directory / "fused_moe.py")
+    fn = getattr(mod, "fused_moe_fp8_blockscale_g1u1")
+
+    for tokens in token_counts:
+        x = shared_inputs[tokens]
+        sorted_ids, sorted_weights, sorted_expert_ids, num_valid_ids = (
+            _build_sorted_routes(
+                topk_ids=x.topk_ids,
+                topk_weights=x.topk_weights,
+                experts=experts,
+            )
+        )
+        out = torch.empty((tokens, dim), dtype=torch.bfloat16, device=x.input_q.device)
+        timing = _time_call(
+            lambda x=x,
+            sorted_ids=sorted_ids,
+            sorted_weights=sorted_weights,
+            sorted_expert_ids=sorted_expert_ids,
+            num_valid_ids=num_valid_ids,
+            out=out: fn(
+                x.input_q,
+                shared_weights["w1_q"],
+                shared_weights["w2_q"],
+                sorted_ids,
+                sorted_weights,
+                sorted_expert_ids,
+                num_valid_ids,
+                topk,
+                x.input_scale,
+                shared_weights["fc1_scale"],
+                shared_weights["fc2_scale"],
+                out=out,
+            ),
+            warmup=warmup,
+            repeat=repeat,
+            graph_iters=graph_iters,
+        )
+        _emit_record(
+            backend=backend,
+            tokens=tokens,
+            dim=dim,
+            inter_dim=inter_dim,
+            experts=experts,
+            topk=topk,
+            input_dtype_name=input_dtype_name,
+            mean_ms=timing.mean_ms,
+        )
+
+
 def run_backend(*, backend: str, **kwargs) -> None:
     spec = BACKENDS[backend]
     if spec.directory == "aiter":
         _run_aiter_variant(backend=backend, **kwargs)
+    elif spec.directory == "lumen":
+        _run_lumen_backend(backend=backend, **kwargs)
     else:
         _run_python_backend(backend=backend, **kwargs)

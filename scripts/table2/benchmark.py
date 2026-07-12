@@ -16,12 +16,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BENCHMARK_DIR = REPO_ROOT / "scripts" / "benchmark"
 WORKLOADS = [1024, 2048, 4096, 8192, 16384]
 BASELINE_COLUMNS = [
+    "lumen",
+    "kernelbench",
+    "cudaforge",
+    "kernelfalcon",
+    "ksearch",
     "hipblaslt",
     "hipkittens",
     "aiter",
     "triton",
 ]
 GEMM_BACKENDS = (
+    "lumen",
     "kernelbench",
     "cudaforge",
     "kernelfalcon",
@@ -32,6 +38,7 @@ GEMM_BACKENDS = (
     "triton",
 )
 ATTENTION_BACKENDS = (
+    "lumen",
     "kernelbench",
     "cudaforge",
     "kernelfalcon",
@@ -40,6 +47,7 @@ ATTENTION_BACKENDS = (
     "triton",
 )
 MOE_BACKENDS = (
+    "lumen",
     "kernelbench",
     "cudaforge",
     "kernelfalcon",
@@ -129,7 +137,7 @@ def run_benchmarks(
     for name in ("gemm", "attention", "moe"):
         (workspace / f"{name}.jsonl").write_text("", encoding="utf-8")
 
-    for backend in ("aiter", "hipblaslt", "hipkittens", "triton"):
+    for backend in ("lumen", "aiter", "hipblaslt", "hipkittens", "triton"):
         _run_jsonl_command(
             [
                 python_bin,
@@ -145,7 +153,7 @@ def run_benchmarks(
             workspace / "gemm.jsonl",
         )
 
-    for backend in ("aiter", "triton"):
+    for backend in ("lumen", "aiter", "triton"):
         _run_jsonl_command(
             [
                 python_bin,
@@ -169,7 +177,7 @@ def run_benchmarks(
             workspace / "attention.jsonl",
         )
 
-    for backend in ("aiter",):
+    for backend in ("lumen", "aiter"):
         _run_jsonl_command(
             [
                 python_bin,

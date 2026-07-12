@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 
 from backend_moe import (
     BACKENDS,
@@ -89,12 +87,6 @@ def main() -> None:
         repeat=args.repeat,
         graph_iters=args.graph_iters,
     )
-    if args.backend == "lumen":
-        # Avelang can abort during Python/C-extension teardown after a successful
-        # run; exit directly once JSONL output has been flushed.
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(0)
 
 
 if __name__ == "__main__":

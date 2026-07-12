@@ -85,7 +85,14 @@ class Model(nn.Module):
             self._out_cache[key] = out
 
         mod = self._kernel_module()
-        return lambda: mod.flash_attn(q, k, v, seq_ptr, out=out)
+        return lambda: mod.flash_attn(
+            q,
+            k,
+            v,
+            seq_ptr,
+            seq_len,
+            out=out,
+        )
 
     def forward(
         self,

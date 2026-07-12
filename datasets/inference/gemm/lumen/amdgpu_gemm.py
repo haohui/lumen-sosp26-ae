@@ -31,6 +31,66 @@ SCHED_MASK_BUFFER_LOAD = 0x20
 SCHED_MASK_DS_READ = 0x100
 SCHED_MASK_DS_WRITE = 0x200
 
+
+@avelang.jit
+def _wgm_mapping(
+    m: al.u32,
+    n: al.u32,
+    group_size_m: al.u32,
+    group_size_n: al.u32,
+    wgm_mode: al.u32,
+    ceil_groups: al.u32,
+) -> (al.u32, al.u32):
+    linear_group_id = al.block_id(0)
+    m_groups = m // group_size_m
+    n_groups = n // group_size_n
+    if ceil_groups != 0:
+        m_groups = (m + group_size_m - 1) // group_size_m
+        n_groups = (n + group_size_n - 1) // group_size_n
+
+    if wgm_mode != WGM_ROW_MAJOR:
+        total_groups = m_groups * n_groups
+        cu_count = al.convert(MI300_CU_COUNT, al.u32)
+        wgm_xcc = al.convert(WGM_XCC_WIDTH, al.u32)
+        linear_group_limit = (total_groups // wgm_xcc) * wgm_xcc
+        cu_base = (linear_group_id // cu_count) * cu_count
+        cu_xcc = (linear_group_id % cu_count) // wgm_xcc
+        cu_base = cu_base + cu_xcc
+        cu_tail_limit = (total_groups // cu_count) * cu_count
+        active_cu = (
+            (total_groups % cu_count)
+            if (linear_group_id >= cu_tail_limit)
+            else cu_count
+        )
+        cu_xcc_stride = (active_cu // wgm_xcc) * (linear_group_id % wgm_xcc)
+        mapped = cu_base + cu_xcc_stride
+        linear_group_id = (
+            mapped if (linear_group_id < linear_group_limit) else linear_group_id
+        )
+
+    group_m = linear_group_id // n_groups
+    group_n = linear_group_id - group_m * n_groups
+    if wgm_mode == WGM_XCC_MAPPING8 or wgm_mode == WGM_XCC_MAPPING32:
+        workgroup_mapping = al.convert(8, al.u32)
+        if wgm_mode == WGM_XCC_MAPPING32:
+            workgroup_mapping = al.convert(32, al.u32)
+        mapping_block = group_m // workgroup_mapping
+        mapping_linear = group_n + (group_m % workgroup_mapping) * n_groups
+        mapping_groups = m_groups // workgroup_mapping
+        mapping_tail = m_groups % workgroup_mapping
+        mapping_tail = (
+            workgroup_mapping if (mapping_tail == 0) else mapping_tail
+        )
+        mapping_span = (
+            mapping_tail if (mapping_block >= mapping_groups) else workgroup_mapping
+        )
+        group_n = mapping_linear // mapping_span
+        group_m = mapping_linear % mapping_span
+        group_m = group_m + mapping_block * workgroup_mapping
+
+    return group_m, group_n
+
+
 B4_GROUP_M = 224
 B4_GROUP_N = 256
 B4_GROUP_K = 64
@@ -202,50 +262,6 @@ def _make_batch2_kernel(config: GemmConfig):
     PREFETCH_BEFORE_ZERO = config.prefetch_before_zero
     PREFETCH1_BEFORE_READ = config.prefetch1_before_read
     PIPELINE_INTERLEAVE = config.pipeline_interleave
-
-    @avelang.jit
-    def _wgm_mapping(m: al.u32, n: al.u32) -> (al.u32, al.u32):
-        linear_group_id = al.block_id(0)
-        m_groups = m // GROUP_M
-        n_groups = n // GROUP_N
-
-        if WGM_MODE == WGM_ROW_MAJOR:
-            group_m = linear_group_id // n_groups
-            group_n = linear_group_id - group_m * n_groups
-        else:
-            total_groups = m_groups * n_groups
-            cu_count = al.convert(MI300_CU_COUNT, al.u32)
-            wgm_xcc = al.convert(WGM_XCC_WIDTH, al.u32)
-
-            linear_group_limit = (total_groups // wgm_xcc) * wgm_xcc
-            cu_base = (linear_group_id // cu_count) * cu_count
-            cu_xcc = (linear_group_id % cu_count) // wgm_xcc
-            cu_base = cu_base + cu_xcc
-
-            cu_tail_limit = (total_groups // cu_count) * cu_count
-            active_cu = (total_groups % cu_count) if (linear_group_id > cu_tail_limit) else cu_count
-            cu_xcc_stride = (active_cu // wgm_xcc) * (linear_group_id % wgm_xcc)
-            linear_group_mapped = cu_base + cu_xcc_stride
-            linear_group_id = linear_group_mapped if (linear_group_id < linear_group_limit) else linear_group_id
-
-            group_m = linear_group_id // n_groups
-            group_n = linear_group_id - group_m * n_groups
-
-            if WGM_MODE == WGM_XCC_MAPPING8 or WGM_MODE == WGM_XCC_MAPPING32:
-                workgroup_mapping = al.convert(8, al.u32)
-                if WGM_MODE == WGM_XCC_MAPPING32:
-                    workgroup_mapping = al.convert(32, al.u32)
-                mapping_block = group_m // workgroup_mapping
-                mapping_linear = group_n + (group_m % workgroup_mapping) * n_groups
-                mapping_groups = m_groups // workgroup_mapping
-                mapping_tail = m_groups % workgroup_mapping
-                mapping_tail = workgroup_mapping if (mapping_tail == 0) else mapping_tail
-                mapping_span = mapping_tail if (mapping_block >= mapping_groups) else workgroup_mapping
-                group_n = mapping_linear // mapping_span
-                group_m = mapping_linear % mapping_span
-                group_m = group_m + mapping_block * workgroup_mapping
-
-        return group_m, group_n
 
     @avelang.jit
     def _k_tile(group_m: al.u32, group_n: al.u32, k_total: al.u32, offset: al.u32) -> al.u32:
@@ -466,42 +482,14 @@ def _make_batch2_kernel(config: GemmConfig):
         warp_row = wid // WARP_PER_COL
         warp_col = wid % WARP_PER_COL
 
-        linear_group_id = al.block_id(0)
-        m_groups = m // GROUP_M
-        n_groups = n // GROUP_N
-        group_m = al.convert(0, al.u32)
-        group_n = al.convert(0, al.u32)
-        if WGM_MODE == WGM_ROW_MAJOR:
-            group_m = linear_group_id // n_groups
-            group_n = linear_group_id - group_m * n_groups
-        else:
-            total_groups = m_groups * n_groups
-            cu_count = al.convert(MI300_CU_COUNT, al.u32)
-            wgm_xcc = al.convert(WGM_XCC_WIDTH, al.u32)
-            linear_group_limit = (total_groups // wgm_xcc) * wgm_xcc
-            cu_base = (linear_group_id // cu_count) * cu_count
-            cu_xcc = (linear_group_id % cu_count) // wgm_xcc
-            cu_base = cu_base + cu_xcc
-            cu_tail_limit = (total_groups // cu_count) * cu_count
-            active_cu = (total_groups % cu_count) if (linear_group_id > cu_tail_limit) else cu_count
-            cu_xcc_stride = (active_cu // wgm_xcc) * (linear_group_id % wgm_xcc)
-            linear_group_mapped = cu_base + cu_xcc_stride
-            linear_group_id = linear_group_mapped if (linear_group_id < linear_group_limit) else linear_group_id
-            group_m = linear_group_id // n_groups
-            group_n = linear_group_id - group_m * n_groups
-            if WGM_MODE == WGM_XCC_MAPPING8 or WGM_MODE == WGM_XCC_MAPPING32:
-                workgroup_mapping = al.convert(8, al.u32)
-                if WGM_MODE == WGM_XCC_MAPPING32:
-                    workgroup_mapping = al.convert(32, al.u32)
-                mapping_block = group_m // workgroup_mapping
-                mapping_linear = group_n + (group_m % workgroup_mapping) * n_groups
-                mapping_groups = m_groups // workgroup_mapping
-                mapping_tail = m_groups % workgroup_mapping
-                mapping_tail = workgroup_mapping if (mapping_tail == 0) else mapping_tail
-                mapping_span = mapping_tail if (mapping_block >= mapping_groups) else workgroup_mapping
-                group_n = mapping_linear // mapping_span
-                group_m = mapping_linear % mapping_span
-                group_m = group_m + mapping_block * workgroup_mapping
+        group_m, group_n = _wgm_mapping(
+            m,
+            n,
+            al.convert(GROUP_M, al.u32),
+            al.convert(GROUP_N, al.u32),
+            al.convert(WGM_MODE, al.u32),
+            al.convert(0, al.u32),
+        )
 
         a_tensor = al.make_tensor(A, al.bf16, al.make_layout((m, k), (k, 1)))
         b_tensor = al.make_tensor(B, al.bf16, al.make_layout((n, k), (k, 1)))
@@ -626,74 +614,6 @@ def _make_batch4_kernel(config: GemmConfig):
     PREFETCH_BEFORE_ZERO = config.prefetch_before_zero
     PIPELINE_INTERLEAVE = config.pipeline_interleave
     LOOP_SCHEDULER = config.loop_scheduler
-
-    if WGM_MODE == WGM_ROW_MAJOR:
-        @avelang.jit
-        def _group_m(m: al.u32, n: al.u32) -> al.u32:
-            linear_group_id = al.block_id(0)
-            n_groups = (n + GROUP_N - 1) // GROUP_N
-            return linear_group_id // n_groups
-
-        @avelang.jit
-        def _group_n(m: al.u32, n: al.u32) -> al.u32:
-            linear_group_id = al.block_id(0)
-            n_groups = (n + GROUP_N - 1) // GROUP_N
-            group_m = linear_group_id // n_groups
-            return linear_group_id - group_m * n_groups
-    else:
-        @avelang.jit
-        def _linear_group_id(m: al.u32, n: al.u32) -> al.u32:
-            linear_group_id = al.block_id(0)
-            m_groups = (m + GROUP_M - 1) // GROUP_M
-            n_groups = (n + GROUP_N - 1) // GROUP_N
-            total_groups = m_groups * n_groups
-            cu_count = al.convert(MI300_CU_COUNT, al.u32)
-            wgm_xcc = al.convert(WGM_XCC_WIDTH, al.u32)
-            linear_group_limit = (total_groups // wgm_xcc) * wgm_xcc
-            cu_base = (linear_group_id // cu_count) * cu_count
-            cu_xcc = (linear_group_id % cu_count) // wgm_xcc
-            cu_base = cu_base + cu_xcc
-            cu_tail_limit = (total_groups // cu_count) * cu_count
-            active_cu = (total_groups % cu_count) if (linear_group_id > cu_tail_limit) else cu_count
-            cu_xcc_stride = (active_cu // wgm_xcc) * (linear_group_id % wgm_xcc)
-            mapped = cu_base + cu_xcc_stride
-            return mapped if (linear_group_id < linear_group_limit) else linear_group_id
-
-        @avelang.jit
-        def _group_m(m: al.u32, n: al.u32) -> al.u32:
-            linear_group_id = _linear_group_id(m, n)
-            m_groups = (m + GROUP_M - 1) // GROUP_M
-            n_groups = (n + GROUP_N - 1) // GROUP_N
-            group_m = linear_group_id // n_groups
-            group_n = linear_group_id - group_m * n_groups
-            workgroup_mapping = al.convert(8, al.u32)
-            if WGM_MODE == WGM_XCC_MAPPING32:
-                workgroup_mapping = al.convert(32, al.u32)
-            mapping_block = group_m // workgroup_mapping
-            mapping_linear = group_n + (group_m % workgroup_mapping) * n_groups
-            mapping_groups = m_groups // workgroup_mapping
-            mapping_tail = m_groups % workgroup_mapping
-            mapping_tail = workgroup_mapping if (mapping_tail == 0) else mapping_tail
-            mapping_span = mapping_tail if (mapping_block >= mapping_groups) else workgroup_mapping
-            return mapping_linear % mapping_span + mapping_block * workgroup_mapping
-
-        @avelang.jit
-        def _group_n(m: al.u32, n: al.u32) -> al.u32:
-            linear_group_id = _linear_group_id(m, n)
-            m_groups = (m + GROUP_M - 1) // GROUP_M
-            n_groups = (n + GROUP_N - 1) // GROUP_N
-            group_m = linear_group_id // n_groups
-            group_n = linear_group_id - group_m * n_groups
-            workgroup_mapping = al.convert(8, al.u32)
-            if WGM_MODE == WGM_XCC_MAPPING32:
-                workgroup_mapping = al.convert(32, al.u32)
-            mapping_block = group_m // workgroup_mapping
-            mapping_linear = group_n + (group_m % workgroup_mapping) * n_groups
-            mapping_groups = m_groups // workgroup_mapping
-            mapping_tail = m_groups % workgroup_mapping
-            mapping_tail = workgroup_mapping if (mapping_tail == 0) else mapping_tail
-            mapping_span = mapping_tail if (mapping_block >= mapping_groups) else workgroup_mapping
-            return mapping_linear // mapping_span
 
     @avelang.jit
     def _load_global_a(
@@ -988,8 +908,14 @@ def _make_batch4_kernel(config: GemmConfig):
         tid = al.thread_id(0)
         wid = tid // WARP_SIZE
         wtid = tid % WARP_SIZE
-        group_m = _group_m(m, n)
-        group_n = _group_n(m, n)
+        group_m, group_n = _wgm_mapping(
+            m,
+            n,
+            al.convert(GROUP_M, al.u32),
+            al.convert(GROUP_N, al.u32),
+            al.convert(WGM_MODE, al.u32),
+            al.convert(1, al.u32),
+        )
 
         a_tensor = al.make_tensor(A, al.bf16, al.make_layout((m, k), (k, 1)))
         b_tensor = al.make_tensor(B, al.bf16, al.make_layout((n, k), (k, 1)))

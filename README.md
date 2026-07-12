@@ -87,6 +87,7 @@ benchmark inputs and generated outputs live under `data/`:
 
 The repository provides a number of scripts under the `scripts/` directory to reproduce the evaluation results in the paper:
 
+- `figure1/validate_invariant.py` validates the data flow invariants described in Figure 1.
 - `table2/benchmark.py` reproduces the benchmark results of Table 2.
 - `table2/agent_generate.py` regenerates the GPU kernels with KernelFalcon, KSearch, KernelBench, CUDAForge. 
 

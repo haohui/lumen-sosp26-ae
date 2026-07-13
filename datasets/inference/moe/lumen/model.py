@@ -148,6 +148,24 @@ def _validate_shared_weights(
     return shared_weights
 
 
+def _shuffle_weight(weight: torch.Tensor) -> torch.Tensor:
+    """Match aiter.ops.shuffle.shuffle_weight(weight, layout=(16, 16))."""
+    if weight.shape[0] == 0:
+        return weight
+    rows, cols = weight.shape[-2:]
+    if rows % 16 != 0 or cols % 32 != 0:
+        raise ValueError(
+            "weight dimensions must be divisible by 16x32 for shuffle, "
+            f"got rows={rows}, cols={cols}"
+        )
+    return (
+        weight.view(-1, rows // 16, 16, cols // 32, 2, 16)
+        .permute(0, 1, 3, 4, 2, 5)
+        .contiguous()
+        .view_as(weight)
+    )
+
+
 class Model:
     def __init__(self, *, variant: str):
         if variant != "lumen":
@@ -155,11 +173,33 @@ class Model:
         self.variant = variant
         self._mod = None
         self._out_cache = {}
+        self._weight_source = None
+        self._packed_weights = None
 
     def _kernel_module(self):
         if self._mod is None:
             self._mod = _load_kernel_module()
         return self._mod
+
+    def _prepare_weights(
+        self,
+        w: dict[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        source = (w["w1_q"], w["w2_q"])
+        if self._packed_weights is None:
+            self._packed_weights = (
+                _shuffle_weight(source[0]),
+                _shuffle_weight(source[1]),
+            )
+            self._weight_source = source
+        else:
+            assert self._weight_source is not None
+            if (
+                source[0] is not self._weight_source[0]
+                or source[1] is not self._weight_source[1]
+            ):
+                raise ValueError("LUMEN Model cannot reuse a different weight set")
+        return self._packed_weights
 
     def build_cases(
         self,
@@ -172,7 +212,7 @@ class Model:
         experts: int,
         topk: int,
         input_dtype: str,
-    ) -> List[Callable[[], None]]:
+    ) -> List[Callable[[], torch.Tensor]]:
         if input_dtype != "fp8":
             raise ValueError("LUMEN MoE benchmark currently supports only fp8 input")
 
@@ -188,6 +228,7 @@ class Model:
             dim=dim,
             inter_dim=inter_dim,
         )
+        w1_kernel, w2_kernel = self._prepare_weights(w)
         sorted_ids, sorted_weights, sorted_expert_ids, num_valid_ids = (
             _build_sorted_routes(
                 topk_ids=x.topk_ids,
@@ -203,11 +244,11 @@ class Model:
 
         fn = getattr(self._kernel_module(), "fused_moe_fp8_blockscale_g1u1")
 
-        def run_lumen() -> None:
+        def run_lumen() -> torch.Tensor:
             fn(
                 x.input_q,
-                w["w1_q"],
-                w["w2_q"],
+                w1_kernel,
+                w2_kernel,
                 sorted_ids,
                 sorted_weights,
                 sorted_expert_ids,
@@ -218,5 +259,6 @@ class Model:
                 w["fc2_scale"],
                 out=out,
             )
+            return out
 
         return [run_lumen]

@@ -136,7 +136,7 @@ def build_cases_for_seq(
     shared_input,
     shared_weights,
     backends: List[str] | None = None,
-) -> List[Callable[[], None]]:
+) -> List[Callable[[], torch.Tensor]]:
     if torch is None:
         raise RuntimeError("torch is required")
 
@@ -175,7 +175,7 @@ def build_cases_for_seq(
 
     out_asm = torch.zeros((seq_len, dim), dtype=torch.bfloat16, device=x.input_q.device)
 
-    def run_asm() -> None:
+    def run_asm() -> torch.Tensor:
         out_asm.zero_()
         aiter.fmoe_fp8_blockscale_g1u1(
             out_asm,
@@ -195,8 +195,9 @@ def build_cases_for_seq(
             128,
             None,
         )
+        return out_asm
 
-    out: List[Callable[[], None]] = []
+    out: List[Callable[[], torch.Tensor]] = []
     if "asm" in resolved:
         out.append(run_asm)
     return out
@@ -219,7 +220,7 @@ class Model:
         experts: int,
         topk: int,
         input_dtype: str,
-    ) -> List[Callable[[], None]]:
+    ) -> List[Callable[[], torch.Tensor]]:
         args = SimpleNamespace(
             run_aiter=True,
             dim=dim,

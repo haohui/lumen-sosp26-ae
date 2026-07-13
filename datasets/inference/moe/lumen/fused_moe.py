@@ -14,6 +14,7 @@ GROUP_N = 256
 GROUP_DIM = 256
 NUM_WARPS = 4
 THREADS = WARP_SIZE * NUM_WARPS
+SPLIT_K_PER_CTA = 2
 SCALE_BLOCK_SIZE = 128
 TOKEN_BATCH = 8
 SUBGROUP_SIZE = 16
@@ -46,18 +47,6 @@ def _ceil_div(a: int, b: int) -> int:
     return (a + b - 1) // b
 
 
-def _stage1_scale_dpp_ctrl(stage: int, col: int) -> int:
-    return (stage << 1) + (col >> 1)
-
-
-def _stage2_scale_dpp_ctrl(stage: int, col: int) -> int:
-    return (stage << 1) + (col >> 1)
-
-
-def _stage2_dq_idx(i: int, k: int) -> int:
-    return k * 2 + i
-
-
 @avelang.jit
 def _abs_f32(x: S.f32) -> S.f32:
     mask = S.convert(0x7FFFFFFF, S.u32)
@@ -65,58 +54,10 @@ def _abs_f32(x: S.f32) -> S.f32:
 
 
 @avelang.jit
-def _max_f32(lhs: S.f32, rhs: S.f32) -> S.f32:
-    if rhs > lhs:
-        return rhs
-    return lhs
-
-
-@avelang.jit
 def _max_nonneg_f32(lhs: S.f32, rhs: S.f32) -> S.f32:
     lhs_u = S.bitcast(lhs, S.u32)
     rhs_u = S.bitcast(rhs, S.u32)
     return S.bitcast(S.max(lhs_u, rhs_u), S.f32)
-
-
-@avelang.jit
-def _fma4(
-    ret: S.Tensor((4,), S.f32),
-    a: S.Tensor((4,), S.f32),
-    s: S.f32,
-    c: S.Tensor((4,), S.f32),
-):
-    for i in S.range(4):
-        ret[i] = a[i] + s * c[i]
-
-
-@avelang.jit
-def _max4(v: S.Tensor((4,), S.f32)) -> S.f32:
-    m = _abs_f32(v[0])
-    for i in S.range(3):
-        av = _abs_f32(v[i + 1])
-        if av > m:
-            m = av
-    return m
-
-
-@avelang.jit
-def _get_dpp_value_ctrl0(src: S.f32) -> S.f32:
-    return S.amdgpu.get_dpp(src, src, ROW_NEW_BCAST_BASE + 0, 0xF, 0xF, 0)
-
-
-@avelang.jit
-def _get_dpp_value_ctrl1(src: S.f32) -> S.f32:
-    return S.amdgpu.get_dpp(src, src, ROW_NEW_BCAST_BASE + 1, 0xF, 0xF, 0)
-
-
-@avelang.jit
-def _get_dpp_value_ctrl2(src: S.f32) -> S.f32:
-    return S.amdgpu.get_dpp(src, src, ROW_NEW_BCAST_BASE + 2, 0xF, 0xF, 0)
-
-
-@avelang.jit
-def _get_dpp_value_ctrl3(src: S.f32) -> S.f32:
-    return S.amdgpu.get_dpp(src, src, ROW_NEW_BCAST_BASE + 3, 0xF, 0xF, 0)
 
 
 @avelang.jit
@@ -140,8 +81,9 @@ def _w13_load_tile_stage0(
     wid: S.u32,
     wtid: S.u32,
 ):
+    wid_s = S.amdgpu.readfirstlane(wid)
     vindex = wtid * 16
-    soffset = v_offset_bytes + wid * 16 * stride_n
+    soffset = v_offset_bytes + wid_s * 16 * stride_n
     row_stride_bytes = WARP_SIZE * stride_n
     for i in S.range(4):
         for j in S.range(2):
@@ -162,8 +104,9 @@ def _w13_load_tile_stage1(
     wid: S.u32,
     wtid: S.u32,
 ):
+    wid_s = S.amdgpu.readfirstlane(wid)
     vindex = wtid * 16
-    soffset = v_offset_bytes + wid * 16 * stride_n
+    soffset = v_offset_bytes + wid_s * 16 * stride_n
     row_stride_bytes = WARP_SIZE * stride_n
     for i in S.range(4):
         for j in S.range(2):
@@ -196,8 +139,9 @@ def _w2_load_tile_stage0(
     wid: S.u32,
     wtid: S.u32,
 ):
+    wid_s = S.amdgpu.readfirstlane(wid)
     vindex = wtid * 16
-    soffset = v_offset_bytes + wid * 16 * stride_n
+    soffset = v_offset_bytes + wid_s * 16 * stride_n
     inner_step = WARP_SIZE * 16
     for i in S.range(2):
         for j in S.range(4):
@@ -218,8 +162,9 @@ def _w2_load_tile_stage1(
     wid: S.u32,
     wtid: S.u32,
 ):
+    wid_s = S.amdgpu.readfirstlane(wid)
     vindex = wtid * 16
-    soffset = v_offset_bytes + wid * 16 * stride_n
+    soffset = v_offset_bytes + wid_s * 16 * stride_n
     inner_step = WARP_SIZE * 16
     for i in S.range(2):
         for j in S.range(4):
@@ -252,7 +197,8 @@ def _input_fetch_async(
     wtid: S.u32,
     tokens: S.Tensor((TOKEN_BATCH,), S.u32),
 ):
-    warp_base_bytes = (shm_x_base + wid * INPUT_SHM_ELEMENTS_PER_WARP) * 4
+    wid_s = S.amdgpu.readfirstlane(wid)
+    warp_base_bytes = (shm_x_base + wid_s * INPUT_SHM_ELEMENTS_PER_WARP) * 4
     vindex = wtid * 4
     for i in S.range(TOKEN_BATCH):
         src_off = tokens[i] * dim + d
@@ -292,12 +238,13 @@ def _input_fetch_scale_async(
     token_select_x: S.u32,
     token_select_y: S.u32,
 ):
+    wid_s = S.amdgpu.readfirstlane(wid)
     token_off = token_select_x * 4
-    if (wid & 1) != 0:
+    if (wid_s & 1) != 0:
         token_off = token_select_y * 4
     scale_block_pair = d // GROUP_DIM
-    src_off = (wid // 2) * m * 4 + scale_block_pair * (m * 2 * 4)
-    lds_off = (shm_scale_base + wid * WARP_SIZE) * 4
+    src_off = (wid_s // 2) * m * 4 + scale_block_pair * (m * 2 * 4)
+    lds_off = (shm_scale_base + wid_s * WARP_SIZE) * 4
     S.amdgpu.raw_buffer_load_x1_lds(
         scales_rsrc,
         shared_words,
@@ -322,19 +269,27 @@ def _input_fetch_scale_to_reg(
 @avelang.jit
 def _load_sorted_weights(
     ret: S.Tensor((2,), S.f32),
-    sorted_weights_ptr: S.Pointer(S.u32),
-    sorted_weights_len: S.u32,
+    sorted_weights_rsrc: S.Tensor((4,), S.u32),
     tid: S.u32,
     route_base: S.u32,
 ):
-    sorted_weights = S.make_tensor(
-        sorted_weights_ptr,
-        S.u32,
-        S.make_layout((sorted_weights_len,), (1,)),
-    )
     lane = tid % SUBGROUP_SIZE
-    ret[0] = S.bitcast(sorted_weights[route_base + lane], S.f32)
-    ret[1] = S.bitcast(sorted_weights[route_base + lane + SUBGROUP_SIZE], S.f32)
+    route_base_bytes = route_base * 4
+    ret[0] = S.bitcast(
+        S.amdgpu.raw_buffer_load_x1(
+            sorted_weights_rsrc, lane * 4, route_base_bytes, 0
+        ),
+        S.f32,
+    )
+    ret[1] = S.bitcast(
+        S.amdgpu.raw_buffer_load_x1(
+            sorted_weights_rsrc,
+            (lane + SUBGROUP_SIZE) * 4,
+            route_base_bytes,
+            0,
+        ),
+        S.f32,
+    )
 
 
 @avelang.jit
@@ -688,17 +643,13 @@ def _compute_row_max(
         lm3 = _abs_f32(h[base + 3, 0])
         for j in S.range(3):
             v0 = _abs_f32(h[base + 0, j + 1])
-            if v0 > lm0:
-                lm0 = v0
+            lm0 = _max_nonneg_f32(lm0, v0)
             v2 = _abs_f32(h[base + 2, j + 1])
-            if v2 > lm2:
-                lm2 = v2
+            lm2 = _max_nonneg_f32(lm2, v2)
             v1 = _abs_f32(h[base + 1, j + 1])
-            if v1 > lm1:
-                lm1 = v1
+            lm1 = _max_nonneg_f32(lm1, v1)
             v3 = _abs_f32(h[base + 3, j + 1])
-            if v3 > lm3:
-                lm3 = v3
+            lm3 = _max_nonneg_f32(lm3, v3)
         lm_x = _max_nonneg_f32(local_max_floor, _max_nonneg_f32(lm0, lm2))
         lm_y = _max_nonneg_f32(local_max_floor, _max_nonneg_f32(lm1, lm3))
         shm_max_flat[tid * 2] = lm_x
@@ -777,7 +728,6 @@ def _quantize_and_shuffle(
         idx0 = base + i * 128
         out_u2[i * 2 + 0] = shm_q_h_u2[idx0]
         out_u2[i * 2 + 1] = shm_q_h_u2[idx0 + 16]
-    S.syncthreads()
 
 
 @avelang.jit
@@ -979,7 +929,6 @@ def _stage2(
                 )
             S.syncthreads()
 
-    S.syncthreads()
     ret = S.make_local((8, 2), S.u32)
     last_stage = (dim // GROUP_N - 1) % STAGE_COUNT
     if last_stage == 0:
@@ -1000,6 +949,96 @@ def _stage2(
 
 
 @avelang.jit
+def _stage2_pair_simple(
+    out_bf16: S.Tensor((2,), S.bf16),
+    shm_ret: S.Tensor((RET_DWORDS,), S.u32),
+    quant_h0: S.Tensor((8, 4), S.u32),
+    dq_act0: S.Tensor((4,), S.f32),
+    quant_h1: S.Tensor((8, 4), S.u32),
+    dq_act1: S.Tensor((4,), S.f32),
+    sorted_weights: S.Tensor((2,), S.f32),
+    invalid_token_mask: S.u32,
+    tokens: S.Tensor((TOKEN_BATCH,), S.u32),
+    num_tokens: S.u32,
+    tid: S.u32,
+    wid: S.u32,
+    wtid: S.u32,
+    dim: S.u32,
+    inter_dim: S.u32,
+    w2_rsrc: S.Tensor((4,), S.u32),
+    w2_scale_rsrc: S.Tensor((4,), S.u32),
+    w2_base_value_offset_bytes0: S.u32,
+    w2_base_scale_offset_bytes0: S.u32,
+    w2_base_value_offset_bytes1: S.u32,
+    w2_base_scale_offset_bytes1: S.u32,
+):
+    stage2_iters = (dim + GROUP_N - 1) // GROUP_N
+    w2_value_offset_bytes0 = w2_base_value_offset_bytes0
+    w2_scale_offset_bytes0 = w2_base_scale_offset_bytes0
+    w2_value_offset_bytes1 = w2_base_value_offset_bytes1
+    w2_scale_offset_bytes1 = w2_base_scale_offset_bytes1
+    for iter_idx in S.range(stage2_iters):
+        tile_d = iter_idx * GROUP_N
+        S.syncthreads()
+
+        w2_0_stage0 = S.make_local((8, 4), S.u32)
+        w2_0_stage1 = S.make_local((8, 4), S.u32)
+        w2_1_stage0 = S.make_local((8, 4), S.u32)
+        w2_1_stage1 = S.make_local((8, 4), S.u32)
+        _w2_load_tile_stage0(
+            w2_0_stage0, w2_rsrc, w2_value_offset_bytes0, inter_dim, wid, wtid
+        )
+        _w2_load_tile_stage1(
+            w2_0_stage1, w2_rsrc, w2_value_offset_bytes0, inter_dim, wid, wtid
+        )
+        scale_w2_0 = _w2_load_scale(
+            w2_scale_rsrc, inter_dim, tid, w2_scale_offset_bytes0
+        )
+        _w2_load_tile_stage0(
+            w2_1_stage0, w2_rsrc, w2_value_offset_bytes1, inter_dim, wid, wtid
+        )
+        _w2_load_tile_stage1(
+            w2_1_stage1, w2_rsrc, w2_value_offset_bytes1, inter_dim, wid, wtid
+        )
+        scale_w2_1 = _w2_load_scale(
+            w2_scale_rsrc, inter_dim, tid, w2_scale_offset_bytes1
+        )
+        w2_value_offset_bytes0 = w2_value_offset_bytes0 + inter_dim * GROUP_N
+        w2_scale_offset_bytes0 = w2_scale_offset_bytes0 + (inter_dim // SCALE_BLOCK_SIZE) * 8
+        w2_value_offset_bytes1 = w2_value_offset_bytes1 + inter_dim * GROUP_N
+        w2_scale_offset_bytes1 = w2_scale_offset_bytes1 + (inter_dim // SCALE_BLOCK_SIZE) * 8
+
+        S.amdgpu.s_waitcnt(0, -1, -1)
+        t = S.make_local((8, 4), S.f32)
+        _clear_f32x4_matrix(t)
+        _matmul_stage0(t, w2_0_stage0, quant_h0, dq_act0, scale_w2_0)
+        _matmul_stage1(t, w2_0_stage1, quant_h0, dq_act0, scale_w2_0)
+        _matmul_stage0(t, w2_1_stage0, quant_h1, dq_act1, scale_w2_1)
+        _matmul_stage1(t, w2_1_stage1, quant_h1, dq_act1, scale_w2_1)
+
+        _multiply_route_weights(t, sorted_weights)
+        packed = S.make_local((8, 2), S.u32)
+        for i in S.range(8):
+            _to_bf16_rn(packed[i], t[i])
+
+        _stage2_write_shm(shm_ret, packed, wid, wtid)
+        S.syncthreads()
+        ret = S.make_local((8, 2), S.u32)
+        _stage2_read_shm(ret, shm_ret, wid, wtid)
+        _stage2_write_back(
+            out_bf16,
+            ret,
+            invalid_token_mask,
+            tokens,
+            num_tokens,
+            dim,
+            tile_d,
+            wid,
+            wtid,
+        )
+
+
+@avelang.jit
 def _fused_moe_blockscale_fp8_kernel(
     out_ptr: S.Pointer(S.bf16),
     act_ptr: S.Pointer(S.u8),
@@ -1017,6 +1056,7 @@ def _fused_moe_blockscale_fp8_kernel(
     dim: S.u32,
     inter_dim: S.u32,
     persistent_route_step: S.u32,
+    use_split_pair: S.constexpr,
 ):
     del topk
 
@@ -1024,14 +1064,17 @@ def _fused_moe_blockscale_fp8_kernel(
     k_blocks = inter_dim // SCALE_BLOCK_SIZE
     tid = S.thread_id(0)
     tile_k = S.block_id(0)
+    if use_split_pair:
+        tile_k = tile_k * SPLIT_K_PER_CTA
     route_group_begin = S.block_id(1)
     wid = tid // WARP_SIZE
+    wid_route = S.amdgpu.readfirstlane(wid)
     wtid = tid % WARP_SIZE
     col_id = tid % SUBGROUP_SIZE
 
     g_num_valid_ids = S.make_tensor(num_valid_ids_ptr, S.u32, S.make_layout((2,), (1,)))
-    num_valid_ids = g_num_valid_ids[0]
-    num_tokens = g_num_valid_ids[1]
+    num_valid_ids = S.amdgpu.readfirstlane(g_num_valid_ids[0])
+    num_tokens = S.amdgpu.readfirstlane(g_num_valid_ids[1])
     num_valid_m_blocks = (num_valid_ids + ROUTES_PER_BLOCK - 1) // ROUTES_PER_BLOCK
     route_group_limit = num_valid_m_blocks
     route_group_end = route_group_begin + 1
@@ -1053,6 +1096,7 @@ def _fused_moe_blockscale_fp8_kernel(
     scale_w13_memref = S.make_tensor(scales_w13_ptr, S.u32, S.make_layout((REF_BUFFER_RANGE // 4,), (1,)))
     scale_w2_memref = S.make_tensor(scales_w2_ptr, S.u32, S.make_layout((REF_BUFFER_RANGE // 4,), (1,)))
     sorted_token_ids_memref = S.make_tensor(sorted_token_ids_ptr, S.u32, S.make_layout((REF_BUFFER_RANGE // 4,), (1,)))
+    sorted_weights_memref = S.make_tensor(sorted_weights_ptr, S.u32, S.make_layout((REF_BUFFER_RANGE // 4,), (1,)))
     sorted_expert_ids_memref = S.make_tensor(sorted_expert_ids_ptr, S.u32, S.make_layout((REF_BUFFER_RANGE // 4,), (1,)))
     out_bf16 = S.make_tensor(out_ptr, S.bf16, S.make_layout((2,), (1,)))
 
@@ -1063,6 +1107,7 @@ def _fused_moe_blockscale_fp8_kernel(
     scale_w13_rsrc_all = S.amdgpu.make_rsrc(scale_w13_memref, REF_BUFFER_RANGE)
     scale_w2_rsrc_all = S.amdgpu.make_rsrc(scale_w2_memref, REF_BUFFER_RANGE)
     sorted_token_ids_rsrc = S.amdgpu.make_rsrc(sorted_token_ids_memref, REF_BUFFER_RANGE)
+    sorted_weights_rsrc = S.amdgpu.make_rsrc(sorted_weights_memref, REF_BUFFER_RANGE)
     sorted_expert_ids_rsrc = S.amdgpu.make_rsrc(sorted_expert_ids_memref, REF_BUFFER_RANGE)
     zero = S.convert(0, S.u32)
 
@@ -1075,26 +1120,29 @@ def _fused_moe_blockscale_fp8_kernel(
     for route_group_iter in S.range(route_group_iters):
         route_group = route_group_begin + route_group_iter * route_group_stride
         route_base = route_group * ROUTES_PER_BLOCK
+        route_base_bytes = route_base * 4
         if route_group < route_group_limit and route_base < num_valid_ids:
             expert_id = S.amdgpu.raw_buffer_load_x1(
                 sorted_expert_ids_rsrc, zero, route_group * 4, 0
             )
+            expert_id = S.amdgpu.readfirstlane(expert_id)
             token_select_x = S.amdgpu.raw_buffer_load_x1(
-                sorted_token_ids_rsrc, zero, (route_base + col_id) * 4, 0
+                sorted_token_ids_rsrc, col_id * 4, route_base_bytes, 0
             ) & 0x00FFFFFF
             token_select_y = S.amdgpu.raw_buffer_load_x1(
                 sorted_token_ids_rsrc,
-                zero,
-                (route_base + col_id + SUBGROUP_SIZE) * 4,
+                (col_id + SUBGROUP_SIZE) * 4,
+                route_base_bytes,
                 0,
             ) & 0x00FFFFFF
 
             tokens = S.make_local((TOKEN_BATCH,), S.u32)
             for i in S.range(TOKEN_BATCH):
-                token_idx = wid + i * 4
+                token_idx = wid_route + i * 4
                 tokens[i] = S.amdgpu.raw_buffer_load_x1(
-                    sorted_token_ids_rsrc, zero, (route_base + token_idx) * 4, 0
+                    sorted_token_ids_rsrc, token_idx * 4, route_base_bytes, 0
                 ) & 0x00FFFFFF
+                tokens[i] = S.amdgpu.readfirstlane(tokens[i])
 
             invalid_token_mask = S.convert(0, S.u32)
             for i in S.range(TOKEN_BATCH):
@@ -1105,77 +1153,198 @@ def _fused_moe_blockscale_fp8_kernel(
 
             sorted_weights = S.make_local((2,), S.f32)
             _load_sorted_weights(
-                sorted_weights, sorted_weights_ptr, num_valid_ids, tid, route_base
+                sorted_weights, sorted_weights_rsrc, tid, route_base
             )
 
-            w1_value_offset_bytes = (
-                expert_id * (2 * inter_dim * dim) + tile_k * GROUP_DIM * dim
-            )
-            w1_scale_offset_bytes = (
-                expert_id * (2 * k_blocks * n_blocks)
-                + tile_k * (GROUP_DIM // SCALE_BLOCK_SIZE) * n_blocks
-            ) * 4
-            w3_value_offset_bytes = w1_value_offset_bytes + inter_dim * dim
-            w3_scale_offset_bytes = w1_scale_offset_bytes + k_blocks * n_blocks * 4
-            w2_value_offset_bytes = (
-                expert_id * (dim * inter_dim) + tile_k * (GROUP_DIM * 16)
-            )
-            w2_scale_offset_bytes = (
-                expert_id * (n_blocks * k_blocks)
-                + tile_k * (GROUP_DIM // SCALE_BLOCK_SIZE)
-            ) * 4
+            if not use_split_pair:
+                w1_value_offset_bytes = (
+                    expert_id * (2 * inter_dim * dim) + tile_k * GROUP_DIM * dim
+                )
+                w1_scale_offset_bytes = (
+                    expert_id * (2 * k_blocks * n_blocks)
+                    + tile_k * (GROUP_DIM // SCALE_BLOCK_SIZE) * n_blocks
+                ) * 4
+                w3_value_offset_bytes = w1_value_offset_bytes + inter_dim * dim
+                w3_scale_offset_bytes = w1_scale_offset_bytes + k_blocks * n_blocks * 4
+                w2_value_offset_bytes = (
+                    expert_id * (dim * inter_dim) + tile_k * (GROUP_DIM * 16)
+                )
+                w2_scale_offset_bytes = (
+                    expert_id * (n_blocks * k_blocks)
+                    + tile_k * (GROUP_DIM // SCALE_BLOCK_SIZE)
+                ) * 4
 
-            h = S.make_local((8, 4), S.f32)
-            _stage1(
-                h,
-                shared_words,
-                wid,
-                wtid,
-                tid,
-                token_select_x,
-                token_select_y,
-                tokens,
-                m,
-                dim,
-                act_rsrc,
-                scale_act_rsrc,
-                w13_rsrc_all,
-                w13_rsrc_all,
-                scale_w13_rsrc_all,
-                scale_w13_rsrc_all,
-                w1_value_offset_bytes,
-                w1_scale_offset_bytes,
-                w3_value_offset_bytes,
-                w3_scale_offset_bytes,
-            )
-            S.syncthreads()
+                h = S.make_local((8, 4), S.f32)
+                _stage1(
+                    h,
+                    shared_words,
+                    wid,
+                    wtid,
+                    tid,
+                    token_select_x,
+                    token_select_y,
+                    tokens,
+                    m,
+                    dim,
+                    act_rsrc,
+                    scale_act_rsrc,
+                    w13_rsrc_all,
+                    w13_rsrc_all,
+                    scale_w13_rsrc_all,
+                    scale_w13_rsrc_all,
+                    w1_value_offset_bytes,
+                    w1_scale_offset_bytes,
+                    w3_value_offset_bytes,
+                    w3_scale_offset_bytes,
+                )
 
-            quant_h = S.make_local((8, 4), S.u32)
-            dq_act = S.make_local((4,), S.f32)
-            _quantize_and_shuffle(
-                quant_h, dq_act, shm_max, shm_q_h, tid, wid, wtid, h
-            )
+                quant_h = S.make_local((8, 4), S.u32)
+                dq_act = S.make_local((4,), S.f32)
+                _quantize_and_shuffle(
+                    quant_h, dq_act, shm_max, shm_q_h, tid, wid, wtid, h
+                )
 
-            _stage2(
-                out_bf16,
-                shm_ret0,
-                shm_ret1,
-                quant_h,
-                dq_act,
-                sorted_weights,
-                invalid_token_mask,
-                tokens,
-                num_tokens,
-                tid,
-                wid,
-                wtid,
-                dim,
-                inter_dim,
-                w2_rsrc_all,
-                scale_w2_rsrc_all,
-                w2_value_offset_bytes,
-                w2_scale_offset_bytes,
-            )
+                _stage2(
+                    out_bf16,
+                    shm_ret0,
+                    shm_ret1,
+                    quant_h,
+                    dq_act,
+                    sorted_weights,
+                    invalid_token_mask,
+                    tokens,
+                    num_tokens,
+                    tid,
+                    wid,
+                    wtid,
+                    dim,
+                    inter_dim,
+                    w2_rsrc_all,
+                    scale_w2_rsrc_all,
+                    w2_value_offset_bytes,
+                    w2_scale_offset_bytes,
+                )
+            else:
+                tile_k1 = tile_k + 1
+                w1_value_offset_bytes0 = (
+                    expert_id * (2 * inter_dim * dim) + tile_k * GROUP_DIM * dim
+                )
+                w1_scale_offset_bytes0 = (
+                    expert_id * (2 * k_blocks * n_blocks)
+                    + tile_k * (GROUP_DIM // SCALE_BLOCK_SIZE) * n_blocks
+                ) * 4
+                w3_value_offset_bytes0 = w1_value_offset_bytes0 + inter_dim * dim
+                w3_scale_offset_bytes0 = w1_scale_offset_bytes0 + k_blocks * n_blocks * 4
+                w2_value_offset_bytes0 = (
+                    expert_id * (dim * inter_dim) + tile_k * (GROUP_DIM * 16)
+                )
+                w2_scale_offset_bytes0 = (
+                    expert_id * (n_blocks * k_blocks)
+                    + tile_k * (GROUP_DIM // SCALE_BLOCK_SIZE)
+                ) * 4
+
+                h0 = S.make_local((8, 4), S.f32)
+                _stage1(
+                    h0,
+                    shared_words,
+                    wid,
+                    wtid,
+                    tid,
+                    token_select_x,
+                    token_select_y,
+                    tokens,
+                    m,
+                    dim,
+                    act_rsrc,
+                    scale_act_rsrc,
+                    w13_rsrc_all,
+                    w13_rsrc_all,
+                    scale_w13_rsrc_all,
+                    scale_w13_rsrc_all,
+                    w1_value_offset_bytes0,
+                    w1_scale_offset_bytes0,
+                    w3_value_offset_bytes0,
+                    w3_scale_offset_bytes0,
+                )
+                S.syncthreads()
+
+                quant_h0 = S.make_local((8, 4), S.u32)
+                dq_act0 = S.make_local((4,), S.f32)
+                _quantize_and_shuffle(
+                    quant_h0, dq_act0, shm_max, shm_q_h, tid, wid, wtid, h0
+                )
+
+                w1_value_offset_bytes1 = (
+                    expert_id * (2 * inter_dim * dim) + tile_k1 * GROUP_DIM * dim
+                )
+                w1_scale_offset_bytes1 = (
+                    expert_id * (2 * k_blocks * n_blocks)
+                    + tile_k1 * (GROUP_DIM // SCALE_BLOCK_SIZE) * n_blocks
+                ) * 4
+                w3_value_offset_bytes1 = w1_value_offset_bytes1 + inter_dim * dim
+                w3_scale_offset_bytes1 = w1_scale_offset_bytes1 + k_blocks * n_blocks * 4
+                w2_value_offset_bytes1 = (
+                    expert_id * (dim * inter_dim) + tile_k1 * (GROUP_DIM * 16)
+                )
+                w2_scale_offset_bytes1 = (
+                    expert_id * (n_blocks * k_blocks)
+                    + tile_k1 * (GROUP_DIM // SCALE_BLOCK_SIZE)
+                ) * 4
+
+                h1 = S.make_local((8, 4), S.f32)
+                _stage1(
+                    h1,
+                    shared_words,
+                    wid,
+                    wtid,
+                    tid,
+                    token_select_x,
+                    token_select_y,
+                    tokens,
+                    m,
+                    dim,
+                    act_rsrc,
+                    scale_act_rsrc,
+                    w13_rsrc_all,
+                    w13_rsrc_all,
+                    scale_w13_rsrc_all,
+                    scale_w13_rsrc_all,
+                    w1_value_offset_bytes1,
+                    w1_scale_offset_bytes1,
+                    w3_value_offset_bytes1,
+                    w3_scale_offset_bytes1,
+                )
+                S.syncthreads()
+
+                quant_h1 = S.make_local((8, 4), S.u32)
+                dq_act1 = S.make_local((4,), S.f32)
+                _quantize_and_shuffle(
+                    quant_h1, dq_act1, shm_max, shm_q_h, tid, wid, wtid, h1
+                )
+
+                _stage2_pair_simple(
+                    out_bf16,
+                    shm_ret0,
+                    quant_h0,
+                    dq_act0,
+                    quant_h1,
+                    dq_act1,
+                    sorted_weights,
+                    invalid_token_mask,
+                    tokens,
+                    num_tokens,
+                    tid,
+                    wid,
+                    wtid,
+                    dim,
+                    inter_dim,
+                    w2_rsrc_all,
+                    scale_w2_rsrc_all,
+                    w2_value_offset_bytes0,
+                    w2_scale_offset_bytes0,
+                    w2_value_offset_bytes1,
+                    w2_scale_offset_bytes1,
+                )
         S.syncthreads()
 
 
@@ -1224,6 +1393,12 @@ def _validate_fused_moe_fp8_blockscale_inputs(
         )
     if dim == 0 or inter_dim == 0 or dim % SCALE_BLOCK_SIZE != 0 or inter_dim % SCALE_BLOCK_SIZE != 0:
         raise ValueError(f"dim and inter_dim must be nonzero multiples of {SCALE_BLOCK_SIZE}")
+    fused_inter_dim = GROUP_DIM * SPLIT_K_PER_CTA
+    if inter_dim % fused_inter_dim != 0:
+        raise ValueError(
+            f"inter_dim must be a multiple of {fused_inter_dim} for fused split-K stage2 "
+            f"(got {inter_dim})"
+        )
 
     if not isinstance(topk, int) or topk <= 0:
         raise ValueError(f"topk must be a positive int (got {topk})")
@@ -1322,13 +1497,15 @@ def _fused_moe_fp8_blockscale_g1u1_impl(
     # on the host: doing so breaks CUDA graph capture.  The kernel guards each
     # speculative route group using num_valid_ids[0].
     split_k = _ceil_div(inter_dim, GROUP_DIM)
+    split_k_ctas = _ceil_div(split_k, SPLIT_K_PER_CTA)
+    use_split_pair = True
     route_groups = max(1, sorted_expert_ids.numel())
     persistent_route_step = 0
     if num_persistent_tgs > 0:
-        persistent_route_groups = _ceil_div(num_persistent_tgs, split_k)
+        persistent_route_groups = _ceil_div(num_persistent_tgs, split_k_ctas)
         route_groups = min(route_groups, max(1, persistent_route_groups))
         persistent_route_step = route_groups
-    grid = (split_k, route_groups, 1)
+    grid = (split_k_ctas, route_groups, 1)
     block = (THREADS, 1, 1)
 
     sorted_token_ids_i32 = sorted_token_ids.to(dtype=torch.int32)
@@ -1358,6 +1535,7 @@ def _fused_moe_fp8_blockscale_g1u1_impl(
         dim,
         inter_dim,
         persistent_route_step,
+        use_split_pair,
         num_warps=NUM_WARPS,
     )
     return out

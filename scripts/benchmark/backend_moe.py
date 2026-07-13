@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import gc
 from dataclasses import dataclass
 from pathlib import Path
+
+import torch.nn.functional as F
 
 from backends import build_model_instance, exit_after_success_if_requested, load_module
 from cli_utils import emit_jsonl
@@ -16,6 +19,10 @@ except Exception:
 
 BLOCK_N = 128
 BLOCK_K = 128
+CORRECTNESS_TOLERANCES = {
+    "fp8": {"rtol": 1e-1, "atol": 1e-1},
+    "bf16": {"rtol": 1e-1, "atol": 1e-1},
+}
 
 
 @dataclass(frozen=True)
@@ -211,6 +218,13 @@ def _time_call(
     )
 
 
+def _release_correctness_temporaries() -> None:
+    gc.collect()
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
+
 def _emit_record(
     *,
     backend: str,
@@ -221,6 +235,7 @@ def _emit_record(
     topk: int,
     input_dtype_name: str,
     mean_ms: float,
+    check_correctness: bool,
 ) -> None:
     emit_jsonl(
         {
@@ -233,6 +248,7 @@ def _emit_record(
             "topk": topk,
             "input_dtype": input_dtype_name,
             "mean_ms": mean_ms,
+            **({"correctness": True} if check_correctness else {}),
         }
     )
 
@@ -255,6 +271,7 @@ def _run_case_backend(
     warmup: int,
     repeat: int,
     graph_iters: int,
+    check_correctness: bool,
 ) -> None:
     del device, input_dtype
     model_cls = getattr(mod, "Model", None)
@@ -274,6 +291,20 @@ def _run_case_backend(
             input_dtype=input_dtype_name,
         )
         for fn in cases:
+            if check_correctness:
+                actual = fn()
+                _check_correctness(
+                    actual=actual,
+                    inputs=shared_inputs[tokens],
+                    weights=shared_weights,
+                    tokens=tokens,
+                    dim=dim,
+                    inter_dim=inter_dim,
+                    experts=experts,
+                    input_dtype_name=input_dtype_name,
+                )
+                del actual
+                _release_correctness_temporaries()
             timing = _time_call(
                 fn,
                 warmup=warmup,
@@ -289,7 +320,13 @@ def _run_case_backend(
                 topk=topk,
                 input_dtype_name=input_dtype_name,
                 mean_ms=timing.mean_ms,
+                check_correctness=check_correctness,
             )
+        shared_inputs.pop(tokens, None)
+        out_cache = getattr(model, "_out_cache", None)
+        if isinstance(out_cache, dict):
+            out_cache.clear()
+        _release_correctness_temporaries()
 
 
 def _run_python_backend(
@@ -309,21 +346,37 @@ def _run_python_backend(
     warmup: int,
     repeat: int,
     graph_iters: int,
+    check_correctness: bool,
 ) -> None:
     fn = build_model_instance(mod, device=device, dtype=input_dtype)
     for tokens in token_counts:
         x = shared_inputs[tokens]
+        call = lambda x=x: fn(
+            x.input_q,
+            shared_weights["w1_q"],
+            shared_weights["w2_q"],
+            x.topk_weights,
+            x.topk_ids,
+            x.input_scale,
+            shared_weights["fc1_scale"],
+            shared_weights["fc2_scale"],
+        )
+        if check_correctness:
+            actual = call()
+            _check_correctness(
+                actual=actual,
+                inputs=x,
+                weights=shared_weights,
+                tokens=tokens,
+                dim=dim,
+                inter_dim=inter_dim,
+                experts=experts,
+                input_dtype_name=input_dtype_name,
+            )
+            del actual
+            _release_correctness_temporaries()
         timing = _time_call(
-            lambda x=x: fn(
-                x.input_q,
-                shared_weights["w1_q"],
-                shared_weights["w2_q"],
-                x.topk_weights,
-                x.topk_ids,
-                x.input_scale,
-                shared_weights["fc1_scale"],
-                shared_weights["fc2_scale"],
-            ),
+            call,
             warmup=warmup,
             repeat=repeat,
             graph_iters=graph_iters,
@@ -337,7 +390,10 @@ def _run_python_backend(
             topk=topk,
             input_dtype_name=input_dtype_name,
             mean_ms=timing.mean_ms,
+            check_correctness=check_correctness,
         )
+        shared_inputs.pop(tokens, None)
+        _release_correctness_temporaries()
 
 
 def run_backend(*, backend: str, **kwargs) -> None:
@@ -353,3 +409,109 @@ def run_backend(*, backend: str, **kwargs) -> None:
         python_kwargs.pop("moe_root", None)
         _run_python_backend(backend=backend, mod=mod, **python_kwargs)
     exit_after_success_if_requested(mod)
+
+
+def _check_correctness(
+    *,
+    actual,
+    inputs: SharedInputs,
+    weights: dict[str, torch.Tensor],
+    tokens: int,
+    dim: int,
+    inter_dim: int,
+    experts: int,
+    input_dtype_name: str,
+) -> None:
+    with torch.inference_mode():
+        expected = _moe_reference(
+            inputs=inputs,
+            weights=weights,
+            dim=dim,
+            inter_dim=inter_dim,
+            experts=experts,
+        )
+
+    if not isinstance(actual, torch.Tensor):
+        raise AssertionError(
+            f"MoE correctness failed for {tokens} tokens: "
+            f"backend returned {type(actual).__name__}, expected torch.Tensor"
+        )
+    expected_shape = (tokens, dim)
+    if tuple(actual.shape) != expected_shape:
+        raise AssertionError(
+            f"MoE correctness failed for {tokens} tokens: "
+            f"output shape {tuple(actual.shape)}, expected {expected_shape}"
+        )
+    if actual.dtype != expected.dtype:
+        raise AssertionError(
+            f"MoE correctness failed for {tokens} tokens: "
+            f"output dtype {actual.dtype}, expected {expected.dtype}"
+        )
+
+    tolerances = CORRECTNESS_TOLERANCES[input_dtype_name]
+    try:
+        torch.testing.assert_close(actual, expected, **tolerances)
+    except AssertionError as exc:
+        raise AssertionError(
+            f"MoE correctness failed for {tokens} tokens "
+            f"(rtol={tolerances['rtol']}, atol={tolerances['atol']}):\n{exc}"
+        ) from exc
+
+
+def _moe_reference(
+    *,
+    inputs: SharedInputs,
+    weights: dict[str, torch.Tensor],
+    dim: int,
+    inter_dim: int,
+    experts: int,
+) -> torch.Tensor:
+    input_f = (
+        inputs.input_q.to(torch.float32).view(-1, dim // BLOCK_K, BLOCK_K)
+        * inputs.input_scale.to(torch.float32).unsqueeze(-1)
+    ).reshape(-1, dim)
+    out = torch.zeros(
+        (input_f.shape[0], dim),
+        dtype=torch.float32,
+        device=input_f.device,
+    )
+
+    for expert in range(experts):
+        token_ids, slots = torch.nonzero(inputs.topk_ids == expert, as_tuple=True)
+        if token_ids.numel() == 0:
+            continue
+        w1 = _dequantize_weight(
+            weights["w1_q"][expert],
+            weights["fc1_scale"][expert],
+        )
+        w2 = _dequantize_weight(
+            weights["w2_q"][expert],
+            weights["fc2_scale"][expert],
+        )
+        stage1 = input_f[token_ids] @ w1.transpose(0, 1)
+        gate, up = stage1.split(inter_dim, dim=-1)
+        expert_out = (F.silu(gate) * up) @ w2.transpose(0, 1)
+        route_weights = inputs.topk_weights[token_ids, slots].unsqueeze(1)
+        out.index_add_(0, token_ids, expert_out * route_weights)
+    return out.to(torch.bfloat16)
+
+
+def _dequantize_weight(
+    weight_q: torch.Tensor,
+    scale: torch.Tensor,
+) -> torch.Tensor:
+    rows, cols = weight_q.shape
+    row_blocks = rows // BLOCK_N
+    col_blocks = cols // BLOCK_K
+    blocks = (
+        weight_q.to(torch.float32)
+        .view(row_blocks, BLOCK_N, col_blocks, BLOCK_K)
+        .permute(0, 2, 1, 3)
+    )
+    scaled = blocks * scale.to(torch.float32).view(
+        row_blocks,
+        col_blocks,
+        1,
+        1,
+    )
+    return scaled.permute(0, 2, 1, 3).reshape(rows, cols)

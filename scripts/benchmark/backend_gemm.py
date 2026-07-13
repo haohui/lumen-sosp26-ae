@@ -40,6 +40,12 @@ class SharedInputs:
     b_nk: torch.Tensor
 
 
+CORRECTNESS_TOLERANCES = {
+    "bf16": {"rtol": 1e-1, "atol": 1e-1},
+    "fp16": {"rtol": 1e-2, "atol": 1e-2},
+}
+
+
 def parse_dtype(name: str) -> torch.dtype:
     n = name.strip().lower()
     if n == "bf16":
@@ -75,6 +81,7 @@ def run_backend(
     warmup: int,
     repeat: int,
     graph_iters: int,
+    check_correctness: bool = False,
 ) -> None:
     spec = BACKENDS[backend]
     path = gemm_root / spec.directory / "model.py"
@@ -82,6 +89,13 @@ def run_backend(
     model = build_model_instance(mod, device=device, dtype=dtype)
     for s in matrix_sizes:
         x = shared[s]
+        if check_correctness:
+            _check_correctness(
+                model=model,
+                inputs=x,
+                matrix_size=s,
+                dtype_name=dtype_name,
+            )
         if hasattr(model, "build_call"):
             call = model.build_call(a_mk=x.a_mk, b_nk=x.b_nk)
         else:
@@ -104,6 +118,45 @@ def run_backend(
                 "dtype": dtype_name,
                 "mean_ms": timing.mean_ms,
                 "tflops": tflops,
+                **({"correctness": True} if check_correctness else {}),
             }
         )
     exit_after_success_if_requested(mod)
+
+
+def _check_correctness(
+    *,
+    model,
+    inputs: SharedInputs,
+    matrix_size: int,
+    dtype_name: str,
+) -> None:
+    with torch.inference_mode():
+        actual = model(inputs.a_mk, inputs.b_nk)
+        expected = torch.matmul(inputs.a_mk, inputs.b_nk.transpose(0, 1))
+
+    if not isinstance(actual, torch.Tensor):
+        raise AssertionError(
+            f"GEMM correctness failed for size {matrix_size}: "
+            f"backend returned {type(actual).__name__}, expected torch.Tensor"
+        )
+    expected_shape = (matrix_size, matrix_size)
+    if tuple(actual.shape) != expected_shape:
+        raise AssertionError(
+            f"GEMM correctness failed for size {matrix_size}: "
+            f"output shape {tuple(actual.shape)}, expected {expected_shape}"
+        )
+    if actual.dtype != expected.dtype:
+        raise AssertionError(
+            f"GEMM correctness failed for size {matrix_size}: "
+            f"output dtype {actual.dtype}, expected {expected.dtype}"
+        )
+
+    tolerances = CORRECTNESS_TOLERANCES[dtype_name]
+    try:
+        torch.testing.assert_close(actual, expected, **tolerances)
+    except AssertionError as exc:
+        raise AssertionError(
+            f"GEMM correctness failed for size {matrix_size} "
+            f"(rtol={tolerances['rtol']}, atol={tolerances['atol']}):\n{exc}"
+        ) from exc

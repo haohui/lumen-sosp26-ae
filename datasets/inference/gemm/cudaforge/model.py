@@ -2,211 +2,148 @@ import torch
 import torch.nn as nn
 from torch.utils.cpp_extension import load_inline
 
-source = r"""
+source = """
 #include <torch/extension.h>
-#include <ATen/ATen.h>
-#include <c10/hip/HIPStream.h>
 #include <hip/hip_runtime.h>
-#include <hip/hip_bf16.h>
-#include <climits>
+#include <hip/hip_bfloat16.h>
 
-#define BLOCK_X 16
-#define BLOCK_Y 16
-#define TILE_M 64
-#define TILE_N 64
-#define TILE_K 32
-#define THREADS_PER_BLOCK (BLOCK_X * BLOCK_Y)
+#define BLOCK_SIZE 16
 
-__device__ __forceinline__ float bf16_to_float(__hip_bfloat16 x) {
-    return __bfloat162float(x);
-}
+__global__ void gemm_bf16_kernel(const hip_bfloat16* A, const hip_bfloat16* B, hip_bfloat16* C, int N) {
+    __shared__ hip_bfloat16 As[BLOCK_SIZE * BLOCK_SIZE];
+    __shared__ hip_bfloat16 Bs[BLOCK_SIZE * BLOCK_SIZE];
 
-__device__ __forceinline__ __hip_bfloat16 float_to_bf16(float x) {
-    return __float2bfloat16(x);
-}
+    int row = blockIdx.y * BLOCK_SIZE + threadIdx.y;
+    int col = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+    int ty = threadIdx.y;
+    int tx = threadIdx.x;
 
-__global__ __launch_bounds__(THREADS_PER_BLOCK)
-void bf16_gemm_bt_kernel_64x64x32(
-    const __hip_bfloat16* __restrict__ A,   // [M, K]
-    const __hip_bfloat16* __restrict__ B,   // [N, K]
-    __hip_bfloat16* __restrict__ C,         // [M, N]
-    int M, int N, int K
-) {
-    __shared__ __hip_bfloat16 As[TILE_M][TILE_K + 1];
-    __shared__ __hip_bfloat16 Bs[TILE_K][TILE_N + 1]; // stored as [k][n]
+    float acc = 0.0f;
+    int num_blocks = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    const int tx = threadIdx.x;                 // 0..15
-    const int ty = threadIdx.y;                 // 0..15
-    const int tid = ty * BLOCK_X + tx;          // 0..255
+    for (int k = 0; k < num_blocks; ++k) {
+        int a_row = row;
+        int a_col = k * BLOCK_SIZE + tx;
+        if (a_row < N && a_col < N) {
+            As[ty * BLOCK_SIZE + tx] = A[a_row * N + a_col];
+        } else {
+            As[ty * BLOCK_SIZE + tx] = hip_bfloat16(0.0f);
+        }
 
-    const int row_base = blockIdx.y * TILE_M;
-    const int col_base = blockIdx.x * TILE_N;
-
-    const int row0 = row_base + ty;
-    const int row1 = row0 + BLOCK_Y;
-    const int row2 = row1 + BLOCK_Y;
-    const int row3 = row2 + BLOCK_Y;
-
-    const int col0 = col_base + tx;
-    const int col1 = col0 + BLOCK_X;
-    const int col2 = col1 + BLOCK_X;
-    const int col3 = col2 + BLOCK_X;
-
-    float acc00 = 0.0f, acc01 = 0.0f, acc02 = 0.0f, acc03 = 0.0f;
-    float acc10 = 0.0f, acc11 = 0.0f, acc12 = 0.0f, acc13 = 0.0f;
-    float acc20 = 0.0f, acc21 = 0.0f, acc22 = 0.0f, acc23 = 0.0f;
-    float acc30 = 0.0f, acc31 = 0.0f, acc32 = 0.0f, acc33 = 0.0f;
-
-    for (int t = 0; t < K; t += TILE_K) {
-        #pragma unroll
-        for (int i = 0; i < 8; ++i) {
-            const int idx = tid + i * THREADS_PER_BLOCK; // 0..2047
-
-            // A tile: [64 x 32], row-major
-            const int a_r = idx >> 5;       // /32
-            const int a_k = idx & 31;       // %32
-            const int g_ar = row_base + a_r;
-            const int g_ak = t + a_k;
-
-            As[a_r][a_k] =
-                (g_ar < M && g_ak < K) ? A[g_ar * K + g_ak] : float_to_bf16(0.0f);
-
-            // B tile: load B[n][k] and store as Bs[k][n]
-            const int b_n = idx >> 5;       // /32
-            const int b_k = idx & 31;       // %32
-            const int g_bn = col_base + b_n;
-            const int g_bk = t + b_k;
-
-            Bs[b_k][b_n] =
-                (g_bn < N && g_bk < K) ? B[g_bn * K + g_bk] : float_to_bf16(0.0f);
+        int b_row = k * BLOCK_SIZE + ty;
+        int b_col = col;
+        if (b_row < N && b_col < N) {
+            Bs[ty * BLOCK_SIZE + tx] = B[b_row * N + b_col];
+        } else {
+            Bs[ty * BLOCK_SIZE + tx] = hip_bfloat16(0.0f);
         }
 
         __syncthreads();
 
         #pragma unroll
-        for (int k = 0; k < TILE_K; ++k) {
-            const float a0 = bf16_to_float(As[ty][k]);
-            const float a1 = bf16_to_float(As[ty + BLOCK_Y][k]);
-            const float a2 = bf16_to_float(As[ty + 2 * BLOCK_Y][k]);
-            const float a3 = bf16_to_float(As[ty + 3 * BLOCK_Y][k]);
-
-            const float b0 = bf16_to_float(Bs[k][tx]);
-            const float b1 = bf16_to_float(Bs[k][tx + BLOCK_X]);
-            const float b2 = bf16_to_float(Bs[k][tx + 2 * BLOCK_X]);
-            const float b3 = bf16_to_float(Bs[k][tx + 3 * BLOCK_X]);
-
-            acc00 += a0 * b0; acc01 += a0 * b1; acc02 += a0 * b2; acc03 += a0 * b3;
-            acc10 += a1 * b0; acc11 += a1 * b1; acc12 += a1 * b2; acc13 += a1 * b3;
-            acc20 += a2 * b0; acc21 += a2 * b1; acc22 += a2 * b2; acc23 += a2 * b3;
-            acc30 += a3 * b0; acc31 += a3 * b1; acc32 += a3 * b2; acc33 += a3 * b3;
+        for (int i = 0; i < BLOCK_SIZE; ++i) {
+            float a_val = static_cast<float>(As[ty * BLOCK_SIZE + i]);
+            float b_val = static_cast<float>(Bs[i * BLOCK_SIZE + tx]);
+            acc += a_val * b_val;
         }
 
         __syncthreads();
     }
 
-    if (row0 < M) {
-        if (col0 < N) C[row0 * N + col0] = float_to_bf16(acc00);
-        if (col1 < N) C[row0 * N + col1] = float_to_bf16(acc01);
-        if (col2 < N) C[row0 * N + col2] = float_to_bf16(acc02);
-        if (col3 < N) C[row0 * N + col3] = float_to_bf16(acc03);
-    }
-    if (row1 < M) {
-        if (col0 < N) C[row1 * N + col0] = float_to_bf16(acc10);
-        if (col1 < N) C[row1 * N + col1] = float_to_bf16(acc11);
-        if (col2 < N) C[row1 * N + col2] = float_to_bf16(acc12);
-        if (col3 < N) C[row1 * N + col3] = float_to_bf16(acc13);
-    }
-    if (row2 < M) {
-        if (col0 < N) C[row2 * N + col0] = float_to_bf16(acc20);
-        if (col1 < N) C[row2 * N + col1] = float_to_bf16(acc21);
-        if (col2 < N) C[row2 * N + col2] = float_to_bf16(acc22);
-        if (col3 < N) C[row2 * N + col3] = float_to_bf16(acc23);
-    }
-    if (row3 < M) {
-        if (col0 < N) C[row3 * N + col0] = float_to_bf16(acc30);
-        if (col1 < N) C[row3 * N + col1] = float_to_bf16(acc31);
-        if (col2 < N) C[row3 * N + col2] = float_to_bf16(acc32);
-        if (col3 < N) C[row3 * N + col3] = float_to_bf16(acc33);
+    if (row < N && col < N) {
+        C[row * N + col] = hip_bfloat16(acc);
     }
 }
 
-torch::Tensor bf16_gemm_bt(torch::Tensor A, torch::Tensor B) {
-    TORCH_CHECK(A.is_cuda(), "A must be a HIP tensor");
-    TORCH_CHECK(B.is_cuda(), "B must be a HIP tensor");
-    TORCH_CHECK(A.dtype() == torch::kBFloat16, "A must be torch.bfloat16");
-    TORCH_CHECK(B.dtype() == torch::kBFloat16, "B must be torch.bfloat16");
-    TORCH_CHECK(A.dim() == 2, "A must be 2D");
-    TORCH_CHECK(B.dim() == 2, "B must be 2D");
-    TORCH_CHECK(A.size(1) == B.size(1), "A.shape[1] must equal B.shape[1]");
-    TORCH_CHECK(A.get_device() == B.get_device(), "A and B must be on the same device");
+torch::Tensor gemm_bf16(torch::Tensor A, torch::Tensor B, unsigned long long stream_ptr) {
+    TORCH_CHECK(A.is_cuda(), "A must be a HIP/ROCm tensor");
+    TORCH_CHECK(B.is_cuda(), "B must be a HIP/ROCm tensor");
+    TORCH_CHECK(A.scalar_type() == torch::kBFloat16, "A must be BFloat16");
+    TORCH_CHECK(B.scalar_type() == torch::kBFloat16, "B must be BFloat16");
+    TORCH_CHECK(A.size(0) == B.size(1), "Incompatible dimensions");
+    TORCH_CHECK(A.size(1) == B.size(0), "Incompatible dimensions");
 
-    auto A_c = A.contiguous();
-    auto B_c = B.contiguous();
+    int N = A.size(0);
+    auto C = torch::empty({N, N}, torch::dtype(torch::kBFloat16).device(A.device()));
 
-    const int64_t M64 = A_c.size(0);
-    const int64_t K64 = A_c.size(1);
-    const int64_t N64 = B_c.size(0);
+    const int block_size = BLOCK_SIZE;
+    dim3 blocks((N + block_size - 1) / block_size, (N + block_size - 1) / block_size);
+    dim3 threads(block_size, block_size);
 
-    TORCH_CHECK(M64 <= INT_MAX && N64 <= INT_MAX && K64 <= INT_MAX, "Dimensions too large");
+    const hip_bfloat16* A_ptr = reinterpret_cast<const hip_bfloat16*>(A.data_ptr());
+    const hip_bfloat16* B_ptr = reinterpret_cast<const hip_bfloat16*>(B.data_ptr());
+    hip_bfloat16* C_ptr = reinterpret_cast<hip_bfloat16*>(C.data_ptr());
 
-    const int M = static_cast<int>(M64);
-    const int N = static_cast<int>(N64);
-    const int K = static_cast<int>(K64);
+    hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
+    gemm_bf16_kernel<<<blocks, threads, 0, stream>>>(A_ptr, B_ptr, C_ptr, N);
 
-    auto C = torch::empty({M64, N64}, A_c.options().dtype(torch::kBFloat16));
-
-    const __hip_bfloat16* A_ptr =
-        reinterpret_cast<const __hip_bfloat16*>(A_c.data_ptr<at::BFloat16>());
-    const __hip_bfloat16* B_ptr =
-        reinterpret_cast<const __hip_bfloat16*>(B_c.data_ptr<at::BFloat16>());
-    __hip_bfloat16* C_ptr =
-        reinterpret_cast<__hip_bfloat16*>(C.data_ptr<at::BFloat16>());
-
-    dim3 block(BLOCK_X, BLOCK_Y);
-    dim3 grid((N + TILE_N - 1) / TILE_N, (M + TILE_M - 1) / TILE_M);
-    hipStream_t stream = c10::hip::getCurrentHIPStream();
-
-    hipLaunchKernelGGL(
-        bf16_gemm_bt_kernel_64x64x32,
-        grid,
-        block,
-        0,
-        stream,
-        A_ptr,
-        B_ptr,
-        C_ptr,
-        M,
-        N,
-        K
-    );
-
-    hipError_t err = hipGetLastError();
-    TORCH_CHECK(err == hipSuccess, "bf16_gemm_bt_kernel_64x64x32 launch failed: ", hipGetErrorString(err));
+    auto err = hipGetLastError();
+    if (err != hipSuccess) {
+        throw std::runtime_error("HIP kernel launch failed");
+    }
 
     return C;
 }
 """
 
-cpp_src = r"""
-torch::Tensor bf16_gemm_bt(torch::Tensor A, torch::Tensor B);
+cpp_src = """
+#include <torch/extension.h>
+torch::Tensor gemm_bf16(torch::Tensor A, torch::Tensor B, unsigned long long stream_ptr);
 """
 
-_bf16_gemm_ext = load_inline(
-    name="bf16_gemm_bt_ext_v6_tile64x64x32",
+gemm_op = load_inline(
+    name="gemm_bf16_op",
     cpp_sources=cpp_src,
     cuda_sources=source,
-    functions=["bf16_gemm_bt"],
+    functions=["gemm_bf16"],
+    verbose=False,
     extra_cflags=["-O3"],
     extra_cuda_cflags=["-O3"],
-    verbose=False,
 )
 
+
 class ModelNew(nn.Module):
+    """
+    Optimized Model using custom HIP/ROCm BF16 GEMM kernel.
+    """
     def __init__(self):
-        super().__init__()
-        self._ext = _bf16_gemm_ext
+        super(ModelNew, self).__init__()
+        self.gemm_op = gemm_op
 
     def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-        A_bf16 = A if A.dtype == torch.bfloat16 else A.to(dtype=torch.bfloat16)
-        B_bf16 = B if B.dtype == torch.bfloat16 else B.to(dtype=torch.bfloat16)
-        return self._ext.bf16_gemm_bt(A_bf16, B_bf16)
+        """
+        Performs the matrix multiplication using custom kernel.
+        Args:
+            A (torch.Tensor): Input matrix A of shape (N, N), dtype bfloat16.
+            B (torch.Tensor): Input matrix B of shape (N, N), dtype bfloat16.
+        Returns:
+            torch.Tensor: Output matrix C of shape (N, N), dtype bfloat16.
+        """
+        # Store original device to return output on same device
+        original_device = A.device
+
+        # Move inputs to HIP/ROCm device if not already there (FIX for RuntimeError)
+        if A.device.type != 'cuda':
+            A = A.to('cuda')
+        if B.device.type != 'cuda':
+            B = B.to('cuda')
+
+        # Convert to bfloat16 if needed
+        if A.dtype != torch.bfloat16:
+            A = A.to(torch.bfloat16)
+        if B.dtype != torch.bfloat16:
+            B = B.to(torch.bfloat16)
+
+        # Call the HIP kernel
+        stream_ptr = int(torch.cuda.current_stream(device=A.device).cuda_stream)
+        C = self.gemm_op.gemm_bf16(A, B, stream_ptr)
+
+        # Move output back to original device if needed
+        if original_device.type != 'cuda':
+            C = C.to(original_device)
+
+        return C
+
+    def build_call(self, *, a_mk: torch.Tensor, b_nk: torch.Tensor):
+        b_kn = b_nk.t().contiguous()
+        return lambda: self.forward(a_mk, b_kn)

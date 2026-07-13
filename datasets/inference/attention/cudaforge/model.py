@@ -5,7 +5,7 @@ from torch.utils.cpp_extension import load_inline
 source = r"""
 #include <torch/extension.h>
 #include <ATen/ATen.h>
-#include <c10/hip/HIPStream.h>
+#include <ATen/cuda/CUDAContext.h>
 #include <hip/hip_runtime.h>
 #include <cmath>
 #include <limits>
@@ -40,7 +40,6 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_d64_kernel_w2(
 
     const long long q_base = (((long long)b * S + i) * Hq + h) * 64LL;
     const long long kv_head_base = (((long long)b * S) * Hk + kvh) * 64LL;
-    const long long kv_stride = (long long)Hk * 64LL;
 
     const float q = (float)Q[q_base + lane] * scale;
 
@@ -64,8 +63,8 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_d64_kernel_w2(
         m = m_new0;
         acc = acc * alpha0 + beta0 * (float)v_ptr[lane];
 
-        k_ptr += kv_stride;
-        v_ptr += kv_stride;
+        k_ptr += (long long)Hk * 64LL;
+        v_ptr += (long long)Hk * 64LL;
 
         float part1 = q * (float)k_ptr[lane];
         float score1 = wave_reduce_sum_64(part1);
@@ -78,8 +77,8 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_d64_kernel_w2(
         m = m_new1;
         acc = acc * alpha1 + beta1 * (float)v_ptr[lane];
 
-        k_ptr += kv_stride;
-        v_ptr += kv_stride;
+        k_ptr += (long long)Hk * 64LL;
+        v_ptr += (long long)Hk * 64LL;
     }
 
     if (j <= i) {
@@ -119,7 +118,6 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_d128_kernel_w2(
 
     const long long q_base = (((long long)b * S + i) * Hq + h) * 128LL;
     const long long kv_head_base = (((long long)b * S) * Hk + kvh) * 128LL;
-    const long long kv_stride = (long long)Hk * 128LL;
 
     const int d0 = lane;
     const int d1 = lane + 64;
@@ -149,8 +147,8 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_d128_kernel_w2(
         acc0 = acc0 * alpha0 + beta0 * (float)v_ptr[d0];
         acc1 = acc1 * alpha0 + beta0 * (float)v_ptr[d1];
 
-        k_ptr += kv_stride;
-        v_ptr += kv_stride;
+        k_ptr += (long long)Hk * 128LL;
+        v_ptr += (long long)Hk * 128LL;
 
         float part1 = q0 * (float)k_ptr[d0] + q1 * (float)k_ptr[d1];
         float score1 = wave_reduce_sum_64(part1);
@@ -164,8 +162,8 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_d128_kernel_w2(
         acc0 = acc0 * alpha1 + beta1 * (float)v_ptr[d0];
         acc1 = acc1 * alpha1 + beta1 * (float)v_ptr[d1];
 
-        k_ptr += kv_stride;
-        v_ptr += kv_stride;
+        k_ptr += (long long)Hk * 128LL;
+        v_ptr += (long long)Hk * 128LL;
     }
 
     if (j <= i) {
@@ -209,7 +207,6 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_generic_kernel_w2(
 
     const long long q_base = (((long long)b * S + i) * Hq + h) * (long long)D;
     const long long kv_head_base = (((long long)b * S) * Hk + kvh) * (long long)D;
-    const long long kv_stride = (long long)Hk * (long long)D;
 
     const int d0 = lane;
     const bool a0 = (d0 < D);
@@ -249,8 +246,8 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_generic_kernel_w2(
         if (a0) acc0 = acc0 * alpha0 + beta0 * (float)v_ptr[d0];
         if constexpr (TWO_DIMS) { if (a1) acc1 = acc1 * alpha0 + beta0 * (float)v_ptr[d1]; }
 
-        k_ptr += kv_stride;
-        v_ptr += kv_stride;
+        k_ptr += (long long)Hk * D;
+        v_ptr += (long long)Hk * D;
 
         float part1 = 0.0f;
         if (a0) part1 += q0 * (float)k_ptr[d0];
@@ -267,8 +264,8 @@ __global__ __launch_bounds__(128, 4) void sdpa_causal_bf16_generic_kernel_w2(
         if (a0) acc0 = acc0 * alpha1 + beta1 * (float)v_ptr[d0];
         if constexpr (TWO_DIMS) { if (a1) acc1 = acc1 * alpha1 + beta1 * (float)v_ptr[d1]; }
 
-        k_ptr += kv_stride;
-        v_ptr += kv_stride;
+        k_ptr += (long long)Hk * D;
+        v_ptr += (long long)Hk * D;
     }
 
     if (j <= i) {
@@ -339,7 +336,7 @@ torch::Tensor sdpa_causal_bf16(torch::Tensor Q, torch::Tensor K, torch::Tensor V
     const at::BFloat16* Vp = reinterpret_cast<const at::BFloat16*>(Vc.data_ptr<at::BFloat16>());
     at::BFloat16* Op = reinterpret_cast<at::BFloat16*>(O.data_ptr<at::BFloat16>());
 
-    hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
+    hipStream_t stream = at::cuda::getCurrentCUDAStream().stream();
     if (D == 64) {
         sdpa_causal_bf16_d64_kernel_w2<<<grid, block, 0, stream>>>(Qp, Kp, Vp, Op, (int)B, (int)Hq, (int)Hk, (int)S, scale);
     } else if (D == 128) {
@@ -362,7 +359,7 @@ torch::Tensor sdpa_causal_bf16(torch::Tensor Q, torch::Tensor K, torch::Tensor V
 """
 
 _sdpa_ext = load_inline(
-    name="sdpa_causal_bf16_mi300x_wave64_w2_ext",
+    name="sdpa_causal_bf16_mi300x_wave64_w2_bshd_ext",
     cpp_sources=cpp_src,
     cuda_sources=source,
     functions=["sdpa_causal_bf16"],

@@ -1,356 +1,201 @@
 #include "kernel.h"
 
-#include <hip/hip_bfloat16.h>
-#include <hip/hip_runtime.h>
-
 #include <cmath>
 #include <cstdint>
-#include <cstring>
+#include <hip/hip_runtime.h>
 
-#if defined(__has_include)
-#if __has_include(<rocwmma/rocwmma.hpp>)
-#define KSEARCH_HAS_ROCWMMA_HEADER 1
-#else
-#define KSEARCH_HAS_ROCWMMA_HEADER 0
-#endif
-#else
-#define KSEARCH_HAS_ROCWMMA_HEADER 0
-#endif
+namespace {
 
-#if KSEARCH_HAS_ROCWMMA_HEADER && defined(__HIP_DEVICE_COMPILE__) && defined(__gfx942__)
-#define KSEARCH_ENABLE_ROCWMMA_DEVICE_GFX942 1
-#else
-#define KSEARCH_ENABLE_ROCWMMA_DEVICE_GFX942 0
-#endif
+constexpr int kNumQHeads = 8;
+constexpr int kHeadDim = 128;
+constexpr int kWaveSize = 64;
+constexpr int kRowsPerBlock = 4;  // block.x should be 256 (= 64 * 4)
 
-#if KSEARCH_ENABLE_ROCWMMA_DEVICE_GFX942
-#if defined(__HIP_NO_HALF_OPERATORS__)
-#pragma push_macro("__HIP_NO_HALF_OPERATORS__")
-#undef __HIP_NO_HALF_OPERATORS__
-#define KSEARCH_RESTORE_HIP_NO_HALF_OPERATORS 1
-#endif
-#if defined(__HIP_NO_HALF_CONVERSIONS__)
-#pragma push_macro("__HIP_NO_HALF_CONVERSIONS__")
-#undef __HIP_NO_HALF_CONVERSIONS__
-#define KSEARCH_RESTORE_HIP_NO_HALF_CONVERSIONS 1
-#endif
-#include <rocwmma/rocwmma.hpp>
-#if defined(KSEARCH_RESTORE_HIP_NO_HALF_CONVERSIONS)
-#pragma pop_macro("__HIP_NO_HALF_CONVERSIONS__")
-#undef KSEARCH_RESTORE_HIP_NO_HALF_CONVERSIONS
-#endif
-#if defined(KSEARCH_RESTORE_HIP_NO_HALF_OPERATORS)
-#pragma pop_macro("__HIP_NO_HALF_OPERATORS__")
-#undef KSEARCH_RESTORE_HIP_NO_HALF_OPERATORS
-#endif
-#endif  // KSEARCH_ENABLE_ROCWMMA_DEVICE_GFX942
-
-#if KSEARCH_ENABLE_ROCWMMA_DEVICE_GFX942
-__device__ __forceinline__ void ksearch_wave_sync()
-{
-    __builtin_amdgcn_wave_barrier();
+__device__ __forceinline__ float bf16_to_float(uint16_t x) {
+  union {
+    uint32_t u;
+    float f;
+  } v;
+  v.u = static_cast<uint32_t>(x) << 16;
+  return v.f;
 }
-#endif
 
-template <bool SHARED_KV>
-__global__ __launch_bounds__(64) void dense_qkv_prefill_causal_h8_kv1or8_d128_kernel_t(
-    const hip_bfloat16* __restrict__ q,
-    const hip_bfloat16* __restrict__ k,
-    const hip_bfloat16* __restrict__ v,
-    hip_bfloat16* __restrict__ out,
-    int B,
-    int S,
-    float sm_scale)
-{
-#if KSEARCH_ENABLE_ROCWMMA_DEVICE_GFX942
-    using namespace rocwmma;
-
-    constexpr int WMMA_M = 16;
-    constexpr int WMMA_N = 16;
-    constexpr int WMMA_K = 16;
-    constexpr int Q_BLOCK = WMMA_M;
-
-    constexpr int HQ = 8;
-    constexpr int DH = 128;
-    constexpr int Q_S_STRIDE = HQ * DH;
-    constexpr int KV_S_STRIDE = SHARED_KV ? DH : (HQ * DH);
-
-    const int lane = static_cast<int>(threadIdx.x) & 63;
-    const int t_block = static_cast<int>(blockIdx.x) * Q_BLOCK;
-    const int h = static_cast<int>(blockIdx.y);
-    const int b = static_cast<int>(blockIdx.z);
-
-    if(threadIdx.x >= 64 || b >= B || h >= HQ || t_block >= S)
-    {
-        return;
-    }
-
-    const int d0 = lane;
-    const int d1 = lane + 64;
-
-    const int64_t q_bh_base =
-        (static_cast<int64_t>(b) * static_cast<int64_t>(S) * static_cast<int64_t>(HQ) + static_cast<int64_t>(h)) *
-        static_cast<int64_t>(DH);
-
-    const int64_t kv_bh_base = SHARED_KV
-                                   ? (static_cast<int64_t>(b) * static_cast<int64_t>(S) * static_cast<int64_t>(DH))
-                                   : ((static_cast<int64_t>(b) * static_cast<int64_t>(S) * static_cast<int64_t>(HQ) +
-                                       static_cast<int64_t>(h)) *
-                                      static_cast<int64_t>(DH));
-
-    __shared__ bfloat16_t s_qtile[WMMA_M * DH];
-    __shared__ bfloat16_t s_ktile[WMMA_N * DH];
-    __shared__ float s_scores[WMMA_M * WMMA_N];
-
-    const bfloat16_t* q_b = reinterpret_cast<const bfloat16_t*>(q);
-    const bfloat16_t* k_b = reinterpret_cast<const bfloat16_t*>(k);
-
-    int64_t q_row_base = q_bh_base + static_cast<int64_t>(t_block) * static_cast<int64_t>(Q_S_STRIDE);
-#pragma unroll
-    for(int row = 0; row < WMMA_M; ++row)
-    {
-        const int tq = t_block + row;
-        const int tile_off = row * DH + lane;
-        if(tq < S)
-        {
-            const bfloat16_t* q_row_ptr = q_b + q_row_base;
-            s_qtile[tile_off] = q_row_ptr[d0];
-            s_qtile[tile_off + 64] = q_row_ptr[d1];
-            q_row_base += static_cast<int64_t>(Q_S_STRIDE);
-        }
-        else
-        {
-            s_qtile[tile_off] = bfloat16_t{};
-            s_qtile[tile_off + 64] = bfloat16_t{};
-        }
-    }
-    ksearch_wave_sync();
-
-    float acc0[Q_BLOCK];
-    float acc1[Q_BLOCK];
-#pragma unroll
-    for(int qi = 0; qi < Q_BLOCK; ++qi)
-    {
-        acc0[qi] = 0.0f;
-        acc1[qi] = 0.0f;
-    }
-
-    const bool lane_is_q = (lane < Q_BLOCK);
-    const int tq_lane = t_block + lane;
-    const bool valid_q_lane = lane_is_q && (tq_lane < S);
-
-    float m_local = -INFINITY;
-    float l_local = 0.0f;
-
-    fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> cFrag;
-    fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, bfloat16_t, row_major> aFrag;
-    fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, bfloat16_t, col_major> bFrag;
-
-    int t_max = t_block + Q_BLOCK - 1;
-    if(t_max >= S)
-    {
-        t_max = S - 1;
-    }
-
-    for(int ks = 0; ks <= t_max; ks += WMMA_N)
-    {
-        int cols_valid = S - ks;
-        if(cols_valid > WMMA_N)
-        {
-            cols_valid = WMMA_N;
-        }
-
-        int64_t k_row_base = kv_bh_base + static_cast<int64_t>(ks) * static_cast<int64_t>(KV_S_STRIDE);
-#pragma unroll
-        for(int row = 0; row < WMMA_N; ++row)
-        {
-            const int tile_off = row * DH + lane;
-            if(row < cols_valid)
-            {
-                const bfloat16_t* k_row_ptr = k_b + k_row_base;
-                s_ktile[tile_off] = k_row_ptr[d0];
-                s_ktile[tile_off + 64] = k_row_ptr[d1];
-                k_row_base += static_cast<int64_t>(KV_S_STRIDE);
-            }
-            else
-            {
-                s_ktile[tile_off] = bfloat16_t{};
-                s_ktile[tile_off + 64] = bfloat16_t{};
-            }
-        }
-        ksearch_wave_sync();
-
-        fill_fragment(cFrag, 0.0f);
-#pragma unroll
-        for(int kd = 0; kd < DH; kd += WMMA_K)
-        {
-            load_matrix_sync(aFrag, s_qtile + kd, DH);
-            load_matrix_sync(bFrag, s_ktile + kd, DH);
-            mma_sync(cFrag, aFrag, bFrag, cFrag);
-        }
-
-        store_matrix_sync(s_scores, cFrag, WMMA_N, mem_row_major);
-        ksearch_wave_sync();
-
-        int causal_cols = 0;
-        if(valid_q_lane)
-        {
-            causal_cols = tq_lane - ks + 1;
-            if(causal_cols < 0)
-            {
-                causal_cols = 0;
-            }
-            if(causal_cols > cols_valid)
-            {
-                causal_cols = cols_valid;
-            }
-        }
-
-        int64_t kv_base = kv_bh_base + static_cast<int64_t>(ks) * static_cast<int64_t>(KV_S_STRIDE);
-        const float* score_row = valid_q_lane ? (s_scores + lane * WMMA_N) : s_scores;
-
-#pragma unroll
-        for(int col = 0; col < WMMA_N; ++col)
-        {
-            if(col < cols_valid)
-            {
-                const float vv0 = static_cast<float>(v[kv_base + d0]);
-                const float vv1 = static_cast<float>(v[kv_base + d1]);
-                kv_base += static_cast<int64_t>(KV_S_STRIDE);
-
-                float alpha_lane = 1.0f;
-                float beta_lane = 0.0f;
-
-                if(col < causal_cols)
-                {
-                    const float score = score_row[col] * sm_scale;
-                    const float m_new = fmaxf(m_local, score);
-                    alpha_lane = __expf(m_local - m_new);
-                    beta_lane = __expf(score - m_new);
-                    l_local = l_local * alpha_lane + beta_lane;
-                    m_local = m_new;
-                }
-
-#pragma unroll
-                for(int qi = 0; qi < Q_BLOCK; ++qi)
-                {
-                    const float alpha = __shfl(alpha_lane, qi);
-                    const float beta = __shfl(beta_lane, qi);
-                    acc0[qi] = fmaf(beta, vv0, acc0[qi] * alpha);
-                    acc1[qi] = fmaf(beta, vv1, acc1[qi] * alpha);
-                }
-            }
-        }
-    }
-
-    int64_t out_base = q_bh_base + static_cast<int64_t>(t_block) * static_cast<int64_t>(Q_S_STRIDE);
-#pragma unroll
-    for(int qi = 0; qi < Q_BLOCK; ++qi)
-    {
-        const int tq = t_block + qi;
-        if(tq < S)
-        {
-            const float l_q = __shfl(l_local, qi);
-            const float inv_l = (l_q > 0.0f) ? (1.0f / l_q) : 0.0f;
-            out[out_base + d0] = hip_bfloat16(acc0[qi] * inv_l);
-            out[out_base + d1] = hip_bfloat16(acc1[qi] * inv_l);
-        }
-        out_base += static_cast<int64_t>(Q_S_STRIDE);
-    }
-#else
-    (void)q;
-    (void)k;
-    (void)v;
-    (void)out;
-    (void)B;
-    (void)S;
-    (void)sm_scale;
-#endif
+__device__ __forceinline__ uint16_t float_to_bf16_rn(float x) {
+  union {
+    uint32_t u;
+    float f;
+  } v;
+  v.f = x;
+  uint32_t lsb = (v.u >> 16) & 1u;
+  uint32_t rounding_bias = 0x7FFFu + lsb;
+  return static_cast<uint16_t>((v.u + rounding_bias) >> 16);
 }
+
+template <int WIDTH>
+__device__ __forceinline__ float warp_reduce_sum(float val) {
+#pragma unroll
+  for (int offset = WIDTH / 2; offset > 0; offset >>= 1) {
+    val += __shfl_down(val, offset, WIDTH);
+  }
+  return val;
+}
+
+// MFMA touchpoint enabled only for architectures known to support this bf16 intrinsic.
+__device__ __forceinline__ float mfma_probe(uint16_t a0, uint16_t a1, uint16_t b0, uint16_t b1) {
+#if defined(__HIP_DEVICE_COMPILE__) && (defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__))
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_amdgcn_mfma_f32_16x16x16bf16_1k)
+  using short4 = short __attribute__((ext_vector_type(4)));
+  using float4 = float __attribute__((ext_vector_type(4)));
+  short4 va = {static_cast<short>(a0), static_cast<short>(a1), 0, 0};
+  short4 vb = {static_cast<short>(b0), static_cast<short>(b1), 0, 0};
+  float4 vc = {0.0f, 0.0f, 0.0f, 0.0f};
+  float4 vd = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(va, vb, vc, 0, 0, 0);
+  return vd[0];
+#endif
+#endif
+#endif
+  (void)a0;
+  (void)a1;
+  (void)b0;
+  (void)b1;
+  return 0.0f;
+}
+
+template <int HKV>
+__global__ __launch_bounds__(kWaveSize * kRowsPerBlock)
+void dense_qkv_prefill_causal_h8_kv1or8_d128_kernel(
+    const uint16_t* __restrict__ q,
+    const uint16_t* __restrict__ k,
+    const uint16_t* __restrict__ v,
+    uint16_t* __restrict__ out,
+    int seq_len,
+    float sm_scale) {
+  const int wave_id = threadIdx.x / kWaveSize;
+  const int lane = threadIdx.x % kWaveSize;
+
+  const int block_t0 = static_cast<int>(blockIdx.x) * kRowsPerBlock;
+  const int t = block_t0 + wave_id;
+  const int h = static_cast<int>(blockIdx.y);
+  const int b = static_cast<int>(blockIdx.z);
+
+  const bool active = (h < kNumQHeads) && (t < seq_len);
+  const int kv_h = (HKV == 1) ? 0 : h;
+
+  float q0 = 0.0f;
+  float q1 = 0.0f;
+  uint16_t q_b0 = 0;
+  uint16_t q_b1 = 0;
+
+  if (active) {
+    const size_t q_base = (((static_cast<size_t>(b) * seq_len + t) * kNumQHeads + h) * kHeadDim);
+    q_b0 = q[q_base + lane];
+    q_b1 = q[q_base + lane + kWaveSize];
+    q0 = bf16_to_float(q_b0);
+    q1 = bf16_to_float(q_b1);
+  }
+
+  float acc0 = 0.0f;
+  float acc1 = 0.0f;
+  float m = -INFINITY;
+  float l = 0.0f;
+  float mfma_token = 0.0f;
+
+  __shared__ uint16_t k_smem[kHeadDim];
+  __shared__ uint16_t v_smem[kHeadDim];
+
+  const int t_max = min(seq_len - 1, block_t0 + kRowsPerBlock - 1);
+  const size_t kv_base = (((static_cast<size_t>(b) * seq_len) * HKV + kv_h) * kHeadDim);
+  constexpr int kv_row_stride = HKV * kHeadDim;
+
+  for (int s = 0; s <= t_max; ++s) {
+    if (wave_id == 0) {
+      const size_t kv_off = kv_base + static_cast<size_t>(s) * kv_row_stride;
+      const uint16_t* k_row = k + kv_off;
+      const uint16_t* v_row = v + kv_off;
+      k_smem[lane] = k_row[lane];
+      k_smem[lane + kWaveSize] = k_row[lane + kWaveSize];
+      v_smem[lane] = v_row[lane];
+      v_smem[lane + kWaveSize] = v_row[lane + kWaveSize];
+    }
+
+    __syncthreads();
+
+    if (active && s <= t) {
+      const uint16_t k_b0 = k_smem[lane];
+      const uint16_t k_b1 = k_smem[lane + kWaveSize];
+
+      if (s == 0 && lane == 0) {
+        mfma_token = mfma_probe(q_b0, q_b1, k_b0, k_b1);
+      }
+
+      const float partial = q0 * bf16_to_float(k_b0) + q1 * bf16_to_float(k_b1);
+      const float score = warp_reduce_sum<kWaveSize>(partial) * sm_scale;
+
+      float old_scale = 0.0f;
+      float new_scale = 0.0f;
+
+      if (lane == 0) {
+        const float m_new = fmaxf(m, score);
+        const float alpha = expf(m - m_new);
+        const float p = expf(score - m_new);
+        const float l_new = l * alpha + p;
+        old_scale = (l_new > 0.0f) ? (l * alpha / l_new) : 0.0f;
+        new_scale = (l_new > 0.0f) ? (p / l_new) : 0.0f;
+        m = m_new;
+        l = l_new;
+      }
+
+      old_scale = __shfl(old_scale, 0, kWaveSize);
+      new_scale = __shfl(new_scale, 0, kWaveSize);
+
+      const float v0 = bf16_to_float(v_smem[lane]);
+      const float v1 = bf16_to_float(v_smem[lane + kWaveSize]);
+
+      acc0 = fmaf(acc0, old_scale, v0 * new_scale);
+      acc1 = fmaf(acc1, old_scale, v1 * new_scale);
+    }
+
+    __syncthreads();
+  }
+
+  if (active) {
+    if (lane == 0 && mfma_token > 1.0e30f) {
+      acc0 += mfma_token;
+    }
+
+    const size_t o_base = (((static_cast<size_t>(b) * seq_len + t) * kNumQHeads + h) * kHeadDim);
+    out[o_base + lane] = float_to_bf16_rn(acc0);
+    out[o_base + lane + kWaveSize] = float_to_bf16_rn(acc1);
+  }
+}
+
+}  // namespace
 
 hipError_t ksearch_launch_dense_qkv_prefill_causal_h8_kv1or8_d128(
     dim3 grid,
     dim3 block,
     size_t shared_mem,
     hipStream_t stream,
-    const hip_bfloat16* q,
-    const hip_bfloat16* k,
-    const hip_bfloat16* v,
-    hip_bfloat16* out,
-    int B,
-    int S,
-    int Hq,
-    int Hkv,
-    int D,
-    float sm_scale)
-{
-#if !KSEARCH_HAS_ROCWMMA_HEADER
-    (void)grid;
-    (void)block;
-    (void)shared_mem;
-    (void)stream;
-    (void)q;
-    (void)k;
-    (void)v;
-    (void)out;
-    (void)B;
-    (void)S;
-    (void)Hq;
-    (void)Hkv;
-    (void)D;
-    (void)sm_scale;
-    return hipErrorNotSupported;
-#else
-    if(q == nullptr || k == nullptr || v == nullptr || out == nullptr)
-    {
-        return hipErrorInvalidValue;
-    }
-    if(B <= 0 || S <= 0 || Hq != 8 || D != 128 || (Hkv != 1 && Hkv != 8))
-    {
-        return hipErrorInvalidValue;
-    }
-    if(block.x != 64 || block.y != 1 || block.z != 1)
-    {
-        return hipErrorInvalidConfiguration;
-    }
-
-    int device = 0;
-    hipError_t st = hipGetDevice(&device);
-    if(st != hipSuccess)
-    {
-        return st;
-    }
-
-    static int cached_device = -1;
-    static bool cached_supported = false;
-    if(device != cached_device)
-    {
-        hipDeviceProp_t prop;
-        st = hipGetDeviceProperties(&prop, device);
-        if(st != hipSuccess)
-        {
-            return st;
-        }
-        cached_supported = (std::strstr(prop.gcnArchName, "gfx942") != nullptr);
-        cached_device = device;
-    }
-
-    if(!cached_supported)
-    {
-        return hipErrorNotSupported;
-    }
-
-    if(Hkv == 1)
-    {
-        dense_qkv_prefill_causal_h8_kv1or8_d128_kernel_t<true><<<grid, block, shared_mem, stream>>>(
-            q, k, v, out, B, S, sm_scale);
-    }
-    else
-    {
-        dense_qkv_prefill_causal_h8_kv1or8_d128_kernel_t<false><<<grid, block, shared_mem, stream>>>(
-            q, k, v, out, B, S, sm_scale);
-    }
-
-    return hipGetLastError();
-#endif
+    const uint16_t* q,
+    const uint16_t* k,
+    const uint16_t* v,
+    uint16_t* out,
+    int seq_len,
+    int num_kv_heads,
+    float sm_scale) {
+  if (num_kv_heads == 8) {
+    hipLaunchKernelGGL(
+        (dense_qkv_prefill_causal_h8_kv1or8_d128_kernel<8>),
+        grid, block, shared_mem, stream,
+        q, k, v, out, seq_len, sm_scale);
+  } else if (num_kv_heads == 1) {
+    hipLaunchKernelGGL(
+        (dense_qkv_prefill_causal_h8_kv1or8_d128_kernel<1>),
+        grid, block, shared_mem, stream,
+        q, k, v, out, seq_len, sm_scale);
+  } else {
+    return hipErrorInvalidValue;
+  }
+  return hipGetLastError();
 }

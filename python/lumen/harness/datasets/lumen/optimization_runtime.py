@@ -167,10 +167,12 @@ def evaluate_candidate(
         payload["ok"] = correctness
         if not correctness:
             missing = sorted(expected - set(by_workload), key=int)
+            benchmark_error = _benchmark_error(completed.stderr)
             payload["error"] = (
                 "Formal correctness evaluation failed"
                 + (f"; missing workloads: {missing}" if missing else "")
                 + (f"; exit code: {completed.returncode}" if completed.returncode else "")
+                + (f"; benchmark error: {benchmark_error}" if benchmark_error else "")
             )
     except subprocess.TimeoutExpired as exc:
         payload["error"] = f"Formal evaluation timed out after {timeout_seconds}s."
@@ -189,6 +191,64 @@ def evaluation_error(payload: dict[str, Any]) -> str:
     if error:
         return str(error)
     return "Formal evaluation failed."
+
+
+def resolve_resume_point(run_dir: Path) -> tuple[int, Path]:
+    if not run_dir.is_dir():
+        raise ValueError(f"resume run directory not found: {run_dir}")
+
+    passed: list[tuple[int, Path]] = []
+    for path in run_dir.glob("round*"):
+        suffix = path.name.removeprefix("round")
+        if not path.is_dir() or not suffix.isdigit():
+            continue
+        status = _read_json(path / "round_status.json").get("status")
+        output = path / "output_model_new.py"
+        if status == "passed" and output.is_file():
+            if output.read_text(encoding="utf-8").strip():
+                passed.append((int(suffix), output))
+
+    if passed:
+        last_index, output = max(passed)
+        return last_index + 1, output
+
+    run_config = _read_json(run_dir / "run_config.json")
+    kernel_value = run_config.get("kernel")
+    if not isinstance(kernel_value, str):
+        raise ValueError(f"resume run has no original kernel: {run_dir}")
+    kernel = Path(kernel_value).expanduser()
+    if not kernel.is_absolute():
+        kernel = kernel.resolve()
+    if not kernel.is_file():
+        raise ValueError(f"resume run original kernel not found: {kernel}")
+    return 0, kernel
+
+
+def reset_run_tail(run_dir: Path, start_index: int) -> None:
+    for path in run_dir.glob("round*"):
+        suffix = path.name.removeprefix("round")
+        if path.is_dir() and suffix.isdigit() and int(suffix) >= start_index:
+            shutil.rmtree(path)
+
+def append_run_prompts(
+    run_dir: Path,
+    prompt_files: tuple[Path, ...],
+    *,
+    start_index: int,
+) -> None:
+    path = run_dir / "run_config.json"
+    payload = _read_json(path)
+    prompts = list(payload.get("prompts", []))[:start_index]
+    prompts.extend(
+        {"prompt_file": str(prompt), "prompt_sha256": sha256_file(prompt)}
+        for prompt in prompt_files
+    )
+    payload["prompts"] = prompts
+    payload["round_count"] = len(prompts)
+    if prompts:
+        payload["prompt_file"] = prompts[0]["prompt_file"]
+        payload["prompt_sha256"] = prompts[0]["prompt_sha256"]
+    _write_json(path, payload)
 
 
 def sha256_file(path: Path) -> str:
@@ -225,6 +285,14 @@ def _records_by_workload(
         if isinstance(value, int):
             result[str(value)] = record
     return result
+
+
+def _benchmark_error(stderr: str) -> str | None:
+    for line in reversed(stderr.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith(("AssertionError:", "RuntimeError:", "ValueError:")):
+            return stripped
+    return None
 
 
 def _read_json(path: Path) -> dict[str, Any]:

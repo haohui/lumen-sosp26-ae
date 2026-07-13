@@ -1,9 +1,8 @@
-"""Prepare and run an isolated Codex workspace for MoE optimization."""
+"""Prepare and run an isolated Codex workspace for GEMM optimization."""
 
 from __future__ import annotations
 
 import json
-import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -22,16 +21,16 @@ from lumen.harness.datasets.lumen.optimization_runtime import (
     write_round_config,
 )
 
-MOE_WORKLOADS = (1024, 2048, 4096, 8192, 16384)
+GEMM_WORKLOADS = (1024, 2048, 4096, 8192, 16384)
 
 
 @dataclass(frozen=True)
-class MoEOptimizationConfig:
+class GemmOptimizationConfig:
     repo_root: Path
     kernel: Path | None
     prompt_file: Path
     run_dir: Path | None = None
-    entrypoint: str = "fused_moe_fp8_blockscale_g1u1"
+    entrypoint: str = "gemm_pipeline_transposed_b"
     gpu_id: int | None = None
     codex_bin: Path | None = None
     profile: str | None = None
@@ -44,7 +43,7 @@ class MoEOptimizationConfig:
 
 
 @dataclass(frozen=True)
-class MoEOptimizationWorkspace:
+class GemmOptimizationWorkspace:
     run_dir: Path
     round_dir: Path
     input_model_path: Path
@@ -52,9 +51,9 @@ class MoEOptimizationWorkspace:
     prompt: str
 
 
-def prepare_moe_optimization(
-    config: MoEOptimizationConfig,
-) -> MoEOptimizationWorkspace:
+def prepare_gemm_optimization(
+    config: GemmOptimizationConfig,
+) -> GemmOptimizationWorkspace:
     repo_root = config.repo_root.expanduser().resolve()
     kernel = _require_kernel(config)
     prompt_file = config.prompt_file.expanduser().resolve()
@@ -73,13 +72,13 @@ def prepare_moe_optimization(
 
 
 def _prepare_round(
-    config: MoEOptimizationConfig,
+    config: GemmOptimizationConfig,
     *,
     run_dir: Path,
     round_index: int,
     kernel: Path,
     prompt_file: Path,
-) -> MoEOptimizationWorkspace:
+) -> GemmOptimizationWorkspace:
     repo_root = config.repo_root.expanduser().resolve()
     prompt = prompt_file.read_text(encoding="utf-8").strip()
     if not prompt:
@@ -90,27 +89,24 @@ def _prepare_round(
 
     input_model_path = round_dir / "input_model.py"
     output_model_path = round_dir / "output_model_new.py"
-    shutil.copy2(kernel, input_model_path)
+    input_model_path.write_text(kernel.read_text(encoding="utf-8"), encoding="utf-8")
     output_model_path.write_text("", encoding="utf-8")
 
-    adapter_dir = round_dir / "datasets" / "inference" / "moe" / "lumen"
+    adapter_dir = round_dir / "datasets" / "inference" / "gemm" / "lumen"
     adapter_dir.mkdir(parents=True)
     adapter_path = adapter_dir / "model.py"
     adapter_path.write_text(
-        _render_benchmark_adapter(repo_root, config.entrypoint),
+        _render_benchmark_adapter(config.entrypoint),
         encoding="utf-8",
     )
 
     prompt_path = round_dir / "prompt.txt"
     prompt_path.write_text(prompt + "\n", encoding="utf-8")
     agents_path = round_dir / "AGENTS.md"
-    agents_path.write_text(
-        _render_agents_md(repo_root),
-        encoding="utf-8",
-    )
+    agents_path.write_text(_render_agents_md(repo_root), encoding="utf-8")
     write_round_config(
         round_dir,
-        domain="moe",
+        domain="gemm",
         round_index=round_index,
         input_source=kernel,
         input_model=input_model_path,
@@ -120,10 +116,10 @@ def _prepare_round(
         adapter_path=adapter_path,
         entrypoint=config.entrypoint,
         gpu_id=config.gpu_id,
-        workloads=MOE_WORKLOADS,
+        workloads=GEMM_WORKLOADS,
         codex_config=_codex_provenance(config),
     )
-    return MoEOptimizationWorkspace(
+    return GemmOptimizationWorkspace(
         run_dir=run_dir,
         round_dir=round_dir,
         input_model_path=input_model_path,
@@ -132,17 +128,17 @@ def _prepare_round(
     )
 
 
-def run_moe_optimization(
-    config: MoEOptimizationConfig,
-) -> tuple[MoEOptimizationWorkspace, CodexRunResult]:
-    results = run_moe_optimization_sequence(config, (config.prompt_file,))
+def run_gemm_optimization(
+    config: GemmOptimizationConfig,
+) -> tuple[GemmOptimizationWorkspace, CodexRunResult]:
+    results = run_gemm_optimization_sequence(config, (config.prompt_file,))
     return results[0]
 
 
-def run_moe_optimization_sequence(
-    config: MoEOptimizationConfig,
+def run_gemm_optimization_sequence(
+    config: GemmOptimizationConfig,
     prompt_files: Sequence[Path],
-) -> list[tuple[MoEOptimizationWorkspace, CodexRunResult]]:
+) -> list[tuple[GemmOptimizationWorkspace, CodexRunResult]]:
     repo_root = config.repo_root.expanduser().resolve()
     kernel = _require_kernel(config)
     prompts = tuple(path.expanduser().resolve() for path in prompt_files)
@@ -163,11 +159,11 @@ def run_moe_optimization_sequence(
     )
 
 
-def resume_moe_optimization_sequence(
-    config: MoEOptimizationConfig,
+def resume_gemm_optimization_sequence(
+    config: GemmOptimizationConfig,
     prompt_files: Sequence[Path],
     run_dir: Path,
-) -> list[tuple[MoEOptimizationWorkspace, CodexRunResult]]:
+) -> list[tuple[GemmOptimizationWorkspace, CodexRunResult]]:
     repo_root = config.repo_root.expanduser().resolve()
     prompts = tuple(path.expanduser().resolve() for path in prompt_files)
     if not prompts:
@@ -193,16 +189,16 @@ def resume_moe_optimization_sequence(
 
 
 def _run_rounds(
-    config: MoEOptimizationConfig,
+    config: GemmOptimizationConfig,
     *,
     prompts: tuple[Path, ...],
     run_dir: Path,
     round_kernel: Path,
     start_index: int,
-) -> list[tuple[MoEOptimizationWorkspace, CodexRunResult]]:
+) -> list[tuple[GemmOptimizationWorkspace, CodexRunResult]]:
     total_rounds = start_index + len(prompts)
 
-    rounds: list[tuple[MoEOptimizationWorkspace, CodexRunResult]] = []
+    rounds: list[tuple[GemmOptimizationWorkspace, CodexRunResult]] = []
     for round_index, prompt_file in enumerate(prompts, start=start_index):
         workspace = _prepare_round(
             config,
@@ -226,8 +222,8 @@ def _run_rounds(
 
 
 def _run_workspace(
-    config: MoEOptimizationConfig,
-    workspace: MoEOptimizationWorkspace,
+    config: GemmOptimizationConfig,
+    workspace: GemmOptimizationWorkspace,
 ) -> CodexRunResult:
     set_round_status(workspace.round_dir, "codex_running")
     result = CodexRunner().execute(
@@ -261,18 +257,18 @@ def _run_workspace(
     set_round_status(workspace.round_dir, "evaluating")
     evaluation = evaluate_candidate(
         workspace.round_dir,
-        domain="moe",
+        domain="gemm",
         gpu_id=config.gpu_id,
         benchmark_root=workspace.round_dir / "datasets" / "inference",
-        workloads=MOE_WORKLOADS,
-        workload_key="tokens",
+        workloads=GEMM_WORKLOADS,
+        workload_key="matrix_size",
         benchmark_args=(
-            str(config.repo_root.resolve() / "scripts" / "benchmark" / "bench_moe.py"),
+            str(config.repo_root.resolve() / "scripts" / "benchmark" / "bench_gemm.py"),
             "--backend",
             "lumen",
             "--check-correctness",
-            "--tokens",
-            *(str(workload) for workload in MOE_WORKLOADS),
+            "--matrix-sizes",
+            *(str(workload) for workload in GEMM_WORKLOADS),
         ),
     )
     if not evaluation["ok"]:
@@ -310,9 +306,9 @@ def _validate_inputs(
         raise ValueError(f"gpu_id must be non-negative (got {gpu_id})")
 
 
-def _require_kernel(config: MoEOptimizationConfig) -> Path:
+def _require_kernel(config: GemmOptimizationConfig) -> Path:
     if config.kernel is None:
-        raise ValueError("kernel is required when starting a new MoE run")
+        raise ValueError("kernel is required when starting a new GEMM run")
     return config.kernel.expanduser().resolve()
 
 
@@ -327,16 +323,13 @@ def _codex_env(gpu_id: int | None, round_dir: Path) -> dict[str, str]:
 
 
 def _write_run_config(
-    config: MoEOptimizationConfig,
+    config: GemmOptimizationConfig,
     run_dir: Path,
     kernel: Path,
     prompt_files: Sequence[Path],
 ) -> None:
     prompts = [
-        {
-            "prompt_file": str(path),
-            "prompt_sha256": sha256_file(path),
-        }
+        {"prompt_file": str(path), "prompt_sha256": sha256_file(path)}
         for path in prompt_files
     ]
     payload = {
@@ -348,7 +341,7 @@ def _write_run_config(
         "round_count": len(prompts),
         "entrypoint": config.entrypoint,
         "gpu_id": config.gpu_id,
-        "workloads": list(MOE_WORKLOADS),
+        "workloads": list(GEMM_WORKLOADS),
     }
     (run_dir / "run_config.json").write_text(
         json.dumps(payload, indent=2) + "\n",
@@ -361,13 +354,13 @@ def _resolve_run_dir(repo_root: Path, configured: Path | None) -> Path:
         path = configured.expanduser()
         return path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
-    return repo_root / "runs" / f"lumen_moe_codex_{timestamp}"
+    return repo_root / "runs" / f"lumen_gemm_codex_{timestamp}"
 
 
 def _render_agents_md(repo_root: Path) -> str:
     scripts_root = repo_root / "scripts"
     skills_root = repo_root / "skills"
-    benchmark = scripts_root / "benchmark" / "bench_moe.py"
+    benchmark = scripts_root / "benchmark" / "bench_gemm.py"
     return f"""
 ## Goal
 Use `input_model.py` as the starting implementation and write the complete optimized implementation to `output_model_new.py`.
@@ -377,44 +370,69 @@ Use `input_model.py` as the starting implementation and write the complete optim
 - Do not read the parent repository except for the exact `scripts` and `skills` paths below. Do not read git history, other runs, or the network.
 - You may read `AGENTS.md`, `prompt.txt`, `input_model.py`,
   `output_model_new.py`, `{scripts_root}/**`, `{skills_root}/**`, and
-  `datasets/inference/moe/lumen/model.py`.
+  `datasets/inference/gemm/lumen/model.py`.
 - You can only write `output_model_new.py`.
 - Preserve the kernel's public API.
 - After writing `output_model_new.py`, validate correctness and performance with:
-  `python {benchmark} --backend lumen --check-correctness --tokens 1024 2048 4096 8192 16384`.
+  `python {benchmark} --backend lumen --check-correctness --matrix-sizes 1024 2048 4096 8192 16384`.
   - A benchmark command that exits nonzero or omits `"correctness":true` has failed.
 - Do not add eager PyTorch or external-library fallback compute paths.
 """
 
 
-def _render_benchmark_adapter(repo_root: Path, entrypoint: str) -> str:
-    template_path = repo_root / "datasets" / "inference" / "moe" / "lumen" / "model.py"
-    source = template_path.read_text(encoding="utf-8")
-    module_location = (
-        '_THIS_DIR = Path(__file__).resolve().parent\n'
-        '_MOE_MODULE = "fused_moe.py"'
-    )
-    candidate_location = (
-        '_THIS_DIR = Path(__file__).resolve().parents[4]\n'
-        '_MOE_MODULE = "output_model_new.py"'
-    )
-    if module_location not in source:
-        raise ValueError(f"unexpected MoE benchmark adapter layout: {template_path}")
-    source = source.replace(module_location, candidate_location, 1)
+def _render_benchmark_adapter(entrypoint: str) -> str:
+    return f'''#!/usr/bin/env python3
+from __future__ import annotations
 
-    default_lookup = (
-        'getattr(self._kernel_module(), "fused_moe_fp8_blockscale_g1u1")'
-    )
-    if default_lookup not in source:
-        raise ValueError(f"MoE entrypoint lookup not found: {template_path}")
-    return source.replace(
-        default_lookup,
-        f"getattr(self._kernel_module(), {entrypoint!r})",
-        1,
-    )
+import importlib.util
+import sys
+from pathlib import Path
+
+import torch
+import torch.nn as nn
 
 
-def _codex_provenance(config: MoEOptimizationConfig) -> dict[str, object]:
+_KERNEL_PATH = Path(__file__).resolve().parents[4] / "output_model_new.py"
+
+
+def _load_kernel():
+    spec = importlib.util.spec_from_file_location(
+        "lumen_gemm_candidate",
+        _KERNEL_PATH,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot import candidate: {{_KERNEL_PATH}}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class Model(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._kernel = _load_kernel()
+        self._out_cache = {{}}
+
+    def build_call(self, *, a_mk: torch.Tensor, b_nk: torch.Tensor):
+        key = (a_mk.shape, b_nk.shape, a_mk.device, a_mk.dtype)
+        out = self._out_cache.get(key)
+        if out is None:
+            out = torch.empty(
+                (a_mk.shape[0], b_nk.shape[0]),
+                device=a_mk.device,
+                dtype=a_mk.dtype,
+            )
+            self._out_cache[key] = out
+        fn = getattr(self._kernel, {entrypoint!r})
+        return lambda: fn(a_mk, b_nk, out=out)
+
+    def forward(self, a_mk: torch.Tensor, b_nk: torch.Tensor) -> torch.Tensor:
+        return self.build_call(a_mk=a_mk, b_nk=b_nk)()
+'''
+
+
+def _codex_provenance(config: GemmOptimizationConfig) -> dict[str, object]:
     return {
         "codex_bin": str(config.codex_bin) if config.codex_bin else None,
         "profile": config.profile,

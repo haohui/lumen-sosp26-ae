@@ -1,4 +1,4 @@
-"""CLI for running one Codex MoE optimization workspace."""
+"""CLI for running one or more Codex GEMM optimization rounds."""
 
 from __future__ import annotations
 
@@ -6,27 +6,25 @@ import argparse
 import sys
 from pathlib import Path
 
-from lumen.harness.datasets.lumen.moe.generation import (
-    MoEOptimizationConfig,
-    prepare_moe_optimization,
-    resume_moe_optimization_sequence,
-    run_moe_optimization,
-    run_moe_optimization_sequence,
+from lumen.harness.datasets.lumen.gemm.generation import (
+    GemmOptimizationConfig,
+    prepare_gemm_optimization,
+    resume_gemm_optimization_sequence,
+    run_gemm_optimization,
+    run_gemm_optimization_sequence,
 )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Optimize a Lumen MoE kernel through one or more Codex rounds."
-        )
+        description="Optimize a Lumen GEMM kernel through one or more Codex rounds."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--kernel", type=Path)
     source.add_argument(
         "--resume-run",
         type=Path,
-        help="Continue an existing MoE run from its latest passed round.",
+        help="Continue an existing GEMM run from its latest passed round.",
     )
     parser.add_argument(
         "--prompt-file",
@@ -36,10 +34,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Prompt file to apply; repeat this option to run sequential rounds.",
     )
     parser.add_argument("--run-dir", type=Path, default=None)
-    parser.add_argument(
-        "--entrypoint",
-        default="fused_moe_fp8_blockscale_g1u1",
-    )
+    parser.add_argument("--entrypoint", default="gemm_pipeline_transposed_b")
     parser.add_argument(
         "--gpu-id",
         type=_non_negative_int,
@@ -78,7 +73,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    config = MoEOptimizationConfig(
+    config = GemmOptimizationConfig(
         repo_root=_find_repo_root(Path(__file__)),
         kernel=args.kernel,
         prompt_file=args.prompt_file[0],
@@ -94,20 +89,20 @@ def main(argv: list[str] | None = None) -> int:
         config_overrides=tuple(args.config_overrides),
     )
     if args.prepare_only:
-        workspace = prepare_moe_optimization(config)
+        workspace = prepare_gemm_optimization(config)
         print(workspace.round_dir)
         return 0
 
     if args.resume_run is not None:
-        rounds = resume_moe_optimization_sequence(
+        rounds = resume_gemm_optimization_sequence(
             config,
             args.prompt_file,
             args.resume_run,
         )
     elif len(args.prompt_file) == 1:
-        rounds = [run_moe_optimization(config)]
+        rounds = [run_gemm_optimization(config)]
     else:
-        rounds = run_moe_optimization_sequence(config, args.prompt_file)
+        rounds = run_gemm_optimization_sequence(config, args.prompt_file)
 
     print(f"run: {rounds[0][0].run_dir}")
     for workspace, result in rounds:

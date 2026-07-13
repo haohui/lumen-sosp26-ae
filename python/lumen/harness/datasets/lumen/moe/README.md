@@ -13,3 +13,12 @@ PYTHONPATH=python python -m lumen.tools.cli.lumen_moe_optimize \
   --prompt-file python/lumen/harness/datasets/lumen/moe/prompts/optimization-07.md \
   --gpu-id 6
 ```
+
+Resume a completed run by appending more rounds:
+
+```bash
+PYTHONPATH=python python -m lumen.tools.cli.lumen_moe_optimize \
+  --resume-run runs/lumen_moe_codex_YYYYMMDD_HHMMSS_ffffff \
+  --prompt-file python/lumen/harness/datasets/lumen/moe/prompts/optimization-07.md \
+  --gpu-id 6
+```

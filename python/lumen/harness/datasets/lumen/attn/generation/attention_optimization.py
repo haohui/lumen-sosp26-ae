@@ -11,8 +11,11 @@ from pathlib import Path
 
 from lumen.harness.backend.codex import CodexRunner, CodexRunnerConfig, CodexRunResult
 from lumen.harness.datasets.lumen.optimization_runtime import (
+    append_run_prompts,
     evaluate_candidate,
     evaluation_error,
+    resolve_resume_point,
+    reset_run_tail,
     save_codex_result,
     set_round_status,
     sha256_file,
@@ -25,7 +28,7 @@ ATTENTION_WORKLOADS = (1024, 2048, 4096, 8192, 16384)
 @dataclass(frozen=True)
 class AttentionOptimizationConfig:
     repo_root: Path
-    kernel: Path
+    kernel: Path | None
     prompt_file: Path
     run_dir: Path | None = None
     entrypoint: str = "flash_attn"
@@ -53,7 +56,7 @@ def prepare_attention_optimization(
     config: AttentionOptimizationConfig,
 ) -> AttentionOptimizationWorkspace:
     repo_root = config.repo_root.expanduser().resolve()
-    kernel = config.kernel.expanduser().resolve()
+    kernel = _require_kernel(config)
     prompt_file = config.prompt_file.expanduser().resolve()
     _validate_inputs(repo_root, kernel, (prompt_file,), config.gpu_id)
 
@@ -141,7 +144,7 @@ def run_attention_optimization_sequence(
     prompt_files: Sequence[Path],
 ) -> list[tuple[AttentionOptimizationWorkspace, CodexRunResult]]:
     repo_root = config.repo_root.expanduser().resolve()
-    kernel = config.kernel.expanduser().resolve()
+    kernel = _require_kernel(config)
     prompts = tuple(path.expanduser().resolve() for path in prompt_files)
     if not prompts:
         raise ValueError("at least one prompt file is required")
@@ -151,9 +154,56 @@ def run_attention_optimization_sequence(
     run_dir.mkdir(parents=True, exist_ok=False)
     _write_run_config(config, run_dir, kernel, prompts)
 
+    return _run_rounds(
+        config,
+        prompts=prompts,
+        run_dir=run_dir,
+        round_kernel=kernel,
+        start_index=0,
+    )
+
+
+def resume_attention_optimization_sequence(
+    config: AttentionOptimizationConfig,
+    prompt_files: Sequence[Path],
+    run_dir: Path,
+) -> list[tuple[AttentionOptimizationWorkspace, CodexRunResult]]:
+    repo_root = config.repo_root.expanduser().resolve()
+    prompts = tuple(path.expanduser().resolve() for path in prompt_files)
+    if not prompts:
+        raise ValueError("at least one prompt file is required")
+
+    resolved_run_dir = run_dir.expanduser().resolve()
+    start_index, round_kernel = resolve_resume_point(resolved_run_dir)
+    _validate_inputs(repo_root, round_kernel, prompts, config.gpu_id)
+    resumed_config = replace(
+        config,
+        kernel=round_kernel,
+        run_dir=resolved_run_dir,
+    )
+    reset_run_tail(resolved_run_dir, start_index)
+    append_run_prompts(resolved_run_dir, prompts, start_index=start_index)
+    return _run_rounds(
+        resumed_config,
+        prompts=prompts,
+        run_dir=resolved_run_dir,
+        round_kernel=round_kernel,
+        start_index=start_index,
+    )
+
+
+def _run_rounds(
+    config: AttentionOptimizationConfig,
+    *,
+    prompts: tuple[Path, ...],
+    run_dir: Path,
+    round_kernel: Path,
+    start_index: int,
+) -> list[tuple[AttentionOptimizationWorkspace, CodexRunResult]]:
+    total_rounds = start_index + len(prompts)
+
     rounds: list[tuple[AttentionOptimizationWorkspace, CodexRunResult]] = []
-    round_kernel = kernel
-    for round_index, prompt_file in enumerate(prompts):
+    for round_index, prompt_file in enumerate(prompts, start=start_index):
         workspace = _prepare_round(
             config,
             run_dir=run_dir,
@@ -165,7 +215,7 @@ def run_attention_optimization_sequence(
         rounds.append((workspace, result))
         status = "passed" if result.ok else "failed"
         print(
-            f"round {round_index + 1}/{len(prompts)} {status}: "
+            f"round {round_index + 1}/{total_rounds} {status}: "
             f"{workspace.round_dir}",
             flush=True,
         )
@@ -258,6 +308,12 @@ def _validate_inputs(
             raise ValueError(f"prompt file is empty: {prompt_file}")
     if gpu_id is not None and gpu_id < 0:
         raise ValueError(f"gpu_id must be non-negative (got {gpu_id})")
+
+
+def _require_kernel(config: AttentionOptimizationConfig) -> Path:
+    if config.kernel is None:
+        raise ValueError("kernel is required when starting a new Attention run")
+    return config.kernel.expanduser().resolve()
 
 
 def _codex_env(gpu_id: int | None, round_dir: Path) -> dict[str, str]:

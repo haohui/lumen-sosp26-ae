@@ -9,6 +9,7 @@ from pathlib import Path
 from lumen.harness.datasets.lumen.attn.generation import (
     AttentionOptimizationConfig,
     prepare_attention_optimization,
+    resume_attention_optimization_sequence,
     run_attention_optimization,
     run_attention_optimization_sequence,
 )
@@ -20,7 +21,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Optimize a Lumen Attention kernel through one or more Codex rounds."
         )
     )
-    parser.add_argument("--kernel", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--kernel", type=Path)
+    source.add_argument(
+        "--resume-run",
+        type=Path,
+        help="Continue an existing Attention run from its latest passed round.",
+    )
     parser.add_argument(
         "--prompt-file",
         type=Path,
@@ -59,6 +66,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.prepare_only and len(args.prompt_file) != 1:
         parser.error("--prepare-only supports exactly one --prompt-file")
+    if args.prepare_only and args.resume_run is not None:
+        parser.error("--prepare-only cannot be used with --resume-run")
+    if args.resume_run is not None and args.run_dir is not None:
+        parser.error("--run-dir cannot be used with --resume-run")
     return args
 
 
@@ -84,14 +95,20 @@ def main(argv: list[str] | None = None) -> int:
         print(workspace.round_dir)
         return 0
 
-    if len(args.prompt_file) == 1:
+    if args.resume_run is not None:
+        rounds = resume_attention_optimization_sequence(
+            config,
+            args.prompt_file,
+            args.resume_run,
+        )
+    elif len(args.prompt_file) == 1:
         rounds = [run_attention_optimization(config)]
     else:
         rounds = run_attention_optimization_sequence(config, args.prompt_file)
 
     print(f"run: {rounds[0][0].run_dir}")
-    for round_index, (workspace, result) in enumerate(rounds):
-        print(f"round{round_index}: {workspace.round_dir}")
+    for workspace, result in rounds:
+        print(f"{workspace.round_dir.name}: {workspace.round_dir}")
         print(f"optimized kernel: {workspace.output_model_path}")
         if not result.ok:
             print(result.error or result.status, file=sys.stderr)

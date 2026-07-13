@@ -35,6 +35,11 @@ activation staging and weight loads with the MFMA work for the current tile.
   loads and MFMA calls in the same manner.
 - Preserve the early exit for a missing second tile. Use waits and workgroup
   barriers so an LDS stage is never overwritten while it is still being read.
+- After issuing asynchronous activation and activation-scale loads for an LDS
+  stage, use `S.amdgpu.s_waitcnt(0, -1, -1)` before the workgroup barrier and
+  before reading that stage into registers. Do not use a partial wait such as
+  `S.amdgpu.s_waitcnt(0, 7, 15)`; later arithmetic scheduling changes must not
+  expose incomplete global-to-LDS transfers.
 - Reuse the existing `_matmul_stage0` and `_matmul_stage1` helpers for both W1
   and W3. Do not inline or change their MFMA math in this round.
 

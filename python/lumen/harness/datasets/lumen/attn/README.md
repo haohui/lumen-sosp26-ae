@@ -12,3 +12,12 @@ PYTHONPATH=python python -m lumen.tools.cli.lumen_attn_optimize \
   --prompt-file python/lumen/harness/datasets/lumen/attn/prompts/optimization-06.md \
   --gpu-id 6
 ```
+
+Resume a completed run by appending more rounds:
+
+```bash
+PYTHONPATH=python python -m lumen.tools.cli.lumen_attn_optimize \
+  --resume-run runs/lumen_attn_codex_YYYYMMDD_HHMMSS_ffffff \
+  --prompt-file python/lumen/harness/datasets/lumen/attn/prompts/optimization-06.md \
+  --gpu-id 6
+```

@@ -9,6 +9,15 @@ This round is about making pairs of independent FP32 operations visible to the
 compiler as `Tensor((2,), f32)` vectors. Apply the transformation only to the
 four hot arithmetic regions below.
 
+Before applying the arithmetic transformation, audit the inherited Stage 1
+global-to-LDS waits. Every asynchronous activation/scale stage fetch must be
+followed by `S.amdgpu.s_waitcnt(0, -1, -1)` before the workgroup barrier and LDS
+read. If the input contains a partial `S.amdgpu.s_waitcnt(0, 7, 15)`, replace it
+with the full wait. This is a correctness repair for the existing pipeline,
+not a new optimization; do not otherwise change its buffers, overlap, or
+dataflow. Packed FMA changes instruction timing and must not expose an
+incomplete LDS transfer.
+
 ## Required transformation
 
 ### 1. MFMA accumulator scaling

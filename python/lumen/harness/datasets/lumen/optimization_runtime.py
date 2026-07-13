@@ -25,6 +25,8 @@ from lumen.harness.backend.codex import (
 class OptimizationSpec:
     domain: str
     run_slug: str
+    default_kernel: Path
+    default_prompts: tuple[Path, ...]
     workloads: tuple[int, ...]
     workload_key: str
     workload_flag: str
@@ -112,12 +114,18 @@ def resume_optimization_sequence(
     run_dir: Path,
 ) -> list[tuple[OptimizationWorkspace, CodexRunResult]]:
     repo_root = config.repo_root.expanduser().resolve()
-    prompts = tuple(path.expanduser().resolve() for path in prompt_files)
-    if not prompts:
-        raise ValueError("at least one prompt file is required")
-
     resolved_run_dir = run_dir.expanduser().resolve()
     start_index, round_kernel = resolve_resume_point(resolved_run_dir)
+    if prompt_files:
+        prompts = tuple(path.expanduser().resolve() for path in prompt_files)
+    else:
+        prompts = remaining_run_prompts(resolved_run_dir, start_index)
+    if not prompts:
+        raise ValueError(
+            f"run has no remaining prompts after round{start_index - 1}: "
+            f"{resolved_run_dir}"
+        )
+
     _validate_inputs(repo_root, round_kernel, prompts, config.gpu_id)
     resumed_config = replace(config, kernel=round_kernel, run_dir=resolved_run_dir)
     reset_run_tail(resolved_run_dir, start_index)
@@ -499,6 +507,24 @@ def reset_run_tail(run_dir: Path, start_index: int) -> None:
         suffix = path.name.removeprefix("round")
         if path.is_dir() and suffix.isdigit() and int(suffix) >= start_index:
             shutil.rmtree(path)
+
+
+def remaining_run_prompts(run_dir: Path, start_index: int) -> tuple[Path, ...]:
+    payload = _read_json(run_dir / "run_config.json")
+    configured = payload.get("prompts")
+    if not isinstance(configured, list):
+        raise ValueError(f"resume run has no prompt sequence: {run_dir}")
+
+    prompts: list[Path] = []
+    for round_index, entry in enumerate(configured[start_index:], start=start_index):
+        value = entry.get("prompt_file") if isinstance(entry, dict) else None
+        if not isinstance(value, str):
+            raise ValueError(
+                f"resume run has an invalid prompt for round{round_index}: {run_dir}"
+            )
+        prompt = Path(value).expanduser()
+        prompts.append(prompt.resolve())
+    return tuple(prompts)
 
 
 def append_run_prompts(

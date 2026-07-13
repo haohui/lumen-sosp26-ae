@@ -11,9 +11,30 @@ MOE_WORKLOADS = (1024, 2048, 4096, 8192, 16384)
 
 
 def moe_optimization_spec(repo_root: Path) -> OptimizationSpec:
+    prompt_root = (
+        repo_root
+        / "python"
+        / "lumen"
+        / "harness"
+        / "datasets"
+        / "lumen"
+        / "moe"
+        / "prompts"
+    )
     return OptimizationSpec(
         domain="moe",
         run_slug="moe",
+        default_kernel=(
+            repo_root
+            / "datasets"
+            / "inference"
+            / "moe"
+            / "lumen"
+            / "moe_01_baseline.py"
+        ),
+        default_prompts=tuple(
+            prompt_root / f"optimization-{index:02d}.md" for index in range(2, 8)
+        ),
         workloads=MOE_WORKLOADS,
         workload_key="tokens",
         workload_flag="--tokens",

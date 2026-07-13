@@ -31,8 +31,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Optimize a Lumen kernel through one or more Codex rounds."
     )
     parser.add_argument("domain", choices=sorted(SPEC_BUILDERS))
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--kernel", type=Path)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--kernel",
+        type=Path,
+        help="Starting kernel; defaults to the selected domain's baseline kernel.",
+    )
     source.add_argument(
         "--resume-run",
         type=Path,
@@ -42,8 +46,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--prompt-file",
         type=Path,
         action="append",
-        required=True,
-        help="Prompt file to apply; repeat this option to run sequential rounds.",
+        help=(
+            "Prompt file to apply; repeat this option to run sequential rounds. "
+            "A new run defaults to the domain's full sequence; a resumed run "
+            "continues its original sequence."
+        ),
     )
     parser.add_argument("--run-dir", type=Path, default=None)
     parser.add_argument(
@@ -73,7 +80,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Create the workspace without invoking Codex.",
     )
     args = parser.parse_args(argv)
-    if args.prepare_only and len(args.prompt_file) != 1:
+    prompt_files = args.prompt_file or []
+    if args.prepare_only and prompt_files and len(prompt_files) != 1:
         parser.error("--prepare-only supports exactly one --prompt-file")
     if args.prepare_only and args.resume_run is not None:
         parser.error("--prepare-only cannot be used with --resume-run")
@@ -86,9 +94,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     repo_root = _find_repo_root(Path(__file__))
     spec = SPEC_BUILDERS[args.domain](repo_root)
+    kernel = args.kernel
+    if args.resume_run is None and kernel is None:
+        kernel = spec.default_kernel
+    if args.prompt_file:
+        prompt_files = tuple(args.prompt_file)
+    elif args.resume_run is not None:
+        prompt_files = ()
+    elif args.prepare_only:
+        prompt_files = (spec.default_prompts[0],)
+    else:
+        prompt_files = spec.default_prompts
+
     config = OptimizationConfig(
         repo_root=repo_root,
-        kernel=args.kernel,
+        kernel=kernel,
         run_dir=args.run_dir,
         gpu_id=args.gpu_id,
         codex_bin=args.codex_bin,
@@ -100,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         config_overrides=tuple(args.config_overrides),
     )
     if args.prepare_only:
-        workspace = prepare_optimization(config, spec, args.prompt_file[0])
+        workspace = prepare_optimization(config, spec, prompt_files[0])
         print(workspace.round_dir)
         return 0
 
@@ -108,11 +128,11 @@ def main(argv: list[str] | None = None) -> int:
         rounds = resume_optimization_sequence(
             config,
             spec,
-            args.prompt_file,
+            prompt_files,
             args.resume_run,
         )
     else:
-        rounds = run_optimization_sequence(config, spec, args.prompt_file)
+        rounds = run_optimization_sequence(config, spec, prompt_files)
 
     print(f"run: {rounds[0][0].run_dir}")
     for workspace, result in rounds:

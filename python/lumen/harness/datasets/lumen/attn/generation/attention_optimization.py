@@ -11,9 +11,30 @@ ATTENTION_WORKLOADS = (1024, 2048, 4096, 8192, 16384)
 
 
 def attention_optimization_spec(repo_root: Path) -> OptimizationSpec:
+    prompt_root = (
+        repo_root
+        / "python"
+        / "lumen"
+        / "harness"
+        / "datasets"
+        / "lumen"
+        / "attn"
+        / "prompts"
+    )
     return OptimizationSpec(
         domain="attention",
         run_slug="attn",
+        default_kernel=(
+            repo_root
+            / "datasets"
+            / "inference"
+            / "attention"
+            / "lumen"
+            / "attn_01_naive.py"
+        ),
+        default_prompts=tuple(
+            prompt_root / f"optimization-{index:02d}.md" for index in range(2, 7)
+        ),
         workloads=ATTENTION_WORKLOADS,
         workload_key="seq_len",
         workload_flag="--seq-lens",

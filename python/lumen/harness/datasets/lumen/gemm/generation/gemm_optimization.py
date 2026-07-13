@@ -11,9 +11,30 @@ GEMM_WORKLOADS = (1024, 2048, 4096, 8192, 16384)
 
 
 def gemm_optimization_spec(repo_root: Path) -> OptimizationSpec:
+    prompt_root = (
+        repo_root
+        / "python"
+        / "lumen"
+        / "harness"
+        / "datasets"
+        / "lumen"
+        / "gemm"
+        / "prompts"
+    )
     return OptimizationSpec(
         domain="gemm",
         run_slug="gemm",
+        default_kernel=(
+            repo_root
+            / "datasets"
+            / "inference"
+            / "gemm"
+            / "lumen"
+            / "gemm-naive.py"
+        ),
+        default_prompts=tuple(
+            prompt_root / f"optimization-{index:02d}.md" for index in range(1, 13)
+        ),
         workloads=GEMM_WORKLOADS,
         workload_key="matrix_size",
         workload_flag="--matrix-sizes",

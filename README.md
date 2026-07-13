@@ -25,13 +25,6 @@ ruff check .
 
 ## Benchmark Source Setup
 
-The benchmark harness expects the AITER source checkout pinned in
-`third_party/aiter.source`. Prepare it from the repository root:
-
-```bash
-scripts/benchmark/prepare_sources.sh --install-aiter
-```
-
 The HipKittens GEMM backend uses an external HipKittens checkout. With the
 checkout pinned to `7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b`, install its
 separate binding package as follows:
@@ -70,18 +63,29 @@ The experiments reported in the paper were run on a server with:
 ## Repository Layout
 
 The repository is organized so Python code lives under `python/`, while
-benchmark inputs and generated outputs live under `data/`:
+benchmark inputs and generated outputs live under `datasets/inference/`:
 
 - `python/lumen/`: shared Python implementation used by benchmarking,
   generation, and evaluation scripts. Common helpers, configuration loaders,
   result parsing, and reusable benchmark utilities should live here.
 - `scripts/benchmark/`: standalone artifact benchmarking tools that emit JSONL
   timing records.
-- `data/benchmarks/gemm/`, `data/benchmarks/attn/`, `data/benchmarks/moe/`: kernel
-  implementations produced by Lumen and by baseline agentic systems for GEMM,
-  flash attention, and fused MoE.
-- `data/benchmarks/kernelbench/lumen/`: Lumen-generated KernelBench solutions,
-  including multiple optimization rounds when applicable.
+- `datasets/inference/gemm/`, `datasets/inference/attention/`,
+  `datasets/inference/moe/`: kernel implementations produced by Lumen and by
+  baseline agentic systems for GEMM, flash attention, and fused MoE.
+- `python/lumen/harness/datasets/kernelbench/`: KernelBench generation and
+  evaluation harness.
+
+## Lumen kernel optimization
+
+Run an optimization sequence from the repository root:
+
+```bash
+PYTHONPATH=python python -m lumen.tools.cli.lumen_optimize gemm --gpu-id 0
+```
+
+See the [Lumen optimization guide](python/lumen/harness/datasets/lumen/README.md)
+for GEMM, attention, and MoE usage.
 
 ## Reproducing the evaluation
 

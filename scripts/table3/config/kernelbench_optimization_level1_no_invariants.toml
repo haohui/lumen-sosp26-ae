@@ -1,0 +1,2 @@
+run_dir = "data/traces/kernelbench_optimization_level1_no_invariants"
+profile = "no-invariants"

@@ -29,11 +29,16 @@ def load_generation_config(
     )
 
 
-def load_optimization_config(path: str | Path) -> OptimizationConfig:
+def load_optimization_config(
+    path: str | Path,
+    *,
+    base_dir: str | Path | None = None,
+) -> OptimizationConfig:
     config_path = Path(path).expanduser().resolve()
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    root = Path.cwd() if base_dir is None else Path(base_dir)
     return OptimizationConfig(
-        run_dir=_resolve_path(data["run_dir"], config_path.parent),
+        run_dir=_resolve_path(data["run_dir"], root),
         profile=str(data["profile"]),
     )
 

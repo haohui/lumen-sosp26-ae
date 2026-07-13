@@ -1,0 +1,101 @@
+{
+  "problem_id": 62,
+  "problem_name": "62_Matmul_GroupNorm_LeakyReLU_Sum",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "speedup_eval",
+  "error": "compiled=True, correctness=False. {\"original_model_file\": \"/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples/p62/round2/input_model.py\", \"generated_model_file\": \"/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples/p62/round2/output_model_new.py\", \"backend\": \"avelang\", \"eval_config\": {\"backend\": \"avelang\", \"gpu_arch\": \"gfx942\", \"precision\": \"bf16\", \"num_correct_trials\": 5, \"num_trials\": 100}, \"gpu_arch\": \"gfx942\", \"device\": \"cuda:0\", \"hardware\": \"AMD Instinct MI300X\", \"precision\": \"torch.bfloat16\", \"seed\": 42, \"num_correct_trials\": 5, \"num_warmup\": 5, \"num_trials\": 100, \"cuda_graph\": true, \"max_difference\": [\"0.031250\", \"0.031250\", \"0.031250\", \"0.031250\"], \"avg_difference\": [\"0.001190\", \"0.001190\", \"0.001190\", \"0.001190\"], \"correctness_issue\": \"Output mismatch\", \"correctness_trials\": \"(1 / 5)\"}",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "reference_mode": "language-spec-only",
+    "prompt_sha256": "8c4fcd20ed4e6188914498de31a9646839f964f3f45d43ecb7fab50af81b1765",
+    "agents_sha256": "23bef78db135ee5d1f10b6d697c5876ef4438b9be572bb25e45cbe5e4e4b99d8"
+  },
+  "compiled": true,
+  "correctness": false,
+  "speedup": -1.0,
+  "ref_ms": -1.0,
+  "new_ms": -1.0,
+  "eval_metadata": {
+    "original_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples/p62/round2/input_model.py",
+    "generated_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples/p62/round2/output_model_new.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "max_difference": [
+      "0.031250",
+      "0.031250",
+      "0.031250",
+      "0.031250"
+    ],
+    "avg_difference": [
+      "0.001190",
+      "0.001190",
+      "0.001190",
+      "0.001190"
+    ],
+    "correctness_issue": "Output mismatch",
+    "correctness_trials": "(1 / 5)"
+  },
+  "eval_payload": {
+    "compiled": true,
+    "correctness": false,
+    "metadata": {
+      "original_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples/p62/round2/input_model.py",
+      "generated_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples/p62/round2/output_model_new.py",
+      "backend": "avelang",
+      "eval_config": {
+        "backend": "avelang",
+        "gpu_arch": "gfx942",
+        "precision": "bf16",
+        "num_correct_trials": 5,
+        "num_trials": 100
+      },
+      "gpu_arch": "gfx942",
+      "device": "cuda:0",
+      "hardware": "AMD Instinct MI300X",
+      "precision": "torch.bfloat16",
+      "seed": 42,
+      "num_correct_trials": 5,
+      "num_warmup": 5,
+      "num_trials": 100,
+      "cuda_graph": true,
+      "max_difference": [
+        "0.031250",
+        "0.031250",
+        "0.031250",
+        "0.031250"
+      ],
+      "avg_difference": [
+        "0.001190",
+        "0.001190",
+        "0.001190",
+        "0.001190"
+      ],
+      "correctness_issue": "Output mismatch",
+      "correctness_trials": "(1 / 5)"
+    },
+    "runtime": -1.0,
+    "runtime_stats": {},
+    "ref_runtime": -1.0,
+    "ref_runtime_stats": {},
+    "eval_exit_code": 1
+  }
+}

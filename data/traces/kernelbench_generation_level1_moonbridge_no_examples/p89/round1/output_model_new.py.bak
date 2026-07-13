@@ -1,0 +1,3309 @@
+import torch
+import torch.nn as nn
+import avelang
+import avelang.language as al
+
+N_ROWS: al.constexpr = al.constexpr(32768)
+N_COLS: al.constexpr = al.constexpr(32768)
+BLOCK_SIZE: al.constexpr = al.constexpr(1024)
+NUM_BLOCKS: al.constexpr = al.constexpr(33)
+
+
+@avelang.jit
+def cs_block_scan_v3(
+    x_ptr: al.Pointer(al.bf16),
+    temp_ptr: al.Pointer(al.f32),
+    block_sums_ptr: al.Pointer(al.f32),
+    N_ROWS: al.constexpr,
+    N_COLS: al.constexpr,
+    BLOCK_SIZE: al.constexpr,
+    NUM_BLOCKS: al.constexpr,
+):
+    row = al.block_id(0)
+    block = al.block_id(1)
+    tid = al.thread_id(0)
+
+    x_layout = al.make_layout((N_ROWS, N_COLS), (N_COLS, 1))
+    x = al.make_tensor(x_ptr, al.bf16, x_layout)
+    temp = al.make_tensor(temp_ptr, al.f32, x_layout)
+
+    bs_layout = al.make_layout((N_ROWS, NUM_BLOCKS), (NUM_BLOCKS, 1))
+    block_sums = al.make_tensor(block_sums_ptr, al.f32, bs_layout)
+
+    col = block * BLOCK_SIZE + tid
+
+    shared = al.make_shared((1024,), al.f32)
+
+    if col < N_COLS:
+        shared[tid] = al.convert(x[row, col], al.f32)
+    else:
+        shared[tid] = al.convert(0.0, al.f32)
+    al.syncthreads()
+
+    # Sequential inclusive scan — matches torch.cumsum accumulation order
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1, al.i32)] = shared[al.convert(1, al.i32)] + shared[al.convert(0, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(2, al.i32)] = shared[al.convert(2, al.i32)] + shared[al.convert(1, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(3, al.i32)] = shared[al.convert(3, al.i32)] + shared[al.convert(2, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(4, al.i32)] = shared[al.convert(4, al.i32)] + shared[al.convert(3, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(5, al.i32)] = shared[al.convert(5, al.i32)] + shared[al.convert(4, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(6, al.i32)] = shared[al.convert(6, al.i32)] + shared[al.convert(5, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(7, al.i32)] = shared[al.convert(7, al.i32)] + shared[al.convert(6, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(8, al.i32)] = shared[al.convert(8, al.i32)] + shared[al.convert(7, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(9, al.i32)] = shared[al.convert(9, al.i32)] + shared[al.convert(8, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(10, al.i32)] = shared[al.convert(10, al.i32)] + shared[al.convert(9, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(11, al.i32)] = shared[al.convert(11, al.i32)] + shared[al.convert(10, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(12, al.i32)] = shared[al.convert(12, al.i32)] + shared[al.convert(11, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(13, al.i32)] = shared[al.convert(13, al.i32)] + shared[al.convert(12, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(14, al.i32)] = shared[al.convert(14, al.i32)] + shared[al.convert(13, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(15, al.i32)] = shared[al.convert(15, al.i32)] + shared[al.convert(14, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(16, al.i32)] = shared[al.convert(16, al.i32)] + shared[al.convert(15, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(17, al.i32)] = shared[al.convert(17, al.i32)] + shared[al.convert(16, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(18, al.i32)] = shared[al.convert(18, al.i32)] + shared[al.convert(17, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(19, al.i32)] = shared[al.convert(19, al.i32)] + shared[al.convert(18, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(20, al.i32)] = shared[al.convert(20, al.i32)] + shared[al.convert(19, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(21, al.i32)] = shared[al.convert(21, al.i32)] + shared[al.convert(20, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(22, al.i32)] = shared[al.convert(22, al.i32)] + shared[al.convert(21, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(23, al.i32)] = shared[al.convert(23, al.i32)] + shared[al.convert(22, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(24, al.i32)] = shared[al.convert(24, al.i32)] + shared[al.convert(23, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(25, al.i32)] = shared[al.convert(25, al.i32)] + shared[al.convert(24, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(26, al.i32)] = shared[al.convert(26, al.i32)] + shared[al.convert(25, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(27, al.i32)] = shared[al.convert(27, al.i32)] + shared[al.convert(26, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(28, al.i32)] = shared[al.convert(28, al.i32)] + shared[al.convert(27, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(29, al.i32)] = shared[al.convert(29, al.i32)] + shared[al.convert(28, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(30, al.i32)] = shared[al.convert(30, al.i32)] + shared[al.convert(29, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(31, al.i32)] = shared[al.convert(31, al.i32)] + shared[al.convert(30, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(32, al.i32)] = shared[al.convert(32, al.i32)] + shared[al.convert(31, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(33, al.i32)] = shared[al.convert(33, al.i32)] + shared[al.convert(32, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(34, al.i32)] = shared[al.convert(34, al.i32)] + shared[al.convert(33, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(35, al.i32)] = shared[al.convert(35, al.i32)] + shared[al.convert(34, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(36, al.i32)] = shared[al.convert(36, al.i32)] + shared[al.convert(35, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(37, al.i32)] = shared[al.convert(37, al.i32)] + shared[al.convert(36, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(38, al.i32)] = shared[al.convert(38, al.i32)] + shared[al.convert(37, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(39, al.i32)] = shared[al.convert(39, al.i32)] + shared[al.convert(38, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(40, al.i32)] = shared[al.convert(40, al.i32)] + shared[al.convert(39, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(41, al.i32)] = shared[al.convert(41, al.i32)] + shared[al.convert(40, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(42, al.i32)] = shared[al.convert(42, al.i32)] + shared[al.convert(41, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(43, al.i32)] = shared[al.convert(43, al.i32)] + shared[al.convert(42, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(44, al.i32)] = shared[al.convert(44, al.i32)] + shared[al.convert(43, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(45, al.i32)] = shared[al.convert(45, al.i32)] + shared[al.convert(44, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(46, al.i32)] = shared[al.convert(46, al.i32)] + shared[al.convert(45, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(47, al.i32)] = shared[al.convert(47, al.i32)] + shared[al.convert(46, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(48, al.i32)] = shared[al.convert(48, al.i32)] + shared[al.convert(47, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(49, al.i32)] = shared[al.convert(49, al.i32)] + shared[al.convert(48, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(50, al.i32)] = shared[al.convert(50, al.i32)] + shared[al.convert(49, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(51, al.i32)] = shared[al.convert(51, al.i32)] + shared[al.convert(50, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(52, al.i32)] = shared[al.convert(52, al.i32)] + shared[al.convert(51, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(53, al.i32)] = shared[al.convert(53, al.i32)] + shared[al.convert(52, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(54, al.i32)] = shared[al.convert(54, al.i32)] + shared[al.convert(53, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(55, al.i32)] = shared[al.convert(55, al.i32)] + shared[al.convert(54, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(56, al.i32)] = shared[al.convert(56, al.i32)] + shared[al.convert(55, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(57, al.i32)] = shared[al.convert(57, al.i32)] + shared[al.convert(56, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(58, al.i32)] = shared[al.convert(58, al.i32)] + shared[al.convert(57, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(59, al.i32)] = shared[al.convert(59, al.i32)] + shared[al.convert(58, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(60, al.i32)] = shared[al.convert(60, al.i32)] + shared[al.convert(59, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(61, al.i32)] = shared[al.convert(61, al.i32)] + shared[al.convert(60, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(62, al.i32)] = shared[al.convert(62, al.i32)] + shared[al.convert(61, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(63, al.i32)] = shared[al.convert(63, al.i32)] + shared[al.convert(62, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(64, al.i32)] = shared[al.convert(64, al.i32)] + shared[al.convert(63, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(65, al.i32)] = shared[al.convert(65, al.i32)] + shared[al.convert(64, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(66, al.i32)] = shared[al.convert(66, al.i32)] + shared[al.convert(65, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(67, al.i32)] = shared[al.convert(67, al.i32)] + shared[al.convert(66, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(68, al.i32)] = shared[al.convert(68, al.i32)] + shared[al.convert(67, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(69, al.i32)] = shared[al.convert(69, al.i32)] + shared[al.convert(68, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(70, al.i32)] = shared[al.convert(70, al.i32)] + shared[al.convert(69, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(71, al.i32)] = shared[al.convert(71, al.i32)] + shared[al.convert(70, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(72, al.i32)] = shared[al.convert(72, al.i32)] + shared[al.convert(71, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(73, al.i32)] = shared[al.convert(73, al.i32)] + shared[al.convert(72, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(74, al.i32)] = shared[al.convert(74, al.i32)] + shared[al.convert(73, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(75, al.i32)] = shared[al.convert(75, al.i32)] + shared[al.convert(74, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(76, al.i32)] = shared[al.convert(76, al.i32)] + shared[al.convert(75, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(77, al.i32)] = shared[al.convert(77, al.i32)] + shared[al.convert(76, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(78, al.i32)] = shared[al.convert(78, al.i32)] + shared[al.convert(77, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(79, al.i32)] = shared[al.convert(79, al.i32)] + shared[al.convert(78, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(80, al.i32)] = shared[al.convert(80, al.i32)] + shared[al.convert(79, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(81, al.i32)] = shared[al.convert(81, al.i32)] + shared[al.convert(80, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(82, al.i32)] = shared[al.convert(82, al.i32)] + shared[al.convert(81, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(83, al.i32)] = shared[al.convert(83, al.i32)] + shared[al.convert(82, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(84, al.i32)] = shared[al.convert(84, al.i32)] + shared[al.convert(83, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(85, al.i32)] = shared[al.convert(85, al.i32)] + shared[al.convert(84, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(86, al.i32)] = shared[al.convert(86, al.i32)] + shared[al.convert(85, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(87, al.i32)] = shared[al.convert(87, al.i32)] + shared[al.convert(86, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(88, al.i32)] = shared[al.convert(88, al.i32)] + shared[al.convert(87, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(89, al.i32)] = shared[al.convert(89, al.i32)] + shared[al.convert(88, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(90, al.i32)] = shared[al.convert(90, al.i32)] + shared[al.convert(89, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(91, al.i32)] = shared[al.convert(91, al.i32)] + shared[al.convert(90, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(92, al.i32)] = shared[al.convert(92, al.i32)] + shared[al.convert(91, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(93, al.i32)] = shared[al.convert(93, al.i32)] + shared[al.convert(92, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(94, al.i32)] = shared[al.convert(94, al.i32)] + shared[al.convert(93, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(95, al.i32)] = shared[al.convert(95, al.i32)] + shared[al.convert(94, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(96, al.i32)] = shared[al.convert(96, al.i32)] + shared[al.convert(95, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(97, al.i32)] = shared[al.convert(97, al.i32)] + shared[al.convert(96, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(98, al.i32)] = shared[al.convert(98, al.i32)] + shared[al.convert(97, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(99, al.i32)] = shared[al.convert(99, al.i32)] + shared[al.convert(98, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(100, al.i32)] = shared[al.convert(100, al.i32)] + shared[al.convert(99, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(101, al.i32)] = shared[al.convert(101, al.i32)] + shared[al.convert(100, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(102, al.i32)] = shared[al.convert(102, al.i32)] + shared[al.convert(101, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(103, al.i32)] = shared[al.convert(103, al.i32)] + shared[al.convert(102, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(104, al.i32)] = shared[al.convert(104, al.i32)] + shared[al.convert(103, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(105, al.i32)] = shared[al.convert(105, al.i32)] + shared[al.convert(104, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(106, al.i32)] = shared[al.convert(106, al.i32)] + shared[al.convert(105, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(107, al.i32)] = shared[al.convert(107, al.i32)] + shared[al.convert(106, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(108, al.i32)] = shared[al.convert(108, al.i32)] + shared[al.convert(107, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(109, al.i32)] = shared[al.convert(109, al.i32)] + shared[al.convert(108, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(110, al.i32)] = shared[al.convert(110, al.i32)] + shared[al.convert(109, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(111, al.i32)] = shared[al.convert(111, al.i32)] + shared[al.convert(110, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(112, al.i32)] = shared[al.convert(112, al.i32)] + shared[al.convert(111, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(113, al.i32)] = shared[al.convert(113, al.i32)] + shared[al.convert(112, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(114, al.i32)] = shared[al.convert(114, al.i32)] + shared[al.convert(113, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(115, al.i32)] = shared[al.convert(115, al.i32)] + shared[al.convert(114, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(116, al.i32)] = shared[al.convert(116, al.i32)] + shared[al.convert(115, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(117, al.i32)] = shared[al.convert(117, al.i32)] + shared[al.convert(116, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(118, al.i32)] = shared[al.convert(118, al.i32)] + shared[al.convert(117, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(119, al.i32)] = shared[al.convert(119, al.i32)] + shared[al.convert(118, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(120, al.i32)] = shared[al.convert(120, al.i32)] + shared[al.convert(119, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(121, al.i32)] = shared[al.convert(121, al.i32)] + shared[al.convert(120, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(122, al.i32)] = shared[al.convert(122, al.i32)] + shared[al.convert(121, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(123, al.i32)] = shared[al.convert(123, al.i32)] + shared[al.convert(122, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(124, al.i32)] = shared[al.convert(124, al.i32)] + shared[al.convert(123, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(125, al.i32)] = shared[al.convert(125, al.i32)] + shared[al.convert(124, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(126, al.i32)] = shared[al.convert(126, al.i32)] + shared[al.convert(125, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(127, al.i32)] = shared[al.convert(127, al.i32)] + shared[al.convert(126, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(128, al.i32)] = shared[al.convert(128, al.i32)] + shared[al.convert(127, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(129, al.i32)] = shared[al.convert(129, al.i32)] + shared[al.convert(128, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(130, al.i32)] = shared[al.convert(130, al.i32)] + shared[al.convert(129, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(131, al.i32)] = shared[al.convert(131, al.i32)] + shared[al.convert(130, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(132, al.i32)] = shared[al.convert(132, al.i32)] + shared[al.convert(131, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(133, al.i32)] = shared[al.convert(133, al.i32)] + shared[al.convert(132, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(134, al.i32)] = shared[al.convert(134, al.i32)] + shared[al.convert(133, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(135, al.i32)] = shared[al.convert(135, al.i32)] + shared[al.convert(134, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(136, al.i32)] = shared[al.convert(136, al.i32)] + shared[al.convert(135, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(137, al.i32)] = shared[al.convert(137, al.i32)] + shared[al.convert(136, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(138, al.i32)] = shared[al.convert(138, al.i32)] + shared[al.convert(137, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(139, al.i32)] = shared[al.convert(139, al.i32)] + shared[al.convert(138, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(140, al.i32)] = shared[al.convert(140, al.i32)] + shared[al.convert(139, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(141, al.i32)] = shared[al.convert(141, al.i32)] + shared[al.convert(140, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(142, al.i32)] = shared[al.convert(142, al.i32)] + shared[al.convert(141, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(143, al.i32)] = shared[al.convert(143, al.i32)] + shared[al.convert(142, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(144, al.i32)] = shared[al.convert(144, al.i32)] + shared[al.convert(143, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(145, al.i32)] = shared[al.convert(145, al.i32)] + shared[al.convert(144, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(146, al.i32)] = shared[al.convert(146, al.i32)] + shared[al.convert(145, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(147, al.i32)] = shared[al.convert(147, al.i32)] + shared[al.convert(146, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(148, al.i32)] = shared[al.convert(148, al.i32)] + shared[al.convert(147, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(149, al.i32)] = shared[al.convert(149, al.i32)] + shared[al.convert(148, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(150, al.i32)] = shared[al.convert(150, al.i32)] + shared[al.convert(149, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(151, al.i32)] = shared[al.convert(151, al.i32)] + shared[al.convert(150, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(152, al.i32)] = shared[al.convert(152, al.i32)] + shared[al.convert(151, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(153, al.i32)] = shared[al.convert(153, al.i32)] + shared[al.convert(152, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(154, al.i32)] = shared[al.convert(154, al.i32)] + shared[al.convert(153, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(155, al.i32)] = shared[al.convert(155, al.i32)] + shared[al.convert(154, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(156, al.i32)] = shared[al.convert(156, al.i32)] + shared[al.convert(155, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(157, al.i32)] = shared[al.convert(157, al.i32)] + shared[al.convert(156, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(158, al.i32)] = shared[al.convert(158, al.i32)] + shared[al.convert(157, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(159, al.i32)] = shared[al.convert(159, al.i32)] + shared[al.convert(158, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(160, al.i32)] = shared[al.convert(160, al.i32)] + shared[al.convert(159, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(161, al.i32)] = shared[al.convert(161, al.i32)] + shared[al.convert(160, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(162, al.i32)] = shared[al.convert(162, al.i32)] + shared[al.convert(161, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(163, al.i32)] = shared[al.convert(163, al.i32)] + shared[al.convert(162, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(164, al.i32)] = shared[al.convert(164, al.i32)] + shared[al.convert(163, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(165, al.i32)] = shared[al.convert(165, al.i32)] + shared[al.convert(164, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(166, al.i32)] = shared[al.convert(166, al.i32)] + shared[al.convert(165, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(167, al.i32)] = shared[al.convert(167, al.i32)] + shared[al.convert(166, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(168, al.i32)] = shared[al.convert(168, al.i32)] + shared[al.convert(167, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(169, al.i32)] = shared[al.convert(169, al.i32)] + shared[al.convert(168, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(170, al.i32)] = shared[al.convert(170, al.i32)] + shared[al.convert(169, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(171, al.i32)] = shared[al.convert(171, al.i32)] + shared[al.convert(170, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(172, al.i32)] = shared[al.convert(172, al.i32)] + shared[al.convert(171, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(173, al.i32)] = shared[al.convert(173, al.i32)] + shared[al.convert(172, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(174, al.i32)] = shared[al.convert(174, al.i32)] + shared[al.convert(173, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(175, al.i32)] = shared[al.convert(175, al.i32)] + shared[al.convert(174, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(176, al.i32)] = shared[al.convert(176, al.i32)] + shared[al.convert(175, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(177, al.i32)] = shared[al.convert(177, al.i32)] + shared[al.convert(176, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(178, al.i32)] = shared[al.convert(178, al.i32)] + shared[al.convert(177, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(179, al.i32)] = shared[al.convert(179, al.i32)] + shared[al.convert(178, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(180, al.i32)] = shared[al.convert(180, al.i32)] + shared[al.convert(179, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(181, al.i32)] = shared[al.convert(181, al.i32)] + shared[al.convert(180, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(182, al.i32)] = shared[al.convert(182, al.i32)] + shared[al.convert(181, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(183, al.i32)] = shared[al.convert(183, al.i32)] + shared[al.convert(182, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(184, al.i32)] = shared[al.convert(184, al.i32)] + shared[al.convert(183, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(185, al.i32)] = shared[al.convert(185, al.i32)] + shared[al.convert(184, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(186, al.i32)] = shared[al.convert(186, al.i32)] + shared[al.convert(185, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(187, al.i32)] = shared[al.convert(187, al.i32)] + shared[al.convert(186, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(188, al.i32)] = shared[al.convert(188, al.i32)] + shared[al.convert(187, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(189, al.i32)] = shared[al.convert(189, al.i32)] + shared[al.convert(188, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(190, al.i32)] = shared[al.convert(190, al.i32)] + shared[al.convert(189, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(191, al.i32)] = shared[al.convert(191, al.i32)] + shared[al.convert(190, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(192, al.i32)] = shared[al.convert(192, al.i32)] + shared[al.convert(191, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(193, al.i32)] = shared[al.convert(193, al.i32)] + shared[al.convert(192, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(194, al.i32)] = shared[al.convert(194, al.i32)] + shared[al.convert(193, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(195, al.i32)] = shared[al.convert(195, al.i32)] + shared[al.convert(194, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(196, al.i32)] = shared[al.convert(196, al.i32)] + shared[al.convert(195, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(197, al.i32)] = shared[al.convert(197, al.i32)] + shared[al.convert(196, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(198, al.i32)] = shared[al.convert(198, al.i32)] + shared[al.convert(197, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(199, al.i32)] = shared[al.convert(199, al.i32)] + shared[al.convert(198, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(200, al.i32)] = shared[al.convert(200, al.i32)] + shared[al.convert(199, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(201, al.i32)] = shared[al.convert(201, al.i32)] + shared[al.convert(200, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(202, al.i32)] = shared[al.convert(202, al.i32)] + shared[al.convert(201, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(203, al.i32)] = shared[al.convert(203, al.i32)] + shared[al.convert(202, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(204, al.i32)] = shared[al.convert(204, al.i32)] + shared[al.convert(203, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(205, al.i32)] = shared[al.convert(205, al.i32)] + shared[al.convert(204, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(206, al.i32)] = shared[al.convert(206, al.i32)] + shared[al.convert(205, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(207, al.i32)] = shared[al.convert(207, al.i32)] + shared[al.convert(206, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(208, al.i32)] = shared[al.convert(208, al.i32)] + shared[al.convert(207, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(209, al.i32)] = shared[al.convert(209, al.i32)] + shared[al.convert(208, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(210, al.i32)] = shared[al.convert(210, al.i32)] + shared[al.convert(209, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(211, al.i32)] = shared[al.convert(211, al.i32)] + shared[al.convert(210, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(212, al.i32)] = shared[al.convert(212, al.i32)] + shared[al.convert(211, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(213, al.i32)] = shared[al.convert(213, al.i32)] + shared[al.convert(212, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(214, al.i32)] = shared[al.convert(214, al.i32)] + shared[al.convert(213, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(215, al.i32)] = shared[al.convert(215, al.i32)] + shared[al.convert(214, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(216, al.i32)] = shared[al.convert(216, al.i32)] + shared[al.convert(215, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(217, al.i32)] = shared[al.convert(217, al.i32)] + shared[al.convert(216, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(218, al.i32)] = shared[al.convert(218, al.i32)] + shared[al.convert(217, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(219, al.i32)] = shared[al.convert(219, al.i32)] + shared[al.convert(218, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(220, al.i32)] = shared[al.convert(220, al.i32)] + shared[al.convert(219, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(221, al.i32)] = shared[al.convert(221, al.i32)] + shared[al.convert(220, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(222, al.i32)] = shared[al.convert(222, al.i32)] + shared[al.convert(221, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(223, al.i32)] = shared[al.convert(223, al.i32)] + shared[al.convert(222, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(224, al.i32)] = shared[al.convert(224, al.i32)] + shared[al.convert(223, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(225, al.i32)] = shared[al.convert(225, al.i32)] + shared[al.convert(224, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(226, al.i32)] = shared[al.convert(226, al.i32)] + shared[al.convert(225, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(227, al.i32)] = shared[al.convert(227, al.i32)] + shared[al.convert(226, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(228, al.i32)] = shared[al.convert(228, al.i32)] + shared[al.convert(227, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(229, al.i32)] = shared[al.convert(229, al.i32)] + shared[al.convert(228, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(230, al.i32)] = shared[al.convert(230, al.i32)] + shared[al.convert(229, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(231, al.i32)] = shared[al.convert(231, al.i32)] + shared[al.convert(230, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(232, al.i32)] = shared[al.convert(232, al.i32)] + shared[al.convert(231, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(233, al.i32)] = shared[al.convert(233, al.i32)] + shared[al.convert(232, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(234, al.i32)] = shared[al.convert(234, al.i32)] + shared[al.convert(233, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(235, al.i32)] = shared[al.convert(235, al.i32)] + shared[al.convert(234, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(236, al.i32)] = shared[al.convert(236, al.i32)] + shared[al.convert(235, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(237, al.i32)] = shared[al.convert(237, al.i32)] + shared[al.convert(236, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(238, al.i32)] = shared[al.convert(238, al.i32)] + shared[al.convert(237, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(239, al.i32)] = shared[al.convert(239, al.i32)] + shared[al.convert(238, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(240, al.i32)] = shared[al.convert(240, al.i32)] + shared[al.convert(239, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(241, al.i32)] = shared[al.convert(241, al.i32)] + shared[al.convert(240, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(242, al.i32)] = shared[al.convert(242, al.i32)] + shared[al.convert(241, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(243, al.i32)] = shared[al.convert(243, al.i32)] + shared[al.convert(242, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(244, al.i32)] = shared[al.convert(244, al.i32)] + shared[al.convert(243, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(245, al.i32)] = shared[al.convert(245, al.i32)] + shared[al.convert(244, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(246, al.i32)] = shared[al.convert(246, al.i32)] + shared[al.convert(245, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(247, al.i32)] = shared[al.convert(247, al.i32)] + shared[al.convert(246, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(248, al.i32)] = shared[al.convert(248, al.i32)] + shared[al.convert(247, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(249, al.i32)] = shared[al.convert(249, al.i32)] + shared[al.convert(248, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(250, al.i32)] = shared[al.convert(250, al.i32)] + shared[al.convert(249, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(251, al.i32)] = shared[al.convert(251, al.i32)] + shared[al.convert(250, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(252, al.i32)] = shared[al.convert(252, al.i32)] + shared[al.convert(251, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(253, al.i32)] = shared[al.convert(253, al.i32)] + shared[al.convert(252, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(254, al.i32)] = shared[al.convert(254, al.i32)] + shared[al.convert(253, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(255, al.i32)] = shared[al.convert(255, al.i32)] + shared[al.convert(254, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(256, al.i32)] = shared[al.convert(256, al.i32)] + shared[al.convert(255, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(257, al.i32)] = shared[al.convert(257, al.i32)] + shared[al.convert(256, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(258, al.i32)] = shared[al.convert(258, al.i32)] + shared[al.convert(257, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(259, al.i32)] = shared[al.convert(259, al.i32)] + shared[al.convert(258, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(260, al.i32)] = shared[al.convert(260, al.i32)] + shared[al.convert(259, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(261, al.i32)] = shared[al.convert(261, al.i32)] + shared[al.convert(260, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(262, al.i32)] = shared[al.convert(262, al.i32)] + shared[al.convert(261, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(263, al.i32)] = shared[al.convert(263, al.i32)] + shared[al.convert(262, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(264, al.i32)] = shared[al.convert(264, al.i32)] + shared[al.convert(263, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(265, al.i32)] = shared[al.convert(265, al.i32)] + shared[al.convert(264, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(266, al.i32)] = shared[al.convert(266, al.i32)] + shared[al.convert(265, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(267, al.i32)] = shared[al.convert(267, al.i32)] + shared[al.convert(266, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(268, al.i32)] = shared[al.convert(268, al.i32)] + shared[al.convert(267, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(269, al.i32)] = shared[al.convert(269, al.i32)] + shared[al.convert(268, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(270, al.i32)] = shared[al.convert(270, al.i32)] + shared[al.convert(269, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(271, al.i32)] = shared[al.convert(271, al.i32)] + shared[al.convert(270, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(272, al.i32)] = shared[al.convert(272, al.i32)] + shared[al.convert(271, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(273, al.i32)] = shared[al.convert(273, al.i32)] + shared[al.convert(272, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(274, al.i32)] = shared[al.convert(274, al.i32)] + shared[al.convert(273, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(275, al.i32)] = shared[al.convert(275, al.i32)] + shared[al.convert(274, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(276, al.i32)] = shared[al.convert(276, al.i32)] + shared[al.convert(275, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(277, al.i32)] = shared[al.convert(277, al.i32)] + shared[al.convert(276, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(278, al.i32)] = shared[al.convert(278, al.i32)] + shared[al.convert(277, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(279, al.i32)] = shared[al.convert(279, al.i32)] + shared[al.convert(278, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(280, al.i32)] = shared[al.convert(280, al.i32)] + shared[al.convert(279, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(281, al.i32)] = shared[al.convert(281, al.i32)] + shared[al.convert(280, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(282, al.i32)] = shared[al.convert(282, al.i32)] + shared[al.convert(281, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(283, al.i32)] = shared[al.convert(283, al.i32)] + shared[al.convert(282, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(284, al.i32)] = shared[al.convert(284, al.i32)] + shared[al.convert(283, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(285, al.i32)] = shared[al.convert(285, al.i32)] + shared[al.convert(284, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(286, al.i32)] = shared[al.convert(286, al.i32)] + shared[al.convert(285, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(287, al.i32)] = shared[al.convert(287, al.i32)] + shared[al.convert(286, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(288, al.i32)] = shared[al.convert(288, al.i32)] + shared[al.convert(287, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(289, al.i32)] = shared[al.convert(289, al.i32)] + shared[al.convert(288, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(290, al.i32)] = shared[al.convert(290, al.i32)] + shared[al.convert(289, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(291, al.i32)] = shared[al.convert(291, al.i32)] + shared[al.convert(290, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(292, al.i32)] = shared[al.convert(292, al.i32)] + shared[al.convert(291, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(293, al.i32)] = shared[al.convert(293, al.i32)] + shared[al.convert(292, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(294, al.i32)] = shared[al.convert(294, al.i32)] + shared[al.convert(293, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(295, al.i32)] = shared[al.convert(295, al.i32)] + shared[al.convert(294, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(296, al.i32)] = shared[al.convert(296, al.i32)] + shared[al.convert(295, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(297, al.i32)] = shared[al.convert(297, al.i32)] + shared[al.convert(296, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(298, al.i32)] = shared[al.convert(298, al.i32)] + shared[al.convert(297, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(299, al.i32)] = shared[al.convert(299, al.i32)] + shared[al.convert(298, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(300, al.i32)] = shared[al.convert(300, al.i32)] + shared[al.convert(299, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(301, al.i32)] = shared[al.convert(301, al.i32)] + shared[al.convert(300, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(302, al.i32)] = shared[al.convert(302, al.i32)] + shared[al.convert(301, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(303, al.i32)] = shared[al.convert(303, al.i32)] + shared[al.convert(302, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(304, al.i32)] = shared[al.convert(304, al.i32)] + shared[al.convert(303, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(305, al.i32)] = shared[al.convert(305, al.i32)] + shared[al.convert(304, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(306, al.i32)] = shared[al.convert(306, al.i32)] + shared[al.convert(305, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(307, al.i32)] = shared[al.convert(307, al.i32)] + shared[al.convert(306, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(308, al.i32)] = shared[al.convert(308, al.i32)] + shared[al.convert(307, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(309, al.i32)] = shared[al.convert(309, al.i32)] + shared[al.convert(308, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(310, al.i32)] = shared[al.convert(310, al.i32)] + shared[al.convert(309, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(311, al.i32)] = shared[al.convert(311, al.i32)] + shared[al.convert(310, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(312, al.i32)] = shared[al.convert(312, al.i32)] + shared[al.convert(311, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(313, al.i32)] = shared[al.convert(313, al.i32)] + shared[al.convert(312, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(314, al.i32)] = shared[al.convert(314, al.i32)] + shared[al.convert(313, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(315, al.i32)] = shared[al.convert(315, al.i32)] + shared[al.convert(314, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(316, al.i32)] = shared[al.convert(316, al.i32)] + shared[al.convert(315, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(317, al.i32)] = shared[al.convert(317, al.i32)] + shared[al.convert(316, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(318, al.i32)] = shared[al.convert(318, al.i32)] + shared[al.convert(317, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(319, al.i32)] = shared[al.convert(319, al.i32)] + shared[al.convert(318, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(320, al.i32)] = shared[al.convert(320, al.i32)] + shared[al.convert(319, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(321, al.i32)] = shared[al.convert(321, al.i32)] + shared[al.convert(320, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(322, al.i32)] = shared[al.convert(322, al.i32)] + shared[al.convert(321, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(323, al.i32)] = shared[al.convert(323, al.i32)] + shared[al.convert(322, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(324, al.i32)] = shared[al.convert(324, al.i32)] + shared[al.convert(323, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(325, al.i32)] = shared[al.convert(325, al.i32)] + shared[al.convert(324, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(326, al.i32)] = shared[al.convert(326, al.i32)] + shared[al.convert(325, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(327, al.i32)] = shared[al.convert(327, al.i32)] + shared[al.convert(326, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(328, al.i32)] = shared[al.convert(328, al.i32)] + shared[al.convert(327, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(329, al.i32)] = shared[al.convert(329, al.i32)] + shared[al.convert(328, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(330, al.i32)] = shared[al.convert(330, al.i32)] + shared[al.convert(329, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(331, al.i32)] = shared[al.convert(331, al.i32)] + shared[al.convert(330, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(332, al.i32)] = shared[al.convert(332, al.i32)] + shared[al.convert(331, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(333, al.i32)] = shared[al.convert(333, al.i32)] + shared[al.convert(332, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(334, al.i32)] = shared[al.convert(334, al.i32)] + shared[al.convert(333, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(335, al.i32)] = shared[al.convert(335, al.i32)] + shared[al.convert(334, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(336, al.i32)] = shared[al.convert(336, al.i32)] + shared[al.convert(335, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(337, al.i32)] = shared[al.convert(337, al.i32)] + shared[al.convert(336, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(338, al.i32)] = shared[al.convert(338, al.i32)] + shared[al.convert(337, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(339, al.i32)] = shared[al.convert(339, al.i32)] + shared[al.convert(338, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(340, al.i32)] = shared[al.convert(340, al.i32)] + shared[al.convert(339, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(341, al.i32)] = shared[al.convert(341, al.i32)] + shared[al.convert(340, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(342, al.i32)] = shared[al.convert(342, al.i32)] + shared[al.convert(341, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(343, al.i32)] = shared[al.convert(343, al.i32)] + shared[al.convert(342, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(344, al.i32)] = shared[al.convert(344, al.i32)] + shared[al.convert(343, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(345, al.i32)] = shared[al.convert(345, al.i32)] + shared[al.convert(344, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(346, al.i32)] = shared[al.convert(346, al.i32)] + shared[al.convert(345, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(347, al.i32)] = shared[al.convert(347, al.i32)] + shared[al.convert(346, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(348, al.i32)] = shared[al.convert(348, al.i32)] + shared[al.convert(347, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(349, al.i32)] = shared[al.convert(349, al.i32)] + shared[al.convert(348, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(350, al.i32)] = shared[al.convert(350, al.i32)] + shared[al.convert(349, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(351, al.i32)] = shared[al.convert(351, al.i32)] + shared[al.convert(350, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(352, al.i32)] = shared[al.convert(352, al.i32)] + shared[al.convert(351, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(353, al.i32)] = shared[al.convert(353, al.i32)] + shared[al.convert(352, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(354, al.i32)] = shared[al.convert(354, al.i32)] + shared[al.convert(353, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(355, al.i32)] = shared[al.convert(355, al.i32)] + shared[al.convert(354, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(356, al.i32)] = shared[al.convert(356, al.i32)] + shared[al.convert(355, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(357, al.i32)] = shared[al.convert(357, al.i32)] + shared[al.convert(356, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(358, al.i32)] = shared[al.convert(358, al.i32)] + shared[al.convert(357, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(359, al.i32)] = shared[al.convert(359, al.i32)] + shared[al.convert(358, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(360, al.i32)] = shared[al.convert(360, al.i32)] + shared[al.convert(359, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(361, al.i32)] = shared[al.convert(361, al.i32)] + shared[al.convert(360, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(362, al.i32)] = shared[al.convert(362, al.i32)] + shared[al.convert(361, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(363, al.i32)] = shared[al.convert(363, al.i32)] + shared[al.convert(362, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(364, al.i32)] = shared[al.convert(364, al.i32)] + shared[al.convert(363, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(365, al.i32)] = shared[al.convert(365, al.i32)] + shared[al.convert(364, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(366, al.i32)] = shared[al.convert(366, al.i32)] + shared[al.convert(365, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(367, al.i32)] = shared[al.convert(367, al.i32)] + shared[al.convert(366, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(368, al.i32)] = shared[al.convert(368, al.i32)] + shared[al.convert(367, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(369, al.i32)] = shared[al.convert(369, al.i32)] + shared[al.convert(368, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(370, al.i32)] = shared[al.convert(370, al.i32)] + shared[al.convert(369, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(371, al.i32)] = shared[al.convert(371, al.i32)] + shared[al.convert(370, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(372, al.i32)] = shared[al.convert(372, al.i32)] + shared[al.convert(371, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(373, al.i32)] = shared[al.convert(373, al.i32)] + shared[al.convert(372, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(374, al.i32)] = shared[al.convert(374, al.i32)] + shared[al.convert(373, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(375, al.i32)] = shared[al.convert(375, al.i32)] + shared[al.convert(374, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(376, al.i32)] = shared[al.convert(376, al.i32)] + shared[al.convert(375, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(377, al.i32)] = shared[al.convert(377, al.i32)] + shared[al.convert(376, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(378, al.i32)] = shared[al.convert(378, al.i32)] + shared[al.convert(377, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(379, al.i32)] = shared[al.convert(379, al.i32)] + shared[al.convert(378, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(380, al.i32)] = shared[al.convert(380, al.i32)] + shared[al.convert(379, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(381, al.i32)] = shared[al.convert(381, al.i32)] + shared[al.convert(380, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(382, al.i32)] = shared[al.convert(382, al.i32)] + shared[al.convert(381, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(383, al.i32)] = shared[al.convert(383, al.i32)] + shared[al.convert(382, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(384, al.i32)] = shared[al.convert(384, al.i32)] + shared[al.convert(383, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(385, al.i32)] = shared[al.convert(385, al.i32)] + shared[al.convert(384, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(386, al.i32)] = shared[al.convert(386, al.i32)] + shared[al.convert(385, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(387, al.i32)] = shared[al.convert(387, al.i32)] + shared[al.convert(386, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(388, al.i32)] = shared[al.convert(388, al.i32)] + shared[al.convert(387, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(389, al.i32)] = shared[al.convert(389, al.i32)] + shared[al.convert(388, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(390, al.i32)] = shared[al.convert(390, al.i32)] + shared[al.convert(389, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(391, al.i32)] = shared[al.convert(391, al.i32)] + shared[al.convert(390, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(392, al.i32)] = shared[al.convert(392, al.i32)] + shared[al.convert(391, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(393, al.i32)] = shared[al.convert(393, al.i32)] + shared[al.convert(392, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(394, al.i32)] = shared[al.convert(394, al.i32)] + shared[al.convert(393, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(395, al.i32)] = shared[al.convert(395, al.i32)] + shared[al.convert(394, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(396, al.i32)] = shared[al.convert(396, al.i32)] + shared[al.convert(395, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(397, al.i32)] = shared[al.convert(397, al.i32)] + shared[al.convert(396, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(398, al.i32)] = shared[al.convert(398, al.i32)] + shared[al.convert(397, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(399, al.i32)] = shared[al.convert(399, al.i32)] + shared[al.convert(398, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(400, al.i32)] = shared[al.convert(400, al.i32)] + shared[al.convert(399, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(401, al.i32)] = shared[al.convert(401, al.i32)] + shared[al.convert(400, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(402, al.i32)] = shared[al.convert(402, al.i32)] + shared[al.convert(401, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(403, al.i32)] = shared[al.convert(403, al.i32)] + shared[al.convert(402, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(404, al.i32)] = shared[al.convert(404, al.i32)] + shared[al.convert(403, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(405, al.i32)] = shared[al.convert(405, al.i32)] + shared[al.convert(404, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(406, al.i32)] = shared[al.convert(406, al.i32)] + shared[al.convert(405, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(407, al.i32)] = shared[al.convert(407, al.i32)] + shared[al.convert(406, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(408, al.i32)] = shared[al.convert(408, al.i32)] + shared[al.convert(407, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(409, al.i32)] = shared[al.convert(409, al.i32)] + shared[al.convert(408, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(410, al.i32)] = shared[al.convert(410, al.i32)] + shared[al.convert(409, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(411, al.i32)] = shared[al.convert(411, al.i32)] + shared[al.convert(410, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(412, al.i32)] = shared[al.convert(412, al.i32)] + shared[al.convert(411, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(413, al.i32)] = shared[al.convert(413, al.i32)] + shared[al.convert(412, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(414, al.i32)] = shared[al.convert(414, al.i32)] + shared[al.convert(413, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(415, al.i32)] = shared[al.convert(415, al.i32)] + shared[al.convert(414, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(416, al.i32)] = shared[al.convert(416, al.i32)] + shared[al.convert(415, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(417, al.i32)] = shared[al.convert(417, al.i32)] + shared[al.convert(416, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(418, al.i32)] = shared[al.convert(418, al.i32)] + shared[al.convert(417, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(419, al.i32)] = shared[al.convert(419, al.i32)] + shared[al.convert(418, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(420, al.i32)] = shared[al.convert(420, al.i32)] + shared[al.convert(419, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(421, al.i32)] = shared[al.convert(421, al.i32)] + shared[al.convert(420, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(422, al.i32)] = shared[al.convert(422, al.i32)] + shared[al.convert(421, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(423, al.i32)] = shared[al.convert(423, al.i32)] + shared[al.convert(422, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(424, al.i32)] = shared[al.convert(424, al.i32)] + shared[al.convert(423, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(425, al.i32)] = shared[al.convert(425, al.i32)] + shared[al.convert(424, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(426, al.i32)] = shared[al.convert(426, al.i32)] + shared[al.convert(425, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(427, al.i32)] = shared[al.convert(427, al.i32)] + shared[al.convert(426, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(428, al.i32)] = shared[al.convert(428, al.i32)] + shared[al.convert(427, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(429, al.i32)] = shared[al.convert(429, al.i32)] + shared[al.convert(428, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(430, al.i32)] = shared[al.convert(430, al.i32)] + shared[al.convert(429, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(431, al.i32)] = shared[al.convert(431, al.i32)] + shared[al.convert(430, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(432, al.i32)] = shared[al.convert(432, al.i32)] + shared[al.convert(431, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(433, al.i32)] = shared[al.convert(433, al.i32)] + shared[al.convert(432, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(434, al.i32)] = shared[al.convert(434, al.i32)] + shared[al.convert(433, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(435, al.i32)] = shared[al.convert(435, al.i32)] + shared[al.convert(434, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(436, al.i32)] = shared[al.convert(436, al.i32)] + shared[al.convert(435, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(437, al.i32)] = shared[al.convert(437, al.i32)] + shared[al.convert(436, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(438, al.i32)] = shared[al.convert(438, al.i32)] + shared[al.convert(437, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(439, al.i32)] = shared[al.convert(439, al.i32)] + shared[al.convert(438, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(440, al.i32)] = shared[al.convert(440, al.i32)] + shared[al.convert(439, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(441, al.i32)] = shared[al.convert(441, al.i32)] + shared[al.convert(440, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(442, al.i32)] = shared[al.convert(442, al.i32)] + shared[al.convert(441, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(443, al.i32)] = shared[al.convert(443, al.i32)] + shared[al.convert(442, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(444, al.i32)] = shared[al.convert(444, al.i32)] + shared[al.convert(443, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(445, al.i32)] = shared[al.convert(445, al.i32)] + shared[al.convert(444, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(446, al.i32)] = shared[al.convert(446, al.i32)] + shared[al.convert(445, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(447, al.i32)] = shared[al.convert(447, al.i32)] + shared[al.convert(446, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(448, al.i32)] = shared[al.convert(448, al.i32)] + shared[al.convert(447, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(449, al.i32)] = shared[al.convert(449, al.i32)] + shared[al.convert(448, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(450, al.i32)] = shared[al.convert(450, al.i32)] + shared[al.convert(449, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(451, al.i32)] = shared[al.convert(451, al.i32)] + shared[al.convert(450, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(452, al.i32)] = shared[al.convert(452, al.i32)] + shared[al.convert(451, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(453, al.i32)] = shared[al.convert(453, al.i32)] + shared[al.convert(452, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(454, al.i32)] = shared[al.convert(454, al.i32)] + shared[al.convert(453, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(455, al.i32)] = shared[al.convert(455, al.i32)] + shared[al.convert(454, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(456, al.i32)] = shared[al.convert(456, al.i32)] + shared[al.convert(455, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(457, al.i32)] = shared[al.convert(457, al.i32)] + shared[al.convert(456, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(458, al.i32)] = shared[al.convert(458, al.i32)] + shared[al.convert(457, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(459, al.i32)] = shared[al.convert(459, al.i32)] + shared[al.convert(458, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(460, al.i32)] = shared[al.convert(460, al.i32)] + shared[al.convert(459, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(461, al.i32)] = shared[al.convert(461, al.i32)] + shared[al.convert(460, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(462, al.i32)] = shared[al.convert(462, al.i32)] + shared[al.convert(461, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(463, al.i32)] = shared[al.convert(463, al.i32)] + shared[al.convert(462, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(464, al.i32)] = shared[al.convert(464, al.i32)] + shared[al.convert(463, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(465, al.i32)] = shared[al.convert(465, al.i32)] + shared[al.convert(464, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(466, al.i32)] = shared[al.convert(466, al.i32)] + shared[al.convert(465, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(467, al.i32)] = shared[al.convert(467, al.i32)] + shared[al.convert(466, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(468, al.i32)] = shared[al.convert(468, al.i32)] + shared[al.convert(467, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(469, al.i32)] = shared[al.convert(469, al.i32)] + shared[al.convert(468, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(470, al.i32)] = shared[al.convert(470, al.i32)] + shared[al.convert(469, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(471, al.i32)] = shared[al.convert(471, al.i32)] + shared[al.convert(470, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(472, al.i32)] = shared[al.convert(472, al.i32)] + shared[al.convert(471, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(473, al.i32)] = shared[al.convert(473, al.i32)] + shared[al.convert(472, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(474, al.i32)] = shared[al.convert(474, al.i32)] + shared[al.convert(473, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(475, al.i32)] = shared[al.convert(475, al.i32)] + shared[al.convert(474, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(476, al.i32)] = shared[al.convert(476, al.i32)] + shared[al.convert(475, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(477, al.i32)] = shared[al.convert(477, al.i32)] + shared[al.convert(476, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(478, al.i32)] = shared[al.convert(478, al.i32)] + shared[al.convert(477, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(479, al.i32)] = shared[al.convert(479, al.i32)] + shared[al.convert(478, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(480, al.i32)] = shared[al.convert(480, al.i32)] + shared[al.convert(479, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(481, al.i32)] = shared[al.convert(481, al.i32)] + shared[al.convert(480, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(482, al.i32)] = shared[al.convert(482, al.i32)] + shared[al.convert(481, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(483, al.i32)] = shared[al.convert(483, al.i32)] + shared[al.convert(482, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(484, al.i32)] = shared[al.convert(484, al.i32)] + shared[al.convert(483, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(485, al.i32)] = shared[al.convert(485, al.i32)] + shared[al.convert(484, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(486, al.i32)] = shared[al.convert(486, al.i32)] + shared[al.convert(485, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(487, al.i32)] = shared[al.convert(487, al.i32)] + shared[al.convert(486, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(488, al.i32)] = shared[al.convert(488, al.i32)] + shared[al.convert(487, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(489, al.i32)] = shared[al.convert(489, al.i32)] + shared[al.convert(488, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(490, al.i32)] = shared[al.convert(490, al.i32)] + shared[al.convert(489, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(491, al.i32)] = shared[al.convert(491, al.i32)] + shared[al.convert(490, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(492, al.i32)] = shared[al.convert(492, al.i32)] + shared[al.convert(491, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(493, al.i32)] = shared[al.convert(493, al.i32)] + shared[al.convert(492, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(494, al.i32)] = shared[al.convert(494, al.i32)] + shared[al.convert(493, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(495, al.i32)] = shared[al.convert(495, al.i32)] + shared[al.convert(494, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(496, al.i32)] = shared[al.convert(496, al.i32)] + shared[al.convert(495, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(497, al.i32)] = shared[al.convert(497, al.i32)] + shared[al.convert(496, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(498, al.i32)] = shared[al.convert(498, al.i32)] + shared[al.convert(497, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(499, al.i32)] = shared[al.convert(499, al.i32)] + shared[al.convert(498, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(500, al.i32)] = shared[al.convert(500, al.i32)] + shared[al.convert(499, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(501, al.i32)] = shared[al.convert(501, al.i32)] + shared[al.convert(500, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(502, al.i32)] = shared[al.convert(502, al.i32)] + shared[al.convert(501, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(503, al.i32)] = shared[al.convert(503, al.i32)] + shared[al.convert(502, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(504, al.i32)] = shared[al.convert(504, al.i32)] + shared[al.convert(503, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(505, al.i32)] = shared[al.convert(505, al.i32)] + shared[al.convert(504, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(506, al.i32)] = shared[al.convert(506, al.i32)] + shared[al.convert(505, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(507, al.i32)] = shared[al.convert(507, al.i32)] + shared[al.convert(506, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(508, al.i32)] = shared[al.convert(508, al.i32)] + shared[al.convert(507, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(509, al.i32)] = shared[al.convert(509, al.i32)] + shared[al.convert(508, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(510, al.i32)] = shared[al.convert(510, al.i32)] + shared[al.convert(509, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(511, al.i32)] = shared[al.convert(511, al.i32)] + shared[al.convert(510, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(512, al.i32)] = shared[al.convert(512, al.i32)] + shared[al.convert(511, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(513, al.i32)] = shared[al.convert(513, al.i32)] + shared[al.convert(512, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(514, al.i32)] = shared[al.convert(514, al.i32)] + shared[al.convert(513, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(515, al.i32)] = shared[al.convert(515, al.i32)] + shared[al.convert(514, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(516, al.i32)] = shared[al.convert(516, al.i32)] + shared[al.convert(515, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(517, al.i32)] = shared[al.convert(517, al.i32)] + shared[al.convert(516, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(518, al.i32)] = shared[al.convert(518, al.i32)] + shared[al.convert(517, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(519, al.i32)] = shared[al.convert(519, al.i32)] + shared[al.convert(518, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(520, al.i32)] = shared[al.convert(520, al.i32)] + shared[al.convert(519, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(521, al.i32)] = shared[al.convert(521, al.i32)] + shared[al.convert(520, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(522, al.i32)] = shared[al.convert(522, al.i32)] + shared[al.convert(521, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(523, al.i32)] = shared[al.convert(523, al.i32)] + shared[al.convert(522, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(524, al.i32)] = shared[al.convert(524, al.i32)] + shared[al.convert(523, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(525, al.i32)] = shared[al.convert(525, al.i32)] + shared[al.convert(524, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(526, al.i32)] = shared[al.convert(526, al.i32)] + shared[al.convert(525, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(527, al.i32)] = shared[al.convert(527, al.i32)] + shared[al.convert(526, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(528, al.i32)] = shared[al.convert(528, al.i32)] + shared[al.convert(527, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(529, al.i32)] = shared[al.convert(529, al.i32)] + shared[al.convert(528, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(530, al.i32)] = shared[al.convert(530, al.i32)] + shared[al.convert(529, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(531, al.i32)] = shared[al.convert(531, al.i32)] + shared[al.convert(530, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(532, al.i32)] = shared[al.convert(532, al.i32)] + shared[al.convert(531, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(533, al.i32)] = shared[al.convert(533, al.i32)] + shared[al.convert(532, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(534, al.i32)] = shared[al.convert(534, al.i32)] + shared[al.convert(533, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(535, al.i32)] = shared[al.convert(535, al.i32)] + shared[al.convert(534, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(536, al.i32)] = shared[al.convert(536, al.i32)] + shared[al.convert(535, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(537, al.i32)] = shared[al.convert(537, al.i32)] + shared[al.convert(536, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(538, al.i32)] = shared[al.convert(538, al.i32)] + shared[al.convert(537, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(539, al.i32)] = shared[al.convert(539, al.i32)] + shared[al.convert(538, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(540, al.i32)] = shared[al.convert(540, al.i32)] + shared[al.convert(539, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(541, al.i32)] = shared[al.convert(541, al.i32)] + shared[al.convert(540, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(542, al.i32)] = shared[al.convert(542, al.i32)] + shared[al.convert(541, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(543, al.i32)] = shared[al.convert(543, al.i32)] + shared[al.convert(542, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(544, al.i32)] = shared[al.convert(544, al.i32)] + shared[al.convert(543, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(545, al.i32)] = shared[al.convert(545, al.i32)] + shared[al.convert(544, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(546, al.i32)] = shared[al.convert(546, al.i32)] + shared[al.convert(545, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(547, al.i32)] = shared[al.convert(547, al.i32)] + shared[al.convert(546, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(548, al.i32)] = shared[al.convert(548, al.i32)] + shared[al.convert(547, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(549, al.i32)] = shared[al.convert(549, al.i32)] + shared[al.convert(548, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(550, al.i32)] = shared[al.convert(550, al.i32)] + shared[al.convert(549, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(551, al.i32)] = shared[al.convert(551, al.i32)] + shared[al.convert(550, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(552, al.i32)] = shared[al.convert(552, al.i32)] + shared[al.convert(551, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(553, al.i32)] = shared[al.convert(553, al.i32)] + shared[al.convert(552, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(554, al.i32)] = shared[al.convert(554, al.i32)] + shared[al.convert(553, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(555, al.i32)] = shared[al.convert(555, al.i32)] + shared[al.convert(554, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(556, al.i32)] = shared[al.convert(556, al.i32)] + shared[al.convert(555, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(557, al.i32)] = shared[al.convert(557, al.i32)] + shared[al.convert(556, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(558, al.i32)] = shared[al.convert(558, al.i32)] + shared[al.convert(557, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(559, al.i32)] = shared[al.convert(559, al.i32)] + shared[al.convert(558, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(560, al.i32)] = shared[al.convert(560, al.i32)] + shared[al.convert(559, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(561, al.i32)] = shared[al.convert(561, al.i32)] + shared[al.convert(560, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(562, al.i32)] = shared[al.convert(562, al.i32)] + shared[al.convert(561, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(563, al.i32)] = shared[al.convert(563, al.i32)] + shared[al.convert(562, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(564, al.i32)] = shared[al.convert(564, al.i32)] + shared[al.convert(563, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(565, al.i32)] = shared[al.convert(565, al.i32)] + shared[al.convert(564, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(566, al.i32)] = shared[al.convert(566, al.i32)] + shared[al.convert(565, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(567, al.i32)] = shared[al.convert(567, al.i32)] + shared[al.convert(566, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(568, al.i32)] = shared[al.convert(568, al.i32)] + shared[al.convert(567, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(569, al.i32)] = shared[al.convert(569, al.i32)] + shared[al.convert(568, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(570, al.i32)] = shared[al.convert(570, al.i32)] + shared[al.convert(569, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(571, al.i32)] = shared[al.convert(571, al.i32)] + shared[al.convert(570, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(572, al.i32)] = shared[al.convert(572, al.i32)] + shared[al.convert(571, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(573, al.i32)] = shared[al.convert(573, al.i32)] + shared[al.convert(572, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(574, al.i32)] = shared[al.convert(574, al.i32)] + shared[al.convert(573, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(575, al.i32)] = shared[al.convert(575, al.i32)] + shared[al.convert(574, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(576, al.i32)] = shared[al.convert(576, al.i32)] + shared[al.convert(575, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(577, al.i32)] = shared[al.convert(577, al.i32)] + shared[al.convert(576, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(578, al.i32)] = shared[al.convert(578, al.i32)] + shared[al.convert(577, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(579, al.i32)] = shared[al.convert(579, al.i32)] + shared[al.convert(578, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(580, al.i32)] = shared[al.convert(580, al.i32)] + shared[al.convert(579, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(581, al.i32)] = shared[al.convert(581, al.i32)] + shared[al.convert(580, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(582, al.i32)] = shared[al.convert(582, al.i32)] + shared[al.convert(581, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(583, al.i32)] = shared[al.convert(583, al.i32)] + shared[al.convert(582, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(584, al.i32)] = shared[al.convert(584, al.i32)] + shared[al.convert(583, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(585, al.i32)] = shared[al.convert(585, al.i32)] + shared[al.convert(584, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(586, al.i32)] = shared[al.convert(586, al.i32)] + shared[al.convert(585, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(587, al.i32)] = shared[al.convert(587, al.i32)] + shared[al.convert(586, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(588, al.i32)] = shared[al.convert(588, al.i32)] + shared[al.convert(587, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(589, al.i32)] = shared[al.convert(589, al.i32)] + shared[al.convert(588, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(590, al.i32)] = shared[al.convert(590, al.i32)] + shared[al.convert(589, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(591, al.i32)] = shared[al.convert(591, al.i32)] + shared[al.convert(590, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(592, al.i32)] = shared[al.convert(592, al.i32)] + shared[al.convert(591, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(593, al.i32)] = shared[al.convert(593, al.i32)] + shared[al.convert(592, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(594, al.i32)] = shared[al.convert(594, al.i32)] + shared[al.convert(593, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(595, al.i32)] = shared[al.convert(595, al.i32)] + shared[al.convert(594, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(596, al.i32)] = shared[al.convert(596, al.i32)] + shared[al.convert(595, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(597, al.i32)] = shared[al.convert(597, al.i32)] + shared[al.convert(596, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(598, al.i32)] = shared[al.convert(598, al.i32)] + shared[al.convert(597, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(599, al.i32)] = shared[al.convert(599, al.i32)] + shared[al.convert(598, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(600, al.i32)] = shared[al.convert(600, al.i32)] + shared[al.convert(599, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(601, al.i32)] = shared[al.convert(601, al.i32)] + shared[al.convert(600, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(602, al.i32)] = shared[al.convert(602, al.i32)] + shared[al.convert(601, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(603, al.i32)] = shared[al.convert(603, al.i32)] + shared[al.convert(602, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(604, al.i32)] = shared[al.convert(604, al.i32)] + shared[al.convert(603, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(605, al.i32)] = shared[al.convert(605, al.i32)] + shared[al.convert(604, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(606, al.i32)] = shared[al.convert(606, al.i32)] + shared[al.convert(605, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(607, al.i32)] = shared[al.convert(607, al.i32)] + shared[al.convert(606, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(608, al.i32)] = shared[al.convert(608, al.i32)] + shared[al.convert(607, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(609, al.i32)] = shared[al.convert(609, al.i32)] + shared[al.convert(608, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(610, al.i32)] = shared[al.convert(610, al.i32)] + shared[al.convert(609, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(611, al.i32)] = shared[al.convert(611, al.i32)] + shared[al.convert(610, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(612, al.i32)] = shared[al.convert(612, al.i32)] + shared[al.convert(611, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(613, al.i32)] = shared[al.convert(613, al.i32)] + shared[al.convert(612, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(614, al.i32)] = shared[al.convert(614, al.i32)] + shared[al.convert(613, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(615, al.i32)] = shared[al.convert(615, al.i32)] + shared[al.convert(614, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(616, al.i32)] = shared[al.convert(616, al.i32)] + shared[al.convert(615, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(617, al.i32)] = shared[al.convert(617, al.i32)] + shared[al.convert(616, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(618, al.i32)] = shared[al.convert(618, al.i32)] + shared[al.convert(617, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(619, al.i32)] = shared[al.convert(619, al.i32)] + shared[al.convert(618, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(620, al.i32)] = shared[al.convert(620, al.i32)] + shared[al.convert(619, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(621, al.i32)] = shared[al.convert(621, al.i32)] + shared[al.convert(620, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(622, al.i32)] = shared[al.convert(622, al.i32)] + shared[al.convert(621, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(623, al.i32)] = shared[al.convert(623, al.i32)] + shared[al.convert(622, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(624, al.i32)] = shared[al.convert(624, al.i32)] + shared[al.convert(623, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(625, al.i32)] = shared[al.convert(625, al.i32)] + shared[al.convert(624, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(626, al.i32)] = shared[al.convert(626, al.i32)] + shared[al.convert(625, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(627, al.i32)] = shared[al.convert(627, al.i32)] + shared[al.convert(626, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(628, al.i32)] = shared[al.convert(628, al.i32)] + shared[al.convert(627, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(629, al.i32)] = shared[al.convert(629, al.i32)] + shared[al.convert(628, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(630, al.i32)] = shared[al.convert(630, al.i32)] + shared[al.convert(629, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(631, al.i32)] = shared[al.convert(631, al.i32)] + shared[al.convert(630, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(632, al.i32)] = shared[al.convert(632, al.i32)] + shared[al.convert(631, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(633, al.i32)] = shared[al.convert(633, al.i32)] + shared[al.convert(632, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(634, al.i32)] = shared[al.convert(634, al.i32)] + shared[al.convert(633, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(635, al.i32)] = shared[al.convert(635, al.i32)] + shared[al.convert(634, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(636, al.i32)] = shared[al.convert(636, al.i32)] + shared[al.convert(635, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(637, al.i32)] = shared[al.convert(637, al.i32)] + shared[al.convert(636, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(638, al.i32)] = shared[al.convert(638, al.i32)] + shared[al.convert(637, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(639, al.i32)] = shared[al.convert(639, al.i32)] + shared[al.convert(638, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(640, al.i32)] = shared[al.convert(640, al.i32)] + shared[al.convert(639, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(641, al.i32)] = shared[al.convert(641, al.i32)] + shared[al.convert(640, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(642, al.i32)] = shared[al.convert(642, al.i32)] + shared[al.convert(641, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(643, al.i32)] = shared[al.convert(643, al.i32)] + shared[al.convert(642, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(644, al.i32)] = shared[al.convert(644, al.i32)] + shared[al.convert(643, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(645, al.i32)] = shared[al.convert(645, al.i32)] + shared[al.convert(644, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(646, al.i32)] = shared[al.convert(646, al.i32)] + shared[al.convert(645, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(647, al.i32)] = shared[al.convert(647, al.i32)] + shared[al.convert(646, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(648, al.i32)] = shared[al.convert(648, al.i32)] + shared[al.convert(647, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(649, al.i32)] = shared[al.convert(649, al.i32)] + shared[al.convert(648, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(650, al.i32)] = shared[al.convert(650, al.i32)] + shared[al.convert(649, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(651, al.i32)] = shared[al.convert(651, al.i32)] + shared[al.convert(650, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(652, al.i32)] = shared[al.convert(652, al.i32)] + shared[al.convert(651, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(653, al.i32)] = shared[al.convert(653, al.i32)] + shared[al.convert(652, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(654, al.i32)] = shared[al.convert(654, al.i32)] + shared[al.convert(653, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(655, al.i32)] = shared[al.convert(655, al.i32)] + shared[al.convert(654, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(656, al.i32)] = shared[al.convert(656, al.i32)] + shared[al.convert(655, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(657, al.i32)] = shared[al.convert(657, al.i32)] + shared[al.convert(656, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(658, al.i32)] = shared[al.convert(658, al.i32)] + shared[al.convert(657, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(659, al.i32)] = shared[al.convert(659, al.i32)] + shared[al.convert(658, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(660, al.i32)] = shared[al.convert(660, al.i32)] + shared[al.convert(659, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(661, al.i32)] = shared[al.convert(661, al.i32)] + shared[al.convert(660, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(662, al.i32)] = shared[al.convert(662, al.i32)] + shared[al.convert(661, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(663, al.i32)] = shared[al.convert(663, al.i32)] + shared[al.convert(662, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(664, al.i32)] = shared[al.convert(664, al.i32)] + shared[al.convert(663, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(665, al.i32)] = shared[al.convert(665, al.i32)] + shared[al.convert(664, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(666, al.i32)] = shared[al.convert(666, al.i32)] + shared[al.convert(665, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(667, al.i32)] = shared[al.convert(667, al.i32)] + shared[al.convert(666, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(668, al.i32)] = shared[al.convert(668, al.i32)] + shared[al.convert(667, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(669, al.i32)] = shared[al.convert(669, al.i32)] + shared[al.convert(668, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(670, al.i32)] = shared[al.convert(670, al.i32)] + shared[al.convert(669, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(671, al.i32)] = shared[al.convert(671, al.i32)] + shared[al.convert(670, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(672, al.i32)] = shared[al.convert(672, al.i32)] + shared[al.convert(671, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(673, al.i32)] = shared[al.convert(673, al.i32)] + shared[al.convert(672, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(674, al.i32)] = shared[al.convert(674, al.i32)] + shared[al.convert(673, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(675, al.i32)] = shared[al.convert(675, al.i32)] + shared[al.convert(674, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(676, al.i32)] = shared[al.convert(676, al.i32)] + shared[al.convert(675, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(677, al.i32)] = shared[al.convert(677, al.i32)] + shared[al.convert(676, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(678, al.i32)] = shared[al.convert(678, al.i32)] + shared[al.convert(677, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(679, al.i32)] = shared[al.convert(679, al.i32)] + shared[al.convert(678, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(680, al.i32)] = shared[al.convert(680, al.i32)] + shared[al.convert(679, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(681, al.i32)] = shared[al.convert(681, al.i32)] + shared[al.convert(680, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(682, al.i32)] = shared[al.convert(682, al.i32)] + shared[al.convert(681, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(683, al.i32)] = shared[al.convert(683, al.i32)] + shared[al.convert(682, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(684, al.i32)] = shared[al.convert(684, al.i32)] + shared[al.convert(683, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(685, al.i32)] = shared[al.convert(685, al.i32)] + shared[al.convert(684, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(686, al.i32)] = shared[al.convert(686, al.i32)] + shared[al.convert(685, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(687, al.i32)] = shared[al.convert(687, al.i32)] + shared[al.convert(686, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(688, al.i32)] = shared[al.convert(688, al.i32)] + shared[al.convert(687, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(689, al.i32)] = shared[al.convert(689, al.i32)] + shared[al.convert(688, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(690, al.i32)] = shared[al.convert(690, al.i32)] + shared[al.convert(689, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(691, al.i32)] = shared[al.convert(691, al.i32)] + shared[al.convert(690, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(692, al.i32)] = shared[al.convert(692, al.i32)] + shared[al.convert(691, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(693, al.i32)] = shared[al.convert(693, al.i32)] + shared[al.convert(692, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(694, al.i32)] = shared[al.convert(694, al.i32)] + shared[al.convert(693, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(695, al.i32)] = shared[al.convert(695, al.i32)] + shared[al.convert(694, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(696, al.i32)] = shared[al.convert(696, al.i32)] + shared[al.convert(695, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(697, al.i32)] = shared[al.convert(697, al.i32)] + shared[al.convert(696, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(698, al.i32)] = shared[al.convert(698, al.i32)] + shared[al.convert(697, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(699, al.i32)] = shared[al.convert(699, al.i32)] + shared[al.convert(698, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(700, al.i32)] = shared[al.convert(700, al.i32)] + shared[al.convert(699, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(701, al.i32)] = shared[al.convert(701, al.i32)] + shared[al.convert(700, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(702, al.i32)] = shared[al.convert(702, al.i32)] + shared[al.convert(701, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(703, al.i32)] = shared[al.convert(703, al.i32)] + shared[al.convert(702, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(704, al.i32)] = shared[al.convert(704, al.i32)] + shared[al.convert(703, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(705, al.i32)] = shared[al.convert(705, al.i32)] + shared[al.convert(704, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(706, al.i32)] = shared[al.convert(706, al.i32)] + shared[al.convert(705, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(707, al.i32)] = shared[al.convert(707, al.i32)] + shared[al.convert(706, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(708, al.i32)] = shared[al.convert(708, al.i32)] + shared[al.convert(707, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(709, al.i32)] = shared[al.convert(709, al.i32)] + shared[al.convert(708, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(710, al.i32)] = shared[al.convert(710, al.i32)] + shared[al.convert(709, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(711, al.i32)] = shared[al.convert(711, al.i32)] + shared[al.convert(710, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(712, al.i32)] = shared[al.convert(712, al.i32)] + shared[al.convert(711, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(713, al.i32)] = shared[al.convert(713, al.i32)] + shared[al.convert(712, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(714, al.i32)] = shared[al.convert(714, al.i32)] + shared[al.convert(713, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(715, al.i32)] = shared[al.convert(715, al.i32)] + shared[al.convert(714, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(716, al.i32)] = shared[al.convert(716, al.i32)] + shared[al.convert(715, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(717, al.i32)] = shared[al.convert(717, al.i32)] + shared[al.convert(716, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(718, al.i32)] = shared[al.convert(718, al.i32)] + shared[al.convert(717, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(719, al.i32)] = shared[al.convert(719, al.i32)] + shared[al.convert(718, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(720, al.i32)] = shared[al.convert(720, al.i32)] + shared[al.convert(719, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(721, al.i32)] = shared[al.convert(721, al.i32)] + shared[al.convert(720, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(722, al.i32)] = shared[al.convert(722, al.i32)] + shared[al.convert(721, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(723, al.i32)] = shared[al.convert(723, al.i32)] + shared[al.convert(722, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(724, al.i32)] = shared[al.convert(724, al.i32)] + shared[al.convert(723, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(725, al.i32)] = shared[al.convert(725, al.i32)] + shared[al.convert(724, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(726, al.i32)] = shared[al.convert(726, al.i32)] + shared[al.convert(725, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(727, al.i32)] = shared[al.convert(727, al.i32)] + shared[al.convert(726, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(728, al.i32)] = shared[al.convert(728, al.i32)] + shared[al.convert(727, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(729, al.i32)] = shared[al.convert(729, al.i32)] + shared[al.convert(728, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(730, al.i32)] = shared[al.convert(730, al.i32)] + shared[al.convert(729, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(731, al.i32)] = shared[al.convert(731, al.i32)] + shared[al.convert(730, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(732, al.i32)] = shared[al.convert(732, al.i32)] + shared[al.convert(731, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(733, al.i32)] = shared[al.convert(733, al.i32)] + shared[al.convert(732, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(734, al.i32)] = shared[al.convert(734, al.i32)] + shared[al.convert(733, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(735, al.i32)] = shared[al.convert(735, al.i32)] + shared[al.convert(734, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(736, al.i32)] = shared[al.convert(736, al.i32)] + shared[al.convert(735, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(737, al.i32)] = shared[al.convert(737, al.i32)] + shared[al.convert(736, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(738, al.i32)] = shared[al.convert(738, al.i32)] + shared[al.convert(737, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(739, al.i32)] = shared[al.convert(739, al.i32)] + shared[al.convert(738, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(740, al.i32)] = shared[al.convert(740, al.i32)] + shared[al.convert(739, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(741, al.i32)] = shared[al.convert(741, al.i32)] + shared[al.convert(740, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(742, al.i32)] = shared[al.convert(742, al.i32)] + shared[al.convert(741, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(743, al.i32)] = shared[al.convert(743, al.i32)] + shared[al.convert(742, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(744, al.i32)] = shared[al.convert(744, al.i32)] + shared[al.convert(743, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(745, al.i32)] = shared[al.convert(745, al.i32)] + shared[al.convert(744, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(746, al.i32)] = shared[al.convert(746, al.i32)] + shared[al.convert(745, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(747, al.i32)] = shared[al.convert(747, al.i32)] + shared[al.convert(746, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(748, al.i32)] = shared[al.convert(748, al.i32)] + shared[al.convert(747, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(749, al.i32)] = shared[al.convert(749, al.i32)] + shared[al.convert(748, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(750, al.i32)] = shared[al.convert(750, al.i32)] + shared[al.convert(749, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(751, al.i32)] = shared[al.convert(751, al.i32)] + shared[al.convert(750, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(752, al.i32)] = shared[al.convert(752, al.i32)] + shared[al.convert(751, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(753, al.i32)] = shared[al.convert(753, al.i32)] + shared[al.convert(752, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(754, al.i32)] = shared[al.convert(754, al.i32)] + shared[al.convert(753, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(755, al.i32)] = shared[al.convert(755, al.i32)] + shared[al.convert(754, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(756, al.i32)] = shared[al.convert(756, al.i32)] + shared[al.convert(755, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(757, al.i32)] = shared[al.convert(757, al.i32)] + shared[al.convert(756, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(758, al.i32)] = shared[al.convert(758, al.i32)] + shared[al.convert(757, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(759, al.i32)] = shared[al.convert(759, al.i32)] + shared[al.convert(758, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(760, al.i32)] = shared[al.convert(760, al.i32)] + shared[al.convert(759, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(761, al.i32)] = shared[al.convert(761, al.i32)] + shared[al.convert(760, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(762, al.i32)] = shared[al.convert(762, al.i32)] + shared[al.convert(761, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(763, al.i32)] = shared[al.convert(763, al.i32)] + shared[al.convert(762, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(764, al.i32)] = shared[al.convert(764, al.i32)] + shared[al.convert(763, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(765, al.i32)] = shared[al.convert(765, al.i32)] + shared[al.convert(764, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(766, al.i32)] = shared[al.convert(766, al.i32)] + shared[al.convert(765, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(767, al.i32)] = shared[al.convert(767, al.i32)] + shared[al.convert(766, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(768, al.i32)] = shared[al.convert(768, al.i32)] + shared[al.convert(767, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(769, al.i32)] = shared[al.convert(769, al.i32)] + shared[al.convert(768, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(770, al.i32)] = shared[al.convert(770, al.i32)] + shared[al.convert(769, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(771, al.i32)] = shared[al.convert(771, al.i32)] + shared[al.convert(770, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(772, al.i32)] = shared[al.convert(772, al.i32)] + shared[al.convert(771, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(773, al.i32)] = shared[al.convert(773, al.i32)] + shared[al.convert(772, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(774, al.i32)] = shared[al.convert(774, al.i32)] + shared[al.convert(773, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(775, al.i32)] = shared[al.convert(775, al.i32)] + shared[al.convert(774, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(776, al.i32)] = shared[al.convert(776, al.i32)] + shared[al.convert(775, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(777, al.i32)] = shared[al.convert(777, al.i32)] + shared[al.convert(776, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(778, al.i32)] = shared[al.convert(778, al.i32)] + shared[al.convert(777, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(779, al.i32)] = shared[al.convert(779, al.i32)] + shared[al.convert(778, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(780, al.i32)] = shared[al.convert(780, al.i32)] + shared[al.convert(779, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(781, al.i32)] = shared[al.convert(781, al.i32)] + shared[al.convert(780, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(782, al.i32)] = shared[al.convert(782, al.i32)] + shared[al.convert(781, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(783, al.i32)] = shared[al.convert(783, al.i32)] + shared[al.convert(782, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(784, al.i32)] = shared[al.convert(784, al.i32)] + shared[al.convert(783, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(785, al.i32)] = shared[al.convert(785, al.i32)] + shared[al.convert(784, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(786, al.i32)] = shared[al.convert(786, al.i32)] + shared[al.convert(785, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(787, al.i32)] = shared[al.convert(787, al.i32)] + shared[al.convert(786, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(788, al.i32)] = shared[al.convert(788, al.i32)] + shared[al.convert(787, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(789, al.i32)] = shared[al.convert(789, al.i32)] + shared[al.convert(788, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(790, al.i32)] = shared[al.convert(790, al.i32)] + shared[al.convert(789, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(791, al.i32)] = shared[al.convert(791, al.i32)] + shared[al.convert(790, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(792, al.i32)] = shared[al.convert(792, al.i32)] + shared[al.convert(791, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(793, al.i32)] = shared[al.convert(793, al.i32)] + shared[al.convert(792, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(794, al.i32)] = shared[al.convert(794, al.i32)] + shared[al.convert(793, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(795, al.i32)] = shared[al.convert(795, al.i32)] + shared[al.convert(794, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(796, al.i32)] = shared[al.convert(796, al.i32)] + shared[al.convert(795, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(797, al.i32)] = shared[al.convert(797, al.i32)] + shared[al.convert(796, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(798, al.i32)] = shared[al.convert(798, al.i32)] + shared[al.convert(797, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(799, al.i32)] = shared[al.convert(799, al.i32)] + shared[al.convert(798, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(800, al.i32)] = shared[al.convert(800, al.i32)] + shared[al.convert(799, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(801, al.i32)] = shared[al.convert(801, al.i32)] + shared[al.convert(800, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(802, al.i32)] = shared[al.convert(802, al.i32)] + shared[al.convert(801, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(803, al.i32)] = shared[al.convert(803, al.i32)] + shared[al.convert(802, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(804, al.i32)] = shared[al.convert(804, al.i32)] + shared[al.convert(803, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(805, al.i32)] = shared[al.convert(805, al.i32)] + shared[al.convert(804, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(806, al.i32)] = shared[al.convert(806, al.i32)] + shared[al.convert(805, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(807, al.i32)] = shared[al.convert(807, al.i32)] + shared[al.convert(806, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(808, al.i32)] = shared[al.convert(808, al.i32)] + shared[al.convert(807, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(809, al.i32)] = shared[al.convert(809, al.i32)] + shared[al.convert(808, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(810, al.i32)] = shared[al.convert(810, al.i32)] + shared[al.convert(809, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(811, al.i32)] = shared[al.convert(811, al.i32)] + shared[al.convert(810, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(812, al.i32)] = shared[al.convert(812, al.i32)] + shared[al.convert(811, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(813, al.i32)] = shared[al.convert(813, al.i32)] + shared[al.convert(812, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(814, al.i32)] = shared[al.convert(814, al.i32)] + shared[al.convert(813, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(815, al.i32)] = shared[al.convert(815, al.i32)] + shared[al.convert(814, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(816, al.i32)] = shared[al.convert(816, al.i32)] + shared[al.convert(815, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(817, al.i32)] = shared[al.convert(817, al.i32)] + shared[al.convert(816, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(818, al.i32)] = shared[al.convert(818, al.i32)] + shared[al.convert(817, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(819, al.i32)] = shared[al.convert(819, al.i32)] + shared[al.convert(818, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(820, al.i32)] = shared[al.convert(820, al.i32)] + shared[al.convert(819, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(821, al.i32)] = shared[al.convert(821, al.i32)] + shared[al.convert(820, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(822, al.i32)] = shared[al.convert(822, al.i32)] + shared[al.convert(821, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(823, al.i32)] = shared[al.convert(823, al.i32)] + shared[al.convert(822, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(824, al.i32)] = shared[al.convert(824, al.i32)] + shared[al.convert(823, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(825, al.i32)] = shared[al.convert(825, al.i32)] + shared[al.convert(824, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(826, al.i32)] = shared[al.convert(826, al.i32)] + shared[al.convert(825, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(827, al.i32)] = shared[al.convert(827, al.i32)] + shared[al.convert(826, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(828, al.i32)] = shared[al.convert(828, al.i32)] + shared[al.convert(827, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(829, al.i32)] = shared[al.convert(829, al.i32)] + shared[al.convert(828, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(830, al.i32)] = shared[al.convert(830, al.i32)] + shared[al.convert(829, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(831, al.i32)] = shared[al.convert(831, al.i32)] + shared[al.convert(830, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(832, al.i32)] = shared[al.convert(832, al.i32)] + shared[al.convert(831, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(833, al.i32)] = shared[al.convert(833, al.i32)] + shared[al.convert(832, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(834, al.i32)] = shared[al.convert(834, al.i32)] + shared[al.convert(833, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(835, al.i32)] = shared[al.convert(835, al.i32)] + shared[al.convert(834, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(836, al.i32)] = shared[al.convert(836, al.i32)] + shared[al.convert(835, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(837, al.i32)] = shared[al.convert(837, al.i32)] + shared[al.convert(836, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(838, al.i32)] = shared[al.convert(838, al.i32)] + shared[al.convert(837, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(839, al.i32)] = shared[al.convert(839, al.i32)] + shared[al.convert(838, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(840, al.i32)] = shared[al.convert(840, al.i32)] + shared[al.convert(839, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(841, al.i32)] = shared[al.convert(841, al.i32)] + shared[al.convert(840, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(842, al.i32)] = shared[al.convert(842, al.i32)] + shared[al.convert(841, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(843, al.i32)] = shared[al.convert(843, al.i32)] + shared[al.convert(842, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(844, al.i32)] = shared[al.convert(844, al.i32)] + shared[al.convert(843, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(845, al.i32)] = shared[al.convert(845, al.i32)] + shared[al.convert(844, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(846, al.i32)] = shared[al.convert(846, al.i32)] + shared[al.convert(845, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(847, al.i32)] = shared[al.convert(847, al.i32)] + shared[al.convert(846, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(848, al.i32)] = shared[al.convert(848, al.i32)] + shared[al.convert(847, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(849, al.i32)] = shared[al.convert(849, al.i32)] + shared[al.convert(848, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(850, al.i32)] = shared[al.convert(850, al.i32)] + shared[al.convert(849, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(851, al.i32)] = shared[al.convert(851, al.i32)] + shared[al.convert(850, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(852, al.i32)] = shared[al.convert(852, al.i32)] + shared[al.convert(851, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(853, al.i32)] = shared[al.convert(853, al.i32)] + shared[al.convert(852, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(854, al.i32)] = shared[al.convert(854, al.i32)] + shared[al.convert(853, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(855, al.i32)] = shared[al.convert(855, al.i32)] + shared[al.convert(854, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(856, al.i32)] = shared[al.convert(856, al.i32)] + shared[al.convert(855, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(857, al.i32)] = shared[al.convert(857, al.i32)] + shared[al.convert(856, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(858, al.i32)] = shared[al.convert(858, al.i32)] + shared[al.convert(857, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(859, al.i32)] = shared[al.convert(859, al.i32)] + shared[al.convert(858, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(860, al.i32)] = shared[al.convert(860, al.i32)] + shared[al.convert(859, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(861, al.i32)] = shared[al.convert(861, al.i32)] + shared[al.convert(860, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(862, al.i32)] = shared[al.convert(862, al.i32)] + shared[al.convert(861, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(863, al.i32)] = shared[al.convert(863, al.i32)] + shared[al.convert(862, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(864, al.i32)] = shared[al.convert(864, al.i32)] + shared[al.convert(863, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(865, al.i32)] = shared[al.convert(865, al.i32)] + shared[al.convert(864, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(866, al.i32)] = shared[al.convert(866, al.i32)] + shared[al.convert(865, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(867, al.i32)] = shared[al.convert(867, al.i32)] + shared[al.convert(866, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(868, al.i32)] = shared[al.convert(868, al.i32)] + shared[al.convert(867, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(869, al.i32)] = shared[al.convert(869, al.i32)] + shared[al.convert(868, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(870, al.i32)] = shared[al.convert(870, al.i32)] + shared[al.convert(869, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(871, al.i32)] = shared[al.convert(871, al.i32)] + shared[al.convert(870, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(872, al.i32)] = shared[al.convert(872, al.i32)] + shared[al.convert(871, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(873, al.i32)] = shared[al.convert(873, al.i32)] + shared[al.convert(872, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(874, al.i32)] = shared[al.convert(874, al.i32)] + shared[al.convert(873, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(875, al.i32)] = shared[al.convert(875, al.i32)] + shared[al.convert(874, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(876, al.i32)] = shared[al.convert(876, al.i32)] + shared[al.convert(875, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(877, al.i32)] = shared[al.convert(877, al.i32)] + shared[al.convert(876, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(878, al.i32)] = shared[al.convert(878, al.i32)] + shared[al.convert(877, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(879, al.i32)] = shared[al.convert(879, al.i32)] + shared[al.convert(878, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(880, al.i32)] = shared[al.convert(880, al.i32)] + shared[al.convert(879, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(881, al.i32)] = shared[al.convert(881, al.i32)] + shared[al.convert(880, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(882, al.i32)] = shared[al.convert(882, al.i32)] + shared[al.convert(881, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(883, al.i32)] = shared[al.convert(883, al.i32)] + shared[al.convert(882, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(884, al.i32)] = shared[al.convert(884, al.i32)] + shared[al.convert(883, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(885, al.i32)] = shared[al.convert(885, al.i32)] + shared[al.convert(884, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(886, al.i32)] = shared[al.convert(886, al.i32)] + shared[al.convert(885, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(887, al.i32)] = shared[al.convert(887, al.i32)] + shared[al.convert(886, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(888, al.i32)] = shared[al.convert(888, al.i32)] + shared[al.convert(887, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(889, al.i32)] = shared[al.convert(889, al.i32)] + shared[al.convert(888, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(890, al.i32)] = shared[al.convert(890, al.i32)] + shared[al.convert(889, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(891, al.i32)] = shared[al.convert(891, al.i32)] + shared[al.convert(890, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(892, al.i32)] = shared[al.convert(892, al.i32)] + shared[al.convert(891, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(893, al.i32)] = shared[al.convert(893, al.i32)] + shared[al.convert(892, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(894, al.i32)] = shared[al.convert(894, al.i32)] + shared[al.convert(893, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(895, al.i32)] = shared[al.convert(895, al.i32)] + shared[al.convert(894, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(896, al.i32)] = shared[al.convert(896, al.i32)] + shared[al.convert(895, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(897, al.i32)] = shared[al.convert(897, al.i32)] + shared[al.convert(896, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(898, al.i32)] = shared[al.convert(898, al.i32)] + shared[al.convert(897, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(899, al.i32)] = shared[al.convert(899, al.i32)] + shared[al.convert(898, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(900, al.i32)] = shared[al.convert(900, al.i32)] + shared[al.convert(899, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(901, al.i32)] = shared[al.convert(901, al.i32)] + shared[al.convert(900, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(902, al.i32)] = shared[al.convert(902, al.i32)] + shared[al.convert(901, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(903, al.i32)] = shared[al.convert(903, al.i32)] + shared[al.convert(902, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(904, al.i32)] = shared[al.convert(904, al.i32)] + shared[al.convert(903, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(905, al.i32)] = shared[al.convert(905, al.i32)] + shared[al.convert(904, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(906, al.i32)] = shared[al.convert(906, al.i32)] + shared[al.convert(905, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(907, al.i32)] = shared[al.convert(907, al.i32)] + shared[al.convert(906, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(908, al.i32)] = shared[al.convert(908, al.i32)] + shared[al.convert(907, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(909, al.i32)] = shared[al.convert(909, al.i32)] + shared[al.convert(908, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(910, al.i32)] = shared[al.convert(910, al.i32)] + shared[al.convert(909, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(911, al.i32)] = shared[al.convert(911, al.i32)] + shared[al.convert(910, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(912, al.i32)] = shared[al.convert(912, al.i32)] + shared[al.convert(911, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(913, al.i32)] = shared[al.convert(913, al.i32)] + shared[al.convert(912, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(914, al.i32)] = shared[al.convert(914, al.i32)] + shared[al.convert(913, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(915, al.i32)] = shared[al.convert(915, al.i32)] + shared[al.convert(914, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(916, al.i32)] = shared[al.convert(916, al.i32)] + shared[al.convert(915, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(917, al.i32)] = shared[al.convert(917, al.i32)] + shared[al.convert(916, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(918, al.i32)] = shared[al.convert(918, al.i32)] + shared[al.convert(917, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(919, al.i32)] = shared[al.convert(919, al.i32)] + shared[al.convert(918, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(920, al.i32)] = shared[al.convert(920, al.i32)] + shared[al.convert(919, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(921, al.i32)] = shared[al.convert(921, al.i32)] + shared[al.convert(920, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(922, al.i32)] = shared[al.convert(922, al.i32)] + shared[al.convert(921, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(923, al.i32)] = shared[al.convert(923, al.i32)] + shared[al.convert(922, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(924, al.i32)] = shared[al.convert(924, al.i32)] + shared[al.convert(923, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(925, al.i32)] = shared[al.convert(925, al.i32)] + shared[al.convert(924, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(926, al.i32)] = shared[al.convert(926, al.i32)] + shared[al.convert(925, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(927, al.i32)] = shared[al.convert(927, al.i32)] + shared[al.convert(926, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(928, al.i32)] = shared[al.convert(928, al.i32)] + shared[al.convert(927, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(929, al.i32)] = shared[al.convert(929, al.i32)] + shared[al.convert(928, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(930, al.i32)] = shared[al.convert(930, al.i32)] + shared[al.convert(929, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(931, al.i32)] = shared[al.convert(931, al.i32)] + shared[al.convert(930, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(932, al.i32)] = shared[al.convert(932, al.i32)] + shared[al.convert(931, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(933, al.i32)] = shared[al.convert(933, al.i32)] + shared[al.convert(932, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(934, al.i32)] = shared[al.convert(934, al.i32)] + shared[al.convert(933, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(935, al.i32)] = shared[al.convert(935, al.i32)] + shared[al.convert(934, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(936, al.i32)] = shared[al.convert(936, al.i32)] + shared[al.convert(935, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(937, al.i32)] = shared[al.convert(937, al.i32)] + shared[al.convert(936, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(938, al.i32)] = shared[al.convert(938, al.i32)] + shared[al.convert(937, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(939, al.i32)] = shared[al.convert(939, al.i32)] + shared[al.convert(938, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(940, al.i32)] = shared[al.convert(940, al.i32)] + shared[al.convert(939, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(941, al.i32)] = shared[al.convert(941, al.i32)] + shared[al.convert(940, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(942, al.i32)] = shared[al.convert(942, al.i32)] + shared[al.convert(941, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(943, al.i32)] = shared[al.convert(943, al.i32)] + shared[al.convert(942, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(944, al.i32)] = shared[al.convert(944, al.i32)] + shared[al.convert(943, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(945, al.i32)] = shared[al.convert(945, al.i32)] + shared[al.convert(944, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(946, al.i32)] = shared[al.convert(946, al.i32)] + shared[al.convert(945, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(947, al.i32)] = shared[al.convert(947, al.i32)] + shared[al.convert(946, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(948, al.i32)] = shared[al.convert(948, al.i32)] + shared[al.convert(947, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(949, al.i32)] = shared[al.convert(949, al.i32)] + shared[al.convert(948, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(950, al.i32)] = shared[al.convert(950, al.i32)] + shared[al.convert(949, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(951, al.i32)] = shared[al.convert(951, al.i32)] + shared[al.convert(950, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(952, al.i32)] = shared[al.convert(952, al.i32)] + shared[al.convert(951, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(953, al.i32)] = shared[al.convert(953, al.i32)] + shared[al.convert(952, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(954, al.i32)] = shared[al.convert(954, al.i32)] + shared[al.convert(953, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(955, al.i32)] = shared[al.convert(955, al.i32)] + shared[al.convert(954, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(956, al.i32)] = shared[al.convert(956, al.i32)] + shared[al.convert(955, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(957, al.i32)] = shared[al.convert(957, al.i32)] + shared[al.convert(956, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(958, al.i32)] = shared[al.convert(958, al.i32)] + shared[al.convert(957, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(959, al.i32)] = shared[al.convert(959, al.i32)] + shared[al.convert(958, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(960, al.i32)] = shared[al.convert(960, al.i32)] + shared[al.convert(959, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(961, al.i32)] = shared[al.convert(961, al.i32)] + shared[al.convert(960, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(962, al.i32)] = shared[al.convert(962, al.i32)] + shared[al.convert(961, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(963, al.i32)] = shared[al.convert(963, al.i32)] + shared[al.convert(962, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(964, al.i32)] = shared[al.convert(964, al.i32)] + shared[al.convert(963, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(965, al.i32)] = shared[al.convert(965, al.i32)] + shared[al.convert(964, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(966, al.i32)] = shared[al.convert(966, al.i32)] + shared[al.convert(965, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(967, al.i32)] = shared[al.convert(967, al.i32)] + shared[al.convert(966, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(968, al.i32)] = shared[al.convert(968, al.i32)] + shared[al.convert(967, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(969, al.i32)] = shared[al.convert(969, al.i32)] + shared[al.convert(968, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(970, al.i32)] = shared[al.convert(970, al.i32)] + shared[al.convert(969, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(971, al.i32)] = shared[al.convert(971, al.i32)] + shared[al.convert(970, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(972, al.i32)] = shared[al.convert(972, al.i32)] + shared[al.convert(971, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(973, al.i32)] = shared[al.convert(973, al.i32)] + shared[al.convert(972, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(974, al.i32)] = shared[al.convert(974, al.i32)] + shared[al.convert(973, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(975, al.i32)] = shared[al.convert(975, al.i32)] + shared[al.convert(974, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(976, al.i32)] = shared[al.convert(976, al.i32)] + shared[al.convert(975, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(977, al.i32)] = shared[al.convert(977, al.i32)] + shared[al.convert(976, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(978, al.i32)] = shared[al.convert(978, al.i32)] + shared[al.convert(977, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(979, al.i32)] = shared[al.convert(979, al.i32)] + shared[al.convert(978, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(980, al.i32)] = shared[al.convert(980, al.i32)] + shared[al.convert(979, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(981, al.i32)] = shared[al.convert(981, al.i32)] + shared[al.convert(980, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(982, al.i32)] = shared[al.convert(982, al.i32)] + shared[al.convert(981, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(983, al.i32)] = shared[al.convert(983, al.i32)] + shared[al.convert(982, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(984, al.i32)] = shared[al.convert(984, al.i32)] + shared[al.convert(983, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(985, al.i32)] = shared[al.convert(985, al.i32)] + shared[al.convert(984, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(986, al.i32)] = shared[al.convert(986, al.i32)] + shared[al.convert(985, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(987, al.i32)] = shared[al.convert(987, al.i32)] + shared[al.convert(986, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(988, al.i32)] = shared[al.convert(988, al.i32)] + shared[al.convert(987, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(989, al.i32)] = shared[al.convert(989, al.i32)] + shared[al.convert(988, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(990, al.i32)] = shared[al.convert(990, al.i32)] + shared[al.convert(989, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(991, al.i32)] = shared[al.convert(991, al.i32)] + shared[al.convert(990, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(992, al.i32)] = shared[al.convert(992, al.i32)] + shared[al.convert(991, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(993, al.i32)] = shared[al.convert(993, al.i32)] + shared[al.convert(992, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(994, al.i32)] = shared[al.convert(994, al.i32)] + shared[al.convert(993, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(995, al.i32)] = shared[al.convert(995, al.i32)] + shared[al.convert(994, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(996, al.i32)] = shared[al.convert(996, al.i32)] + shared[al.convert(995, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(997, al.i32)] = shared[al.convert(997, al.i32)] + shared[al.convert(996, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(998, al.i32)] = shared[al.convert(998, al.i32)] + shared[al.convert(997, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(999, al.i32)] = shared[al.convert(999, al.i32)] + shared[al.convert(998, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1000, al.i32)] = shared[al.convert(1000, al.i32)] + shared[al.convert(999, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1001, al.i32)] = shared[al.convert(1001, al.i32)] + shared[al.convert(1000, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1002, al.i32)] = shared[al.convert(1002, al.i32)] + shared[al.convert(1001, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1003, al.i32)] = shared[al.convert(1003, al.i32)] + shared[al.convert(1002, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1004, al.i32)] = shared[al.convert(1004, al.i32)] + shared[al.convert(1003, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1005, al.i32)] = shared[al.convert(1005, al.i32)] + shared[al.convert(1004, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1006, al.i32)] = shared[al.convert(1006, al.i32)] + shared[al.convert(1005, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1007, al.i32)] = shared[al.convert(1007, al.i32)] + shared[al.convert(1006, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1008, al.i32)] = shared[al.convert(1008, al.i32)] + shared[al.convert(1007, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1009, al.i32)] = shared[al.convert(1009, al.i32)] + shared[al.convert(1008, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1010, al.i32)] = shared[al.convert(1010, al.i32)] + shared[al.convert(1009, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1011, al.i32)] = shared[al.convert(1011, al.i32)] + shared[al.convert(1010, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1012, al.i32)] = shared[al.convert(1012, al.i32)] + shared[al.convert(1011, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1013, al.i32)] = shared[al.convert(1013, al.i32)] + shared[al.convert(1012, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1014, al.i32)] = shared[al.convert(1014, al.i32)] + shared[al.convert(1013, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1015, al.i32)] = shared[al.convert(1015, al.i32)] + shared[al.convert(1014, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1016, al.i32)] = shared[al.convert(1016, al.i32)] + shared[al.convert(1015, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1017, al.i32)] = shared[al.convert(1017, al.i32)] + shared[al.convert(1016, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1018, al.i32)] = shared[al.convert(1018, al.i32)] + shared[al.convert(1017, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1019, al.i32)] = shared[al.convert(1019, al.i32)] + shared[al.convert(1018, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1020, al.i32)] = shared[al.convert(1020, al.i32)] + shared[al.convert(1019, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1021, al.i32)] = shared[al.convert(1021, al.i32)] + shared[al.convert(1020, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1022, al.i32)] = shared[al.convert(1022, al.i32)] + shared[al.convert(1021, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1023, al.i32)] = shared[al.convert(1023, al.i32)] + shared[al.convert(1022, al.i32)]
+    al.syncthreads()
+    if col < N_COLS:
+        temp[row, col] = shared[tid]
+
+    if tid == al.convert(0, al.i32):
+        block_sums[row, block + al.convert(1, al.i32)] = shared[al.convert(1023, al.i32)]
+
+
+@avelang.jit
+def cs_scan_sums_v3(
+    block_sums_ptr: al.Pointer(al.f32),
+    N_ROWS: al.constexpr,
+    NUM_BLOCKS: al.constexpr,
+):
+    row = al.block_id(0)
+    tid = al.thread_id(0)
+
+    bs_layout = al.make_layout((N_ROWS, NUM_BLOCKS), (NUM_BLOCKS, 1))
+    block_sums = al.make_tensor(block_sums_ptr, al.f32, bs_layout)
+
+    shared = al.make_shared((33,), al.f32)
+
+    if tid < NUM_BLOCKS:
+        shared[tid] = block_sums[row, tid]
+    al.syncthreads()
+
+    # Sequential inclusive scan on 33 elements
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(1, al.i32)] = shared[al.convert(1, al.i32)] + shared[al.convert(0, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(2, al.i32)] = shared[al.convert(2, al.i32)] + shared[al.convert(1, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(3, al.i32)] = shared[al.convert(3, al.i32)] + shared[al.convert(2, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(4, al.i32)] = shared[al.convert(4, al.i32)] + shared[al.convert(3, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(5, al.i32)] = shared[al.convert(5, al.i32)] + shared[al.convert(4, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(6, al.i32)] = shared[al.convert(6, al.i32)] + shared[al.convert(5, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(7, al.i32)] = shared[al.convert(7, al.i32)] + shared[al.convert(6, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(8, al.i32)] = shared[al.convert(8, al.i32)] + shared[al.convert(7, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(9, al.i32)] = shared[al.convert(9, al.i32)] + shared[al.convert(8, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(10, al.i32)] = shared[al.convert(10, al.i32)] + shared[al.convert(9, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(11, al.i32)] = shared[al.convert(11, al.i32)] + shared[al.convert(10, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(12, al.i32)] = shared[al.convert(12, al.i32)] + shared[al.convert(11, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(13, al.i32)] = shared[al.convert(13, al.i32)] + shared[al.convert(12, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(14, al.i32)] = shared[al.convert(14, al.i32)] + shared[al.convert(13, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(15, al.i32)] = shared[al.convert(15, al.i32)] + shared[al.convert(14, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(16, al.i32)] = shared[al.convert(16, al.i32)] + shared[al.convert(15, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(17, al.i32)] = shared[al.convert(17, al.i32)] + shared[al.convert(16, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(18, al.i32)] = shared[al.convert(18, al.i32)] + shared[al.convert(17, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(19, al.i32)] = shared[al.convert(19, al.i32)] + shared[al.convert(18, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(20, al.i32)] = shared[al.convert(20, al.i32)] + shared[al.convert(19, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(21, al.i32)] = shared[al.convert(21, al.i32)] + shared[al.convert(20, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(22, al.i32)] = shared[al.convert(22, al.i32)] + shared[al.convert(21, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(23, al.i32)] = shared[al.convert(23, al.i32)] + shared[al.convert(22, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(24, al.i32)] = shared[al.convert(24, al.i32)] + shared[al.convert(23, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(25, al.i32)] = shared[al.convert(25, al.i32)] + shared[al.convert(24, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(26, al.i32)] = shared[al.convert(26, al.i32)] + shared[al.convert(25, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(27, al.i32)] = shared[al.convert(27, al.i32)] + shared[al.convert(26, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(28, al.i32)] = shared[al.convert(28, al.i32)] + shared[al.convert(27, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(29, al.i32)] = shared[al.convert(29, al.i32)] + shared[al.convert(28, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(30, al.i32)] = shared[al.convert(30, al.i32)] + shared[al.convert(29, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(31, al.i32)] = shared[al.convert(31, al.i32)] + shared[al.convert(30, al.i32)]
+    al.syncthreads()
+    if tid == al.convert(0, al.i32):
+        shared[al.convert(32, al.i32)] = shared[al.convert(32, al.i32)] + shared[al.convert(31, al.i32)]
+    al.syncthreads()
+    if tid < NUM_BLOCKS:
+        block_sums[row, tid] = shared[tid]
+
+
+@avelang.jit
+def cs_apply_v3(
+    temp_ptr: al.Pointer(al.f32),
+    out_ptr: al.Pointer(al.bf16),
+    block_sums_ptr: al.Pointer(al.f32),
+    N_ROWS: al.constexpr,
+    N_COLS: al.constexpr,
+    BLOCK_SIZE: al.constexpr,
+    NUM_BLOCKS: al.constexpr,
+):
+    row = al.block_id(0)
+    block = al.block_id(1)
+    tid = al.thread_id(0)
+
+    temp_layout = al.make_layout((N_ROWS, N_COLS), (N_COLS, 1))
+    temp = al.make_tensor(temp_ptr, al.f32, temp_layout)
+    out = al.make_tensor(out_ptr, al.bf16, temp_layout)
+
+    bs_layout = al.make_layout((N_ROWS, NUM_BLOCKS), (NUM_BLOCKS, 1))
+    block_sums = al.make_tensor(block_sums_ptr, al.f32, bs_layout)
+
+    col = block * BLOCK_SIZE + tid
+
+    if col < N_COLS:
+        out[row, col] = al.convert(
+            temp[row, col] + block_sums[row, block],
+            al.bf16,
+        )
+
+
+def avelang_cumsum_v3(x: torch.Tensor, dim: int) -> torch.Tensor:
+    assert x.is_cuda, "Input must be on CUDA/HIP device"
+    assert dim == 1, "Only dim=1 is supported"
+    assert x.ndim == 2, "Input must be 2D"
+
+    n_rows, n_cols = x.shape
+
+    x_bf16 = x.to(torch.bfloat16).contiguous()
+    temp = torch.empty(n_rows, n_cols, dtype=torch.float32, device=x.device)
+    out_bf16 = torch.empty(n_rows, n_cols, dtype=torch.bfloat16, device=x.device)
+
+    n_blocks_padded = 33
+    block_sums = torch.zeros(n_rows, n_blocks_padded, dtype=torch.float32, device=x.device)
+
+    n_blocks_real = 32
+
+    cs_block_scan_v3[lambda: ((n_rows, n_blocks_real, 1), (1024, 1, 1))](
+        x_bf16, temp, block_sums, n_rows, n_cols, 1024, n_blocks_padded,
+        num_warps=16,
+    )
+
+    cs_scan_sums_v3[lambda: ((n_rows, 1, 1), (64, 1, 1))](
+        block_sums, n_rows, n_blocks_padded,
+        num_warps=1,
+    )
+
+    cs_apply_v3[lambda: ((n_rows, n_blocks_real, 1), (1024, 1, 1))](
+        temp, out_bf16, block_sums, n_rows, n_cols, 1024, n_blocks_padded,
+        num_warps=16,
+    )
+
+    return out_bf16.to(x.dtype)
+
+
+class ModelNew(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x):
+        return avelang_cumsum_v3(x, self.dim)

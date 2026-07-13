@@ -1,0 +1,146 @@
+You are writing GPU kernels with the AveLang DSL.
+AveLang DSL is a tile-based DSL for high-performance GPU kernels, syntactically close to Triton/PyCuTe and exposing low-level AMD features such as MFMA and explicit synchronization.
+
+Treat AveLang as a PyCuTe-like kernel programming model with its own DSL syntax and AMD-oriented primitives.
+The primary deliverable is a real GPU kernel implementation in AveLang DSL, not a pure PyTorch operator replacement.
+Kernel launch configuration, memory hierarchy usage, and tile-level mapping should be explicitly expressed in the generated code.
+
+Below is a reference `Model` / `ModelNew` pattern in AveLang DSL.
+You will receive an `input_model.py` architecture below, and you must output an optimized `output_model_new.py`.
+Use this structure as guidance and optimize the target architecture into a correct and runnable `ModelNew`.
+
+## AveLang DSL Syntax and Examples
+
+Here is a complete example showing how to write an AveLang DSL kernel:
+
+**Example: Element-wise Addition**
+
+Input PyTorch model:
+```python
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, a, b):
+        return a + b
+```
+
+Optimized AveLang DSL kernel:
+```python
+import torch
+import torch.nn as nn
+import avelang
+import avelang.language as al
+
+@avelang.jit
+def add_kernel(
+    a: al.Tensor((1, 128), al.f32),
+    b: al.Tensor((1, 128), al.f32),
+    out: al.Tensor((1, 128), al.f32),
+):
+    tid = al.thread_id(0)
+    if tid < 128:
+        out[0, tid] = a[0, tid] + b[0, tid]
+
+def avelang_add(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    assert a.is_cuda and b.is_cuda, "Tensors must be on CUDA/HIP device."
+    assert a.shape == (1, 128) and b.shape == (1, 128), "Example kernel expects shape (1, 128)."
+
+    out = torch.empty_like(a)
+    add_kernel[lambda: ((1, 1, 1), (128, 1, 1))](a, b, out)
+    return out
+
+class ModelNew(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, a, b):
+        return avelang_add(a, b)
+```
+
+You are given the following architecture:
+
+
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+    """
+    Model that performs a 3D transposed convolution, layer normalization, GELU activation, and scaling.
+    """
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, bias=True, eps=1e-5, scaling_factor=1.0):
+        super(Model, self).__init__()
+        self.conv_transpose = nn.ConvTranspose3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias)
+        self.layer_norm = nn.LayerNorm(out_channels, eps=eps)
+        self.scaling_factor = scaling_factor
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, in_channels, D, H, W).
+
+        Returns:
+            torch.Tensor: Output tensor of shape (batch_size, out_channels, D', H', W').
+        """
+        x = self.conv_transpose(x)
+        x = self.layer_norm(x)
+        x = torch.nn.functional.gelu(x)
+        x = x * self.scaling_factor
+        return x
+
+batch_size = 32
+in_channels = 32
+out_channels = 64
+D, H, W = 16, 32, 32
+kernel_size = 4
+stride = 2
+padding = 1
+bias = True
+eps = 1e-5
+scaling_factor = 1.0
+
+def get_inputs():
+    return [torch.rand(batch_size, in_channels, D, H, W)]
+
+def get_init_inputs():
+    return [in_channels, out_channels, kernel_size, stride, padding, bias, eps, scaling_factor]
+
+## AveLang DSL Critical Requirements
+
+**Kernel Definition Requirements:**
+- All `@avelang.jit` kernel functions must be defined at module top-level, never nested inside other functions or classes.
+- AveLang compiles kernels at import time; runtime definition is not supported.
+
+**Memory and Data Handling:**
+- Use `al.Pointer(dtype)` for runtime-shaped buffers, then create tensor views with `al.make_tensor(pointer, dtype, layout)`.
+- Use `al.make_shared((shape), dtype)` for shared memory buffers with proper synchronization.
+- Use `al.range()` for device-side loops, never Python's `range()`.
+- Use explicit type conversions such as `al.convert(value, al.f32)` for dtype changes.
+
+**Launch Configuration:**
+- Kernel launch syntax: `kernel[lambda: ((grid_x, grid_y, grid_z), (block_x, block_y, block_z))](args...)`.
+- For BF16 precision: use BF16 computation with FP32 accumulation for numerical stability.
+
+**Implementation Requirements:**
+- Preserve the exact semantics of the target `Model.forward`.
+- Keep input/output contracts compatible with `get_inputs()` and `get_init_inputs()` from the target problem.
+- Do not provide a pure PyTorch eager implementation.
+- Do not route final outputs through torch fallback paths such as `torch.matmul`, `torch.mm`, `torch.bmm`, `torch.Conv2d`, or equivalent eager compute.
+
+Note: The kernels should be optimized for BF16 (bfloat16) precision.
+
+Implement the target computation with one or more `@avelang.jit` GPU kernels and provide a runnable `ModelNew` entrypoint that launches those kernels.
+
+Preserve the exact semantics of the target `Model.forward` in the provided architecture. The target architecture is authoritative over examples.
+Keep input/output contracts compatible with `get_inputs()` and `get_init_inputs()` from the target problem.
+Preserve output dtype behavior of the reference model unless the target model itself specifies a reduced-precision path.
+
+Do not provide a pure PyTorch eager implementation.
+Do not route final outputs through torch fallback paths such as `torch.matmul`, `torch.mm`, `torch.bmm`, or equivalent eager compute.
+
+Normalization ops (BatchNorm, GroupNorm, LayerNorm, InstanceNorm, etc.): match PyTorch semantics for the same `training` / eval mode as the reference `Model`. If the reference uses a norm layer in training mode, implement training behavior in your kernels by computing mean and variance from the current input batch at runtime.
+
+Write your complete final implementation directly to the file `output_model_new.py` in the current working directory using your file writing tools. Do not print the code in your response text; write it to the file only. Do not inspect or copy from any other `runs/` directory, previous generated kernel, optimization round, or candidate output.

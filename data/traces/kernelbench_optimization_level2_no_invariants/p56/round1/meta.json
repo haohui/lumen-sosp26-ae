@@ -1,0 +1,93 @@
+{
+  "problem_id": 56,
+  "problem_name": "56_Matmul_Sigmoid_Sum",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "speedup_eval",
+  "error": "OK: compiled=True, correctness=True",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "reference_mode": "language-spec-only",
+    "prompt_sha256": "35a79c3a8771105f108798fa2f1ea732c963981191a1eac035ddb52a34d279fe",
+    "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+  },
+  "compiled": true,
+  "correctness": true,
+  "speedup": 0.0007285714285714286,
+  "ref_ms": 0.765,
+  "new_ms": 1050.0,
+  "eval_metadata": {
+    "original_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p56/round1/input_model.py",
+    "generated_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p56/round1/output_model_new.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "correctness_trials": "(5 / 5)"
+  },
+  "eval_payload": {
+    "compiled": true,
+    "correctness": true,
+    "metadata": {
+      "original_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p56/round1/input_model.py",
+      "generated_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p56/round1/output_model_new.py",
+      "backend": "avelang",
+      "eval_config": {
+        "backend": "avelang",
+        "gpu_arch": "gfx942",
+        "precision": "bf16",
+        "num_correct_trials": 5,
+        "num_trials": 100
+      },
+      "gpu_arch": "gfx942",
+      "device": "cuda:0",
+      "hardware": "AMD Instinct MI300X",
+      "precision": "torch.bfloat16",
+      "seed": 42,
+      "num_correct_trials": 5,
+      "num_warmup": 5,
+      "num_trials": 100,
+      "cuda_graph": true,
+      "correctness_trials": "(5 / 5)"
+    },
+    "runtime": 1050.0,
+    "runtime_stats": {
+      "mean": 1050.0,
+      "std": 194.0,
+      "min": 983.0,
+      "max": 1860.0,
+      "num_trials": 100,
+      "hardware": "AMD Instinct MI300X",
+      "device": "cuda:0",
+      "timing_mode": "cudagraph"
+    },
+    "ref_runtime": 0.765,
+    "ref_runtime_stats": {
+      "mean": 0.765,
+      "std": 0.0196,
+      "min": 0.726,
+      "max": 0.878,
+      "num_trials": 100,
+      "hardware": "AMD Instinct MI300X",
+      "device": "cuda:0",
+      "timing_mode": "cudagraph"
+    },
+    "eval_exit_code": 0
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "problem_id": 14,
+  "problem_name": "14_Gemm_Divide_Sum_Scaling",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-13T08:00:40.177625Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic\nOpenAI Codex v0.144.1\n--------\nworkdir: /root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p14/round0\nmodel: moonbridge\nprovider: moonbr",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "reference_mode": "language-spec-only",
+    "prompt_sha256": "2c3b5b292571f36a7652a78e95be8d719a341595ade09560fc8f7ae29a112dd3",
+    "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+  }
+}

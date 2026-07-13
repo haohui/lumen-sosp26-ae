@@ -1,0 +1,9 @@
+{
+  "templates": [
+    "workspace_prompt.j2",
+    "codex_context.j2"
+  ],
+  "reference_mode": "language-spec-only",
+  "prompt_sha256": "2c3b5b292571f36a7652a78e95be8d719a341595ade09560fc8f7ae29a112dd3",
+  "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+}

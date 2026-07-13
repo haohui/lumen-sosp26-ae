@@ -1,0 +1,7 @@
+codex exited with error. log=Timed out after 3000.0s.
+2026-07-13T07:00:40.571924Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic
+OpenAI Codex v0.144.1
+--------
+workdir: /root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples/p100/round0
+model: moonbridge
+provider

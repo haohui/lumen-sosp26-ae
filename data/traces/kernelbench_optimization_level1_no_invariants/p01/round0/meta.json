@@ -1,0 +1,16 @@
+{
+  "problem_id": 1,
+  "problem_name": "1_Square_matrix_multiplication_",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-12T05:34:30.053036Z  WARN codex_core_plugins::manager: failed to warm featured plugin ids cache error=remote featured plugin request to https://chatgpt.com/backend-api/plugins/featured failed with status 401 Unauthorized: {\"detail\":\"Unauthorized\"}\n2026-07-12T05:34:30.065238Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is miss",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "prompt_sha256": "075769ac4ff9d59cdc5a496e50d417558c4740201cff833dfa11e7e6e9315bd1",
+    "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+  }
+}

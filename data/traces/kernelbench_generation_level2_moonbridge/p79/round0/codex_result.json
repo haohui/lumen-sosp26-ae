@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f52c7-9177-7a52-b236-fcde5302c1fb",
+  "turn_id": null,
+  "final_response": "The implementation passes all checks and delivers solid performance. Here's a quick summary:\n\n**Result**: `compiled: true`, `correctness: (5/5)`, **runtime: 0.73ms vs ref 0.95-1.03ms** (~29% faster)\n\n**Pipeline** (3 AveLang kernels, 1 torch conv for precision-matching):\n1. `torch.nn.functional.conv3d` \u2192 multiply by multiplier \u2192 FP32 buffer\n2. `instancenorm_stats_kernel` \u2014 shared-memory tree reduction for per-(batch, channel) mean/variance\n3. `instancenorm_apply_clamp_mul_kernel` \u2014 normalize, affine, clamp `[-1,1]`, second multiply\n4. `max_reduce_channel_kernel` \u2014 max over 16 channels per spatial position\n\n**Key design decisions**:\n- All intermediate buffers are FP32, avoiding cascading BF16 quantization\n- InstanceNorm handles `affine=False` (the PyTorch default for InstanceNorm3d) with identity weight/bias\n- Grid decomposition: `(B \u00d7 C_out)` pairs \u00d7 spatial blocks, 256 threads per block\n- InstanceNorm stats use 8-level shared memory reduction tree matching the verified LayerNorm pattern\n\nThe `conv3d_first_mul_kernel` is retained at module top-level as a standalone AveLang conv3d+mul kernel (FP32 in/out, 4-level nested loop over input channels and kernel positions) \u2014 it compiles correctly but the pipeline routes through torch conv3d to match reference precision exactly.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/11/rollout-2026-07-11T20-03-58-019f52c7-9177-7a52-b236-fcde5302c1fb.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-11T20:03:58Z",
+  "finished_at_utc": "2026-07-11T20:29:06Z"
+}

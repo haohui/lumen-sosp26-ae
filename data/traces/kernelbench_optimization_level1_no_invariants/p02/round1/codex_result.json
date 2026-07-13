@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f54f8-8682-7ea3-ad0c-f66947b9045c",
+  "turn_id": null,
+  "final_response": "The kernel compiles and runs on the AMD MI300X, but correctness does not pass. This is a pre-existing issue also present in the original `candidate_input.py` -- both produce similar error magnitudes (max diff ~144-152).\n\nHere's what was done in `output_model_new.py`:\n\n**Load pattern fix** -- The candidate used a single `raw_buffer_load_x4` per thread, loading 8 contiguous bf16 values from a single row and incorrectly assigning half to the next row. Since the tensor stride is K=8192 elements, consecutive memory addresses all belong to the same row. Fixed by issuing two `raw_buffer_load_x2` calls per thread, one per row, correctly loading 4 elements from row r and 4 from row r+1.\n\n**Double buffering** -- Two full sets of LDS buffers (`A_lds0`/`A_lds1`, `B_lds0`/`B_lds1`) enable software pipelining. The prologue loads the first K-block into buffer 0; the main loop loads the next K-block into the opposite buffer while computing MFMA from the current one.\n\n**K-loop unrolled by 2** -- The main loop steps by `2*BLOCK_K` (32) with two explicit halves per iteration: half 1 loads `k` into the next buffer and computes from the current buffer, half 2 loads `k+BLOCK_K` and computes again. A bounds guard handles the final partial iteration.\n\n**MFMA compute** -- Uses the same `mfma_32x32x8_bf16_f32` instructions and fragment extraction pattern as the candidate, with buffer selection via `if buf == 0` branches.\n\nThe correctness gap (~144 max error out of reference values in the thousands) appears to stem from the MFMA instruction integration, not the load pattern. The same error magnitude is present in the baseline candidate.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/12/rollout-2026-07-12T06-16-41-019f54f8-8682-7ea3-ad0c-f66947b9045c.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-12T06:16:41Z",
+  "finished_at_utc": "2026-07-12T06:51:30Z"
+}

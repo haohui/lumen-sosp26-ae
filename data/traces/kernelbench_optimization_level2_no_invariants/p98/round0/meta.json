@@ -1,0 +1,17 @@
+{
+  "problem_id": 98,
+  "problem_name": "98_Matmul_AvgPool_GELU_Scale_Max",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-13T12:26:50.492034Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic\nOpenAI Codex v0.144.1\n--------\nworkdir: /root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p98/round0\nmodel: moonbridge\nprovider: moonbr",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "reference_mode": "language-spec-only",
+    "prompt_sha256": "43f6cfaad4d25135fed3875776c6fec07631a73a3c2a45751d72c7a73cd5edf8",
+    "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+  }
+}

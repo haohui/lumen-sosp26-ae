@@ -1,0 +1,49 @@
+{
+  "compiled": true,
+  "correctness": true,
+  "metadata": {
+    "original_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_invariants/p80/round0/input_model.py",
+    "generated_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_invariants/p80/round0/output_model_new.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "correctness_trials": "(5 / 5)"
+  },
+  "runtime": 297.0,
+  "runtime_stats": {
+    "mean": 297.0,
+    "std": 27.8,
+    "min": 287.0,
+    "max": 496.0,
+    "num_trials": 100,
+    "hardware": "AMD Instinct MI300X",
+    "device": "cuda:0",
+    "timing_mode": "cudagraph"
+  },
+  "ref_runtime": 0.251,
+  "ref_runtime_stats": {
+    "mean": 0.251,
+    "std": 0.0117,
+    "min": 0.239,
+    "max": 0.293,
+    "num_trials": 100,
+    "hardware": "AMD Instinct MI300X",
+    "device": "cuda:0",
+    "timing_mode": "cudagraph"
+  },
+  "eval_exit_code": 0
+}

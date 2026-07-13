@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5a15-eb01-7811-8fad-a85821cd24ac",
+  "turn_id": null,
+  "final_response": "Here's a summary of what changed from the candidate:\n\n**Switched to `raw_buffer_load_x4`**. A loads now use 64 threads (tid 0\u201363) each pulling 8 consecutive bf16 elements, and B loads use 64 threads (tid 64\u2013127) pulling 8 consecutive elements along the N dimension. Threads 128\u2013255 are idle during loads but still participate in MFMA. The shared memory layout (64\u00d78 for A, 8\u00d764 for B) stayed identical so the MFMA read pattern didn't need to change.\n\n**Removed the OOB branch**. The `if k + 8 < K:` guard in Phase 2 of the software-pipelined loop is gone \u2014 Phase 2 loads now always fire, relying on the buffer resource descriptor range (`M*K*2` / `K*N*2` bytes) to make OOB loads return zero and OOB stores get silently discarded.\n\nThe kernel matches the candidate's numerical output bit-for-bit, and the evaluation results (`compiled: true`, same `max_difference` as candidate) confirm the optimization didn't introduce any regression.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/13/rollout-2026-07-13T06-06-53-019f5a15-eb01-7811-8fad-a85821cd24ac.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-13T06:06:52Z",
+  "finished_at_utc": "2026-07-13T06:13:07Z"
+}

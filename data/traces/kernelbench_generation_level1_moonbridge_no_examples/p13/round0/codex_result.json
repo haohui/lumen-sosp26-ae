@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f55a6-0af3-7b32-a238-36337b1bf568",
+  "turn_id": null,
+  "final_response": "The kernel passes all checks:\n\n- **compiled**: true\n- **correctness**: true (5/5 trials)\n- **runtime**: 4.96ms mean (stable, std ~0.01ms)\n- **ref**: 0.21ms\n\nThe kernel uses MFMA 16\u00d716\u00d716 BF16 instructions with FP32 accumulation, tiled at 128\u00d7128 with 256 threads (4 warps). The shared memory uses the padded layout needed for correct MFMA operand loading. The store function does flat writes \u2014 the remaining ~25x gap versus rocBLAS is primarily from non-coalesced output stores and single-buffered loading (no double-buffered pipeline). The core MFMA compute path is functional and correct.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/12/rollout-2026-07-12T09-26-12-019f55a6-0af3-7b32-a238-36337b1bf568.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-12T09:26:12Z",
+  "finished_at_utc": "2026-07-12T10:00:23Z"
+}

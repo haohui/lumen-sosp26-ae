@@ -1,0 +1,48 @@
+{
+  "compiled": true,
+  "correctness": true,
+  "metadata": {
+    "original_model_file": "/workspace/lumen-runs-archive-20260712_090158/kernelbench_generation_level1_moonbridge/p14/round0/input_model.py",
+    "generated_model_file": "/workspace/lumen-runs-archive-20260712_090158/kernelbench_generation_level1_moonbridge/p14/round0/output_model_new.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "correctness_trials": "(5 / 5)"
+  },
+  "runtime": 4.25,
+  "runtime_stats": {
+    "mean": 4.25,
+    "std": 0.372,
+    "min": 3.76,
+    "max": 4.55,
+    "num_trials": 100,
+    "hardware": "AMD Instinct MI300X",
+    "device": "cuda:0",
+    "timing_mode": "cudagraph"
+  },
+  "ref_runtime": 0.209,
+  "ref_runtime_stats": {
+    "mean": 0.209,
+    "std": 0.00678,
+    "min": 0.196,
+    "max": 0.228,
+    "num_trials": 100,
+    "hardware": "AMD Instinct MI300X",
+    "device": "cuda:0",
+    "timing_mode": "cudagraph"
+  }
+}

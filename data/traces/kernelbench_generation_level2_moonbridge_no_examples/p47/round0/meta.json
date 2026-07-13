@@ -1,0 +1,17 @@
+{
+  "problem_id": 47,
+  "problem_name": "47_Conv3d_Mish_Tanh",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-13T03:11:06.368823Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic\nOpenAI Codex v0.144.1\n--------\nworkdir: /root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples/p47/round0\nmodel: moonbridge\nprovider:",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "reference_mode": "language-spec-only",
+    "prompt_sha256": "2cb783d2a1e85cf916fdc79bfc2b10fb5a0bddac5fc12ac3afa30541ea248e55",
+    "agents_sha256": "23bef78db135ee5d1f10b6d697c5876ef4438b9be572bb25e45cbe5e4e4b99d8"
+  }
+}

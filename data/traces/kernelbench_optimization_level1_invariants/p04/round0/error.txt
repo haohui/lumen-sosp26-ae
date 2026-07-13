@@ -1,0 +1,4 @@
+codex exited with error. log=Timed out after 3000.0s.
+2026-07-12T05:34:29.704147Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic
+2026-07-12T05:34:29.824125Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-07-12T05:34:29.856325Z  WARN codex_cor

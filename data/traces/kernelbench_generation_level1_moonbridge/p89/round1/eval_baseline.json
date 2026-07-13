@@ -1,0 +1,28 @@
+{
+  "compiled": true,
+  "correctness": true,
+  "metadata": {
+    "filename": "input_model.py",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.float32",
+    "backend": "cuda",
+    "seed": 42,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true
+  },
+  "runtime": 7.64,
+  "runtime_stats": {
+    "mean": 7.64,
+    "std": 0.79,
+    "min": 3.61,
+    "max": 9.38,
+    "num_trials": 100,
+    "hardware": "AMD Instinct MI300X",
+    "device": "cuda:0",
+    "timing_mode": "cudagraph"
+  },
+  "ref_runtime": -1.0,
+  "ref_runtime_stats": {}
+}

@@ -1,0 +1,3 @@
+codex exited with error. log=Timed out after 3000.0s.
+2026-07-12T05:34:30.053036Z  WARN codex_core_plugins::manager: failed to warm featured plugin ids cache error=remote featured plugin request to https://chatgpt.com/backend-api/plugins/featured failed with status 401 Unauthorized: {"detail":"Unauthorized"}
+2026-07-12T05:34:30.065238Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is miss

@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f52f3-ae8b-7811-978d-433fdeaf5ad4",
+  "turn_id": null,
+  "final_response": "Everything passes. Here's what landed:\n\n**`output_model_new.py`** contains two AveLang kernels:\n\n1. **`gemm_bias_bf16_kernel`** \u2014 BF16 GEMM with bias using `mfma_32x32x8_bf16_f32` instructions. Tile: 128\u00d7128 output per CTA, 4 warps in a 2\u00d72 grid, K step of 16. The A/B operands are staged through shared memory via `raw_buffer_load_x4` and packed as `u32` vectors for the MFMA (the key fix \u2014 the MFMA expects `vector<2xi32>`, not bf16 tensors).\n\n2. **`avgpool_gelu_scale_max_kernel`** \u2014 256 threads per CTA, one CTA per batch row. Each thread strides over pooled windows (2 windows each for 512 total), computes the average of 16 values, applies the GELU tanh approximation, scales by 2.0, then a shared-memory tree reduction finds the max.\n\n**Results**: compiled \u2713, correctness 5/5 \u2713, runtime 10.2ms vs PyTorch reference 36.9ms (3.6x speedup on MI300X).",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/11/rollout-2026-07-11T20-52-09-019f52f3-ae8b-7811-978d-433fdeaf5ad4.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-11T20:52:09Z",
+  "finished_at_utc": "2026-07-11T21:01:55Z"
+}

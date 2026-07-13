@@ -1,0 +1,33 @@
+{
+  "compiled": true,
+  "correctness": false,
+  "metadata": {
+    "original_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level1_moonbridge_no_examples/p68/round0/input_model.py",
+    "generated_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level1_moonbridge_no_examples/p68/round0/output_model_new.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "runtime_error": "VisitFunctionDef failed due to compiler diagnostics",
+    "runtime_error_name": "builtins.RuntimeError",
+    "runtime_error_traceback": "Traceback (most recent call last):\n  File \"/workspace/KernelBench/src/kernelbench/eval.py\", line 782, in run_and_check_correctness\n    output_new = model_new(*inputs)\n                 ^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1776, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1787, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/tmp3md1f0u9.py\", line 208, in forward\n    out = _avelang_conv_transpose3d(\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/tmp3md1f0u9.py\", line 154, in _avelang_conv_transpose3d\n    conv_transpose3d_kernel[lambda: (grid, block)](\n  File \"/avelang/python/avelang/runtime/jit.py\", line 509, in <lambda>\n    return lambda *args, **kwargs: self.run(dims, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/avelang/python/avelang/runtime/jit.py\", line 816, in run\n    kernel = self._do_compile(key, signature, device, constexprs, global_constexprs, options, attrs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/avelang/python/avelang/runtime/jit.py\", line 837, in _do_compile\n    kernel = self.compile(src, target=target, options=options)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/avelang/python/avelang/compiler/compiler.py\", line 77, in compile\n    data = backend.compile(src, target, options)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/avelang/python/avelang/backends/amdgpu/compiler.py\", line 33, in compile\n    return compile_to_binary(src, target, opt_level=2, options=options)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/avelang/python/avelang/compiler/code_generator.py\", line 275, in compile_to_binary\n    generator.visit_function_def(kernel_func, constexprs_json, \"kernel\")\nRuntimeError: VisitFunctionDef failed due to compiler diagnostics\n"
+  },
+  "runtime": -1.0,
+  "runtime_stats": {},
+  "ref_runtime": -1.0,
+  "ref_runtime_stats": {},
+  "eval_exit_code": 1
+}

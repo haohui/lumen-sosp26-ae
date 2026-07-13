@@ -1,0 +1,46 @@
+{
+  "compiled": true,
+  "correctness": false,
+  "metadata": {
+    "original_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p88/round1/input_model.py",
+    "generated_model_file": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p88/round1/output_model_new.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "max_difference": [
+      "0.093750",
+      "0.093750",
+      "0.093750",
+      "0.125000",
+      "0.125000"
+    ],
+    "avg_difference": [
+      "0.000618",
+      "0.000618",
+      "0.000618",
+      "0.000618",
+      "0.000618"
+    ],
+    "correctness_issue": "Output mismatch",
+    "correctness_trials": "(0 / 5)"
+  },
+  "runtime": -1.0,
+  "runtime_stats": {},
+  "ref_runtime": -1.0,
+  "ref_runtime_stats": {},
+  "eval_exit_code": 1
+}

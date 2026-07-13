@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5529-04cc-7042-bf13-43bc6fa95342",
+  "turn_id": null,
+  "final_response": "All done. Here's a summary of the three bugs I found and fixed, plus the optimization applied:\n\n**Bugs fixed in `candidate_input.py`:**\n\n1. **CDNA3 MFMA VGPR accumulator layout**: The store code assumed a 4\u00d74 contiguous output block per thread, but the CDNA3 `mfma_32x32x8_bf16_f32` instruction uses a strided layout where VGPR `m` maps to row `(tid>>5)*4 + (m>>2)*8 + (m&3)` and column `tid % 32`. This was the root cause of the ~88% wrong elements in the candidate.\n\n2. **BF16 store width mismatch**: `raw_buffer_store_x1` writes 4 bytes, but BF16 elements are 2 bytes. Adjacent threads storing to consecutive columns produced overlapping writes that corrupted each other's data. Fixed by staging output through a `(64, 64)` shared memory tile, then using `raw_buffer_store_x4` to write 8 packed BF16 values (16 bytes) per row segment \u2014 no overlaps.\n\n3. **K-loop bound**: The loop `range(K_STEP, k, 2*K_STEP)` left the last partial K tile uncomputed when `k` wasn't a multiple of `2*K_STEP`. Changed to `range(K_STEP, k + K_STEP, 2*K_STEP)`, relying on buffer resource descriptor range to make OOB loads return zero for tiles past the matrix boundary.\n\n**Optimization applied:**\n\nRemoved the entire epilogue block (~80 lines). The extended loop bound handles all K-tile coverage naturally: when the final phase 2 loads `kk + K_STEP >= k`, the buffer range causes those loads to return zero, the MFMA adds zero contribution, and the loop exits cleanly. This eliminates the explicit OOB-guarding branches that were in the epilogue.\n\n**Result**: correctness 5/5, compiled, runtime 1.02 ms vs reference 0.214 ms.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/12/rollout-2026-07-12T07-09-39-019f5529-04cc-7042-bf13-43bc6fa95342.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-12T07:09:39Z",
+  "finished_at_utc": "2026-07-12T07:52:38Z"
+}

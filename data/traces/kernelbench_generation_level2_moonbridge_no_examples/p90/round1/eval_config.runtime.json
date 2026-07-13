@@ -1,0 +1,8 @@
+{
+  "backend": "avelang",
+  "gpu_arch": "gfx942",
+  "precision": "bf16",
+  "num_correct_trials": 5,
+  "num_trials": 100,
+  "num_warmup": 5
+}

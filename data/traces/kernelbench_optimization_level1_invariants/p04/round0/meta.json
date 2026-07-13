@@ -1,0 +1,16 @@
+{
+  "problem_id": 4,
+  "problem_name": "4_Matrix_vector_multiplication_",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-12T05:34:29.704147Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic\n2026-07-12T05:34:29.824125Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-07-12T05:34:29.856325Z  WARN codex_cor",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "prompt_sha256": "e451c01e301ef12791387b7891b842eaa41d50518f61bd55d68bb3c801979156",
+    "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+  }
+}

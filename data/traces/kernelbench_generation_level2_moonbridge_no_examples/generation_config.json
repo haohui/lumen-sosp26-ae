@@ -1,0 +1,44 @@
+{
+  "dataset": {
+    "source": "huggingface",
+    "level": 2,
+    "name": "ScalingIntelligence/KernelBench",
+    "subset": [
+      1,
+      100
+    ],
+    "problem_ids": []
+  },
+  "run_dir": "/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge_no_examples",
+  "codex": {
+    "timeout_seconds": 3000,
+    "max_retries": 3,
+    "codex_bin": null,
+    "profile": null,
+    "model_provider": null,
+    "reasoning_effort": null,
+    "config_overrides": [],
+    "bypass_approvals_and_sandbox": true,
+    "save_trajectory": true
+  },
+  "evaluation": {
+    "gpu_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "precision": "bf16",
+    "num_correct_trials": 5,
+    "num_perf_trials": 100,
+    "gpu_arch": "gfx942"
+  },
+  "prompt": {
+    "reference_mode": "language-spec-only"
+  },
+  "num_workers": 8
+}

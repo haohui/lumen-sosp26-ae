@@ -1,0 +1,16 @@
+{
+  "compiled": false,
+  "correctness": false,
+  "metadata": {
+    "filename": "input_model.py",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "error": "HIP error: operation not permitted when stream is capturing\nSearch for `hipErrorStreamCaptureUnsupported' in https://rocm.docs.amd.com/projects/HIP/en/latest/index.html for more information.\nHIP kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing AMD_SERIALIZE_KERNEL=3\nCompile with `TORCH_USE_HIP_DSA` to enable device-side assertions.\n",
+    "error_name": "torch.AcceleratorError",
+    "traceback": "Traceback (most recent call last):\n  File \"/root/lumen-clean/lumen-sosp26-ae-origin/python/lumen/harness/datasets/kernelbench/evaluator.py\", line 58, in evaluate_reference_file\n    runtime_stats = _measure_model_with_cuda_graph(\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/lumen-clean/lumen-sosp26-ae-origin/python/lumen/harness/datasets/kernelbench/evaluator.py\", line 357, in _measure_model_with_cuda_graph\n    model(*inputs)\n  File \"/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1776, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1787, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<string>\", line 17, in forward\ntorch.AcceleratorError: HIP error: operation not permitted when stream is capturing\nSearch for `hipErrorStreamCaptureUnsupported' in https://rocm.docs.amd.com/projects/HIP/en/latest/index.html for more information.\nHIP kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing AMD_SERIALIZE_KERNEL=3\nCompile with `TORCH_USE_HIP_DSA` to enable device-side assertions.\n\n"
+  },
+  "runtime": -1.0,
+  "runtime_stats": {},
+  "ref_runtime": -1.0,
+  "ref_runtime_stats": {}
+}

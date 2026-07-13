@@ -1,0 +1,1 @@
+Static check failed: ['Contains try-except block', 'Contains pass statement']. Warnings: []

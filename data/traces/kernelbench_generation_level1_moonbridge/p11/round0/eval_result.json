@@ -1,0 +1,48 @@
+{
+  "compiled": true,
+  "correctness": true,
+  "metadata": {
+    "original_model_file": "input_model.py",
+    "generated_model_file": "output_model_new.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "correctness_trials": "(5 / 5)"
+  },
+  "runtime": 1.5,
+  "runtime_stats": {
+    "mean": 1.5,
+    "std": 0.0256,
+    "min": 1.45,
+    "max": 1.63,
+    "num_trials": 100,
+    "hardware": "AMD Instinct MI300X",
+    "device": "cuda:0",
+    "timing_mode": "cudagraph"
+  },
+  "ref_runtime": 1.16,
+  "ref_runtime_stats": {
+    "mean": 1.16,
+    "std": 0.0214,
+    "min": 1.11,
+    "max": 1.21,
+    "num_trials": 100,
+    "hardware": "AMD Instinct MI300X",
+    "device": "cuda:0",
+    "timing_mode": "cudagraph"
+  }
+}

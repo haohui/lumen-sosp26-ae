@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f55d3-4f90-7b71-b38e-cdde69553de2",
+  "turn_id": null,
+  "final_response": "All done. Here's the summary:\n\n**Results**: `compiled: true`, `correctness: true` (5/5 trials), **4.52ms** mean runtime vs **4.06ms** reference \u2014 only ~11% overhead with dramatically tighter variance (std 0.03 vs 1.54).\n\n**Architecture**: Three AveLang kernels working in sequence:\n\n1. **`reduce_sum_sq_kernel`** \u2014 each of ~14K blocks processes a tile with coalesced memory access (`i * 256 + tid` stride pattern), accumulates sum of squares in FP32, does an unrolled shared-memory tree reduction, and writes one partial sum per block.\n\n2. **`final_reduce_kernel`** \u2014 a single 256-thread block reduces all partial sums via strided loading and shared-memory tree reduction, then writes `sqrt(sum)` back to `partial_sums[0]`.\n\n3. **`normalize_kernel`** \u2014 each block reads the precomputed norm from `partial_sums[0]` (using the `tid - tid` trick to avoid a compiler subscript limitation on size-1 layouts), then normalizes its tile with the same coalesced access pattern.\n\nThe host wrapper handles FP32\u2194BF16 conversion to match the reference model's output dtype contract.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/12/rollout-2026-07-12T10-15-39-019f55d3-4f90-7b71-b38e-cdde69553de2.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-12T10:15:39Z",
+  "finished_at_utc": "2026-07-12T10:35:20Z"
+}

@@ -1,0 +1,186 @@
+You are writing GPU kernels with the AveLang DSL.
+AveLang DSL is a tile-based DSL for high-performance GPU kernels, syntactically close to Triton/PyCuTe and exposing low-level AMD features such as MFMA and explicit synchronization.
+
+Treat AveLang as a PyCuTe-like kernel programming model with its own DSL syntax and AMD-oriented primitives.
+The primary deliverable is a real fused GPU kernel implementation in AveLang DSL, not a partial PyTorch operator replacement.
+Kernel launch configuration, memory hierarchy usage, and tile-level mapping should be explicitly expressed in the generated code.
+
+Below is a reference `Model` / `ModelNew` pattern in AveLang DSL.
+You will receive an `input_model.py` architecture below, and you must output an optimized `output_model_new.py`.
+Use this structure as guidance and optimize the target architecture into a correct and runnable `ModelNew`.
+
+## AveLang DSL Syntax and Examples
+
+Here is a complete example showing how to write an AveLang DSL kernel:
+
+**Example: Element-wise Addition**
+
+Input PyTorch model:
+```python
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, a, b):
+        return a + b
+```
+
+Optimized AveLang DSL kernel:
+```python
+import torch
+import torch.nn as nn
+import avelang
+import avelang.language as al
+
+@avelang.jit
+def add_kernel(
+    a: al.Tensor((1, 128), al.f32),
+    b: al.Tensor((1, 128), al.f32),
+    out: al.Tensor((1, 128), al.f32),
+):
+    tid = al.thread_id(0)
+    if tid < 128:
+        out[0, tid] = a[0, tid] + b[0, tid]
+
+def avelang_add(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    assert a.is_cuda and b.is_cuda, "Tensors must be on CUDA/HIP device."
+    assert a.shape == (1, 128) and b.shape == (1, 128), "Example kernel expects shape (1, 128)."
+
+    out = torch.empty_like(a)
+    add_kernel[lambda: ((1, 1, 1), (128, 1, 1))](a, b, out)
+    return out
+
+class ModelNew(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, a, b):
+        return avelang_add(a, b)
+```
+
+You are given the following architecture:
+
+
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+    """
+    Simple model that performs matrix-vector multiplication (C = A * B).
+    """
+    def __init__(self):
+        super(Model, self).__init__()
+    
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        """
+        Performs matrix-vector multiplication.
+
+        Args:
+            A: Input matrix of shape (M, K).
+            B: Input vector of shape (K, 1).
+
+        Returns:
+            Output vector of shape (M, 1).
+        """
+        return torch.matmul(A, B)
+
+M = 256 * 8 # 2048
+K = 131072 * 8 # 1048576
+
+def get_inputs():
+    A = torch.rand(M, K)
+    B = torch.rand(K, 1)
+    return [A, B]
+
+def get_init_inputs():
+    return []  # No special initialization inputs needed
+
+## AveLang DSL Critical Requirements
+
+**Kernel Definition Requirements:**
+- All `@avelang.jit` kernel functions must be defined at module top-level, never nested inside other functions or classes.
+- AveLang compiles kernels at import time; runtime definition is not supported.
+
+**Memory and Data Handling:**
+- Use `al.Pointer(dtype)` for runtime-shaped buffers, then create tensor views with `al.make_tensor(pointer, dtype, layout)`.
+- Use `al.make_shared((shape), dtype)` for shared memory buffers with proper synchronization.
+- Use `al.range()` for device-side loops, never Python's `range()`.
+- Use explicit type conversions such as `al.convert(value, al.f32)` for dtype changes.
+
+**Launch Configuration:**
+- Kernel launch syntax: `kernel[lambda: ((grid_x, grid_y, grid_z), (block_x, block_y, block_z))](args...)`.
+- For BF16 precision: use BF16 computation with FP32 accumulation for numerical stability.
+
+**Implementation Requirements:**
+- Preserve the exact semantics of the target `Model.forward`.
+- Keep input/output contracts compatible with `get_inputs()` and `get_init_inputs()` from the target problem.
+- Do not provide a pure PyTorch eager implementation.
+- Do not route final outputs through torch fallback paths such as `torch.matmul`, `torch.mm`, `torch.bmm`, `torch.Conv2d`, or equivalent eager compute.
+
+## Restrictions
+
+Use only the current round's files and the AveLang language specification listed in `AGENTS.md`.
+In the current round directory, you may read `input_model.py`, `candidate_input.py` if present, `prompt.txt`, `eval_config.json`, `AGENTS.md`, and files produced by your own self-checks in this same directory.
+
+Do not inspect, grep, cat, sed, copy from, or otherwise read files outside the current round directory, except for the exact AveLang language specification path listed in `AGENTS.md`.
+Do not inspect git history, other branches, other runs, other problems, parent optimization-round directories, previous round directories, old generated kernels, or candidate outputs outside the current round.
+Do not use web search or network lookups for implementation guidance.
+
+If optimizing a fused kernel, implement a standalone fused AveLang kernel rather than calling an existing GEMM kernel.
+Make the optimized path cudagraph-safe: never build descriptor or metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+Do not use torch native compute anywhere in `output_model_new.py` to perform multiplication or linear algebra, including fallback branches.
+This ban includes any direct or indirect torch compute path such as `torch.matmul`, `torch.mm`, `torch.mv`, `torch.bmm`, `torch.einsum`, `torch.mul`, `torch.addmm`, `torch.chain_matmul`, `torch.nn.functional.linear`, or equivalent compositions that let torch perform the multiply or linear work.
+For matrix multiplication paths, the optimized AveLang implementation must actually issue MFMA instructions; a GEMM solution that does not use MFMA is not acceptable.
+
+Note: The kernels should be optimized for BF16 (bfloat16) precision.
+
+Implement the target computation as a fused AveLang GPU path and provide a runnable `ModelNew` entrypoint that launches it.
+Prefer one fused `@avelang.jit` kernel for the main computation. Use multiple AveLang kernels only when required by correctness, AveLang limitations, or a clearly necessary staging step.
+
+Preserve the exact semantics of the target `Model.forward` in the provided architecture. The target architecture is authoritative over examples.
+Keep input/output contracts compatible with `get_inputs()` and `get_init_inputs()` from the target problem.
+Preserve output dtype behavior of the reference model unless the target model itself specifies a reduced-precision path.
+
+Do not provide a pure PyTorch eager implementation.
+Do not route final outputs through torch fallback paths such as `torch.matmul`, `torch.mm`, `torch.bmm`, or equivalent eager compute.
+
+## Starting candidate
+
+The original Torch reference remains in `input_model.py`. Start this optimization round from the existing AveLang implementation in `candidate_input.py`; do not regenerate a fresh implementation from the Torch reference. Preserve the reference semantics while applying this round's optimization guidance. `candidate_input.py` is read-only; edit only `output_model_new.py`.
+
+## Optimization guidance
+
+Profile: `invariants`; template family: `gemm`.
+
+Write `output_model_new.py` so that it applies the guidance below.
+
+## 1: Prompt 1
+
+Implement the matrix multiplication path with AveLang kernels.
+
+Use `al.amdgpu.mfma_32x32x8_bf16_f32` for matrix multiplication and
+`al.amdgpu.raw_buffer_load_x4` for vectorized global-memory loads. The MFMA
+instruction computes a 32x32x8 matrix multiplication cooperatively in a wave.
+Build larger tiles by issuing multiple MFMA instructions across K and output
+subtiles.
+
+MFMA swizzle invariants:
+  For A, `i in [0,32)`, `j in [0,8)`: `A(i, j) -> (lane_id = i + (j / 4) * 32, element = j % 4)`
+  For B, `j in [0,8)`, `i in [0,32)`: `B(j, i) -> (lane_id = j + (i / 4) * 32, element = i % 4)`
+
+Accumulator invariant for C: for each lane in [0, 64) and acc_idx in [0, 16):
+  - col = tile_col_base + (lane % 32)
+  - row = tile_row_base + 8 * (acc_idx // 4) + 4 * (lane // 32) + (acc_idx % 4)
+
+Do not invent a different unpacking. Do not use a naive acc_idx -> contiguous row mapping. Treat this mapping as fixed when writing results.
+
+Stage A and B through LDS. Each thread loads operand fragments in 16-byte chunks. Treat each 16-byte fragment as `(4, al.u32)` and reinterpret it as `2 x (4, al.bf16)`. Feed both `(4, al.bf16)` halves into MFMA in natural order. The intended effect is a cooperative `32x32x16` accumulation from two natural MFMA steps. Do not add lane-dependent or K-dependent control flow to select halves.
+  - The two `(4, al.bf16)` halves from one 16-byte LDS load collectively represent a swizzled `32x16` operand contribution with 4-column interleaving.
+  - Consuming them in natural order must produce the same final C as a naive conceptual layout because operand pairings remain consistent under MFMA swizzle.
+
+Scale the kernel from one wave to four waves without changing the MFMA per-wave invariant. Interpret the 4 warps as a 2 x 2 warp grid. Keep MFMA math identical per warp. Only add warp ownership offsets at operand fetch and output writeback.
+
+Write your complete final implementation directly to the file `output_model_new.py` in the current working directory using your file writing tools. Do not print the code in your response text; write it to the file only. Do not inspect or copy from any other `runs/` directory, previous generated kernel, optimization round, or candidate output.

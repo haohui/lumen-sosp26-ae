@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f552e-5ee6-7c73-afe1-bf511f1ad636",
+  "turn_id": null,
+  "final_response": "The kernel is correct and running. Here's a summary of what was done:\n\n**Three bugs fixed in the candidate kernel:**\n\n1. **Shared memory store conflict** \u2014 `_store_r2s_a` used `m_off = (tid % 8) * 8`, producing values 0..56 for all 256 threads. Both warp-row groups wrote to the same shared memory rows, with warp row 1 overwriting warp row 0's data. Fixed by using warp-local indexing (`warp_tid = tid % 64`) with `m_group = warp_tid // 16` (4 values per warp) and offsetting by `warp_dim * 32`.\n\n2. **Mismatched global load / shared store K coverage** \u2014 `_load_g2r_a_k16` used block-level `(tid // 8) % 16` for `k_off` (8 values per warp pair), but the store needed 16 values per warp. Fixed by switching both functions to consistent warp-local indexing with `k_off = warp_tid % 16`.\n\n3. **LDS-to-MFMA data layout** \u2014 `_load_s2r_a_tile` loaded horizontal strips (`r = row_base + lane // 4`, `c = (lane % 4) * 4`) but the MFMA expects vertical strips. Fixed to `r = row_base + lane % 16`, `c = (lane // 16) * 4`. This also eliminated the need for the spurious second `_mfma16` call per tile (which was operating on uninitialized register data).\n\n**Optimizations applied:**\n- **Double buffering** \u2014 two sets of shared memory buffers (A_shm0/A_shm1, B_shm0/B_shm1) with a toggle-based static schedule\n- **Software pipelining** \u2014 global loads for tile N+1 are issued before LDS reads + MFMA for tile N, overlapping memory latency with computation\n- **Fine-grain LDS/MFMA interleaving** \u2014 each 16\u00d716 tile's data is loaded from LDS immediately before its MFMA call\n\nResult: correctness 5/5, runtime 1.13ms on MI300X.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/12/rollout-2026-07-12T07-15-30-019f552e-5ee6-7c73-afe1-bf511f1ad636.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-12T07:15:30Z",
+  "finished_at_utc": "2026-07-12T07:42:09Z"
+}

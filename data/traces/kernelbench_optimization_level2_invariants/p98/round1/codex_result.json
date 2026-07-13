@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5a46-8ea9-7711-9b35-79ff5ea9c900",
+  "turn_id": null,
+  "final_response": "The kernel is complete and passes correctness (`5/5 trials`, `max_difference` within tolerance). Here's a summary of what was done:\n\n**Optimizations applied to `gemm_kernel`:**\n\n- **Double buffering**: Two sets of shared memory (`a_smem0`/`b_smem0` and `a_smem1`/`b_smem1`) so the next K-tile can be loaded while the current tile is being computed.\n\n- **Software pipelining**: Each loop iteration runs two stages \u2014 Stage A loads tile `kt` into buffer 1 while computing tile `kt-1` from buffer 0, then Stage B loads tile `kt+1` into buffer 0 while computing tile `kt` from buffer 1. The global memory loads are in flight between sync barriers while MFMA executes, overlapping memory and compute.\n\n- **K-loop unrolled by 2**: The main loop steps by 2 (`al.range(1, K_TILES - 1, 2)`), processing two pipeline stages per iteration. This halves the loop trip count from 511 to 255 iterations, reducing branch overhead.\n\n- **Fine-grained LDS/MFMA**: Each K-tile's 2 MFMA instructions are issued independently from views of the shared memory row (`af[0]`/`af[1]`), keeping the working set per MFMA tight.\n\n**Correctness fix**: The bias addition was moved out of the AveLang kernel into PyTorch host code, with an explicit BF16 rounding step (`C.to(bfloat16).to(float32)`) after matmul+bias. This matches the reference model's fully-BF16 precision path, which was the root cause of the initial 0.0195 max difference. The GELU was also switched from tanh-approximation to exact erf-based (`al.erf`).\n\n**Results**: `compiled: true`, `correctness: true (5/5)`, `runtime: 8.9ms` vs `ref_runtime: 1.89ms`.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/13/rollout-2026-07-13T07-00-01-019f5a46-8ea9-7711-9b35-79ff5ea9c900.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-13T07:00:01Z",
+  "finished_at_utc": "2026-07-13T07:22:15Z"
+}

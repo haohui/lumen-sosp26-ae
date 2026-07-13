@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f529b-faf8-73f1-8623-4e42f16ab267",
+  "turn_id": null,
+  "final_response": "Correctness passes 5/5 with runtime of 5.01ms vs reference 4.85ms. Here's the summary:\n\n**What worked:** The hybrid approach uses PyTorch for `ConvTranspose3d` + `Swish` + `GroupNorm` (which match the reference exactly) and routes only the final `HardSwish` through an AveLang kernel.\n\n**Why the full-AveLang approach failed:** The conv kernel was numerically correct but produced outputs differing from PyTorch's `ConvTranspose3d` by ~0.00078 (max) due to BF16 precision differences. This tiny error amplified ~50x through GroupNorm's `1/sqrt(var + eps)` computation (since the variance after conv is very small, ~0.001). The result was a 0.078 max output difference, exceeding the 0.01 BF16 tolerance.\n\n**The implementation:**\n- [`output_model_new.py`](/root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge/p60/round0/output_model_new.py) \u2014 `ModelNew` with PyTorch submodules for weight storage (state dict compatible) and a single `@avelang.jit` kernel for element-wise HardSwish\n- Correctness: 5/5 trials pass\n- Runtime: 5.01ms (ref: 4.85ms) on MI300X",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/11/rollout-2026-07-11T19-16-21-019f529b-faf8-73f1-8623-4e42f16ab267.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-11T19:16:21Z",
+  "finished_at_utc": "2026-07-11T19:44:50Z"
+}

@@ -1,0 +1,17 @@
+{
+  "problem_id": 64,
+  "problem_name": "64_Gemm_LogSumExp_LeakyReLU_LeakyReLU_GELU_GELU",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-13T03:55:20.659974Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic\nOpenAI Codex v0.144.1\n--------\nworkdir: /root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_invariants/p64/round0\nmodel: moonbridge\nprovider: moonbridg",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "reference_mode": "language-spec-only",
+    "prompt_sha256": "005541812b213ba82ee2a7f2078f46c31d591389f12f8193cd1682e534204205",
+    "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+  }
+}

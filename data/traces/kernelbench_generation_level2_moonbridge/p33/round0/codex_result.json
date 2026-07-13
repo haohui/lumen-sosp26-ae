@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5249-7fd3-70f2-958a-d4abcaa1e420",
+  "turn_id": null,
+  "final_response": "The implementation passes correctness (5/5 trials) with a runtime of **8.54 ms** vs **37.3 ms** for the PyTorch reference \u2014 about **4.4x faster**.\n\nHere's what ended up in `output_model_new.py`:\n\n**Three AveLang kernels:**\n1. **`gemm_bias_scale_kernel`** \u2014 Software-pipelined BF16 GEMM using `mfma_16x16x16_bf16_f32` (the working MFMA variant in this AveLang version), with bias addition and scale multiplication fused into the writeback. Uses 2-stage LDS double-buffering with scheduler barriers for MI300X. Tile sizes: 128\u00d7128\u00d764.\n\n2. **`batchnorm_stats_kernel`** \u2014 Per-feature reduction over the batch dimension (1024 elements) using shared-memory tree reduction. One CTA per feature with 256 threads.\n\n3. **`batchnorm_apply_kernel`** \u2014 Per-feature normalization + affine transform application, also one CTA per feature.\n\n**Key fix:** The eval harness calls `model.eval()`, putting BatchNorm in eval mode where it uses `running_mean`/`running_var` (initially zeros/ones) instead of computing batch statistics. The host wrapper `avelang_fused` now accepts a `training` flag and handles both paths correctly.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/11/rollout-2026-07-11T17-46-16-019f5249-7fd3-70f2-958a-d4abcaa1e420.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-11T17:46:16Z",
+  "finished_at_utc": "2026-07-11T18:05:34Z"
+}

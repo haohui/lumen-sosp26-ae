@@ -1,0 +1,16 @@
+{
+  "problem_id": 93,
+  "problem_name": "93_ConvTranspose2d_Add_Min_GELU_Multiply",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-11T20:50:59.403107Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic\nOpenAI Codex v0.144.1\n--------\nworkdir: /root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_generation_level2_moonbridge/p93/round1\nmodel: moonbridge\nprovider: moonbridge\n",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "prompt_sha256": "bd156d7ea5f365af1cdd5654511cf8f1ff3a6956a9dd76097d8fcdb974c8a23a",
+    "agents_sha256": "482978c91da732250d533401ec5fd5add59015718c1b9e3a6958ea4025ce5523"
+  }
+}

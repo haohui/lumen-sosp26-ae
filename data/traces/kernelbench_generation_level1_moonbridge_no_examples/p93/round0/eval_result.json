@@ -1,0 +1,32 @@
+{
+  "compiled": false,
+  "correctness": false,
+  "metadata": {
+    "original_model_file": "input_model.py",
+    "generated_model_file": "output_model_new.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "error": "module 'avelang.language' has no attribute 'make_layout'",
+    "error_name": "builtins.AttributeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/root/lumen-clean/lumen-sosp26-ae-origin/python/lumen/harness/datasets/kernelbench/evaluator.py\", line 162, in evaluate_generated_model\n    ModelNew, temp_file = load_custom_model_with_tempfile(\n                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/KernelBench/src/kernelbench/eval.py\", line 176, in load_custom_model_with_tempfile\n    spec.loader.exec_module(temp_module)\n  File \"<frozen importlib._bootstrap_external>\", line 995, in exec_module\n  File \"<frozen importlib._bootstrap>\", line 488, in _call_with_frames_removed\n  File \"/tmp/tmpxcrjx0m8.py\", line 57, in <module>\n    class ModelNew(nn.Module):\n  File \"/tmp/tmpxcrjx0m8.py\", line 64, in ModelNew\n    layout_2d = al.make_layout((nrows, ncols), (ncols, 1))\n                ^^^^^^^^^^^^^^\nAttributeError: module 'avelang.language' has no attribute 'make_layout'\n"
+  },
+  "runtime": -1.0,
+  "runtime_stats": {},
+  "ref_runtime": -1.0,
+  "ref_runtime_stats": {}
+}

@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f524d-17e4-7dd0-bcd8-23b9fa32e3e4",
+  "turn_id": null,
+  "final_response": "The kernel passes. Here's the summary:\n\n**Result**: compiled `true`, correctness `true` (5/5 trials), runtime 0.515 ms vs rocBLAS reference 0.251 ms.\n\n**Architecture**: Two AveLang kernels working together:\n\n1. **MFMA BF16 GEMM kernel** (`gemm_div2_f32_kernel`) \u2014 Based on the shipped `amdgpu_gemm.py` pattern. Uses `mfma_16x16x16_bf16_f32` with 128\u00d7128\u00d764 tiling, shared-memory staging, and a 2\u00d72 warp grid. The divide-by-2 is fused into the f32 writeback via `raw_buffer_store_x4`.\n\n2. **Reduction kernel** (`row_sum_reduce_bf16_kernel`) \u2014 Row-wise sum across N=8192 columns with a 256-thread shared-memory tree reduction, followed by scaling-factor multiplication and BF16 output.\n\n**Key insight that unlocked correctness**: The eval casts both models to BF16 precision. The reference model's `torch.matmul` dispatches to rocBLAS, which uses the same MFMA hardware instructions. By using the identical MFMA path and matching the BF16 rounding points (GEMM output rounded to BF16 before summation), the results become bit-identical at the BF16 level. The `mfma_32x32x8` variant from the docs example didn't compile \u2014 only `mfma_16x16x16` worked.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/11/rollout-2026-07-11T17-50-11-019f524d-17e4-7dd0-bcd8-23b9fa32e3e4.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-11T17:50:11Z",
+  "finished_at_utc": "2026-07-11T18:16:59Z"
+}

@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5b1d-4303-7311-b319-0aa5b13a5cb5",
+  "turn_id": null,
+  "final_response": "The kernel is done. Here's what I built and what was fixed:\n\n**The two bugs in the candidate:**\n1. **Race condition on output writes**: All 64 threads per warp were writing to all 32 output rows after only accumulating their own 4 columns worth of the sigmoid sum. The last thread to write any given row \"won\", so 28 of 32 rows per block ended up as zero. Fixed with a shuffle-xor reduction across column lanes \u2014 each thread now sums `partial[row]` across all 8 `tc` lanes that share the same row group, then writes only its 4 rows.\n2. **Row coverage**: The candidate only processed 64 of 128 rows (warp mapping gave 2, not 4, distinct row groups). Fixed by using 4 blocks \u00d7 64 threads (one warp per block), each handling 32 distinct rows with its own shared memory \u2014 no conflicts.\n\n**Optimizations applied:**\n- **Double buffering**: Two sets of A/B shared memory (`A0`/`A1`, `B0`/`B1`) to decouple loads from compute\n- **Software pipelining**: Prologue preloads tile 0 into buffer 0, then the main loop loads tile N+1 while computing tile N, alternating buffers\n- **2\u00d7 K-loop unrolling**: Each iteration handles 32 K-elements (two 16-element tiles), with phase 1 loading buf1/computing buf0 and phase 2 loading buf0/computing buf1\n- **Epilogue handling**: The last K tile (when `k_next >= K_VAL`) gets a dedicated MFMA pass instead of being dropped\n- **Shuffle reduction**: Warp-level `shuffle_xor` sums across the 8 column lanes per row group, avoiding shared memory for the final reduction\n\n**Results**: 5/5 correctness trials pass. Runtime ~1020 \u00b5s vs reference ~863 \u00b5s (rocBLAS-backed torch path), about 18% gap \u2014 expected for a correctness-first fused kernel vs hand-tuned library GEMM.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/13/rollout-2026-07-13T10-54-32-019f5b1d-4303-7311-b319-0aa5b13a5cb5.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-13T10:54:32Z",
+  "finished_at_utc": "2026-07-13T11:19:51Z"
+}

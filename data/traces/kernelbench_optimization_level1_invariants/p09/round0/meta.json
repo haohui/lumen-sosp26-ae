@@ -1,0 +1,16 @@
+{
+  "problem_id": 9,
+  "problem_name": "9_Tall_skinny_matrix_multiplication_",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-12T05:52:08.634840Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic\nOpenAI Codex v0.144.1\n--------\nworkdir: /root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level1_invariants/p09/round0\nmodel: moonbridge\nprovider: moonbridg",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "prompt_sha256": "bdb17c6f1e501b432ab1ebb181b3d76614a01b87f82d16c90b15cccc220d841a",
+    "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+  }
+}

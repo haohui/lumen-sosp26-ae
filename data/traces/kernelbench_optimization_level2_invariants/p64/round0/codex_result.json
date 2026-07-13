@@ -1,0 +1,12 @@
+{
+  "ok": false,
+  "status": "timed_out",
+  "thread_id": null,
+  "session_id": "019f599d-7ad4-74e2-aca7-970086907ab5",
+  "turn_id": null,
+  "final_response": null,
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/13/rollout-2026-07-13T03-55-20-019f599d-7ad4-74e2-aca7-970086907ab5.jsonl",
+  "error": "Timed out after 3000.0s.",
+  "started_at_utc": "2026-07-13T03:55:20Z",
+  "finished_at_utc": "2026-07-13T04:45:20Z"
+}

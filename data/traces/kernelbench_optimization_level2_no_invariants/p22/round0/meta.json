@@ -1,0 +1,17 @@
+{
+  "problem_id": 22,
+  "problem_name": "22_Matmul_Scale_ResidualAdd_Clamp_LogSumExp_Mish",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "codex exited with error. log=Timed out after 3000.0s.\n2026-07-13T08:00:40.189418Z  WARN codex_protocol::openai_models: Model personality requested but model_messages is missing, falling back to base instructions. model=moonbridge personality=pragmatic\nOpenAI Codex v0.144.1\n--------\nworkdir: /root/lumen-clean/lumen-sosp26-ae-origin/runs/kernelbench_optimization_level2_no_invariants/p22/round0\nmodel: moonbridge\nprovider: moonbr",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "reference_mode": "language-spec-only",
+    "prompt_sha256": "d0db5bed8ba332f31be4e84583e92833557f4c09c1f2291ac4aba86e57e45568",
+    "agents_sha256": "9d0a29210abc29a842a41ddf9e3da0ed233a0910d99851586a41d2756f282af5"
+  }
+}

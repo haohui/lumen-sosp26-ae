@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5280-4520-7412-96cc-44b679e588b5",
+  "turn_id": null,
+  "final_response": "All checks pass. Here's the summary:\n\n**Correctness**: 5/5 trials passing, compiled and verified on AMD Instinct MI300X.\n\n**Performance**: 2.19 ms vs 3.55 ms reference \u2014 about **1.6x speedup**.\n\nThe kernel fuses all five operations (ConvTranspose3d, scale, AvgPool3d, bias add, scale) into a single AveLang kernel. Each thread computes one pool output element by accumulating contributions from the 8 pooling-neighborhood conv-transpose outputs, each involving up to 81 MACs (3 input channels \u00d7 27 kernel positions). The conv bias and custom bias are pre-combined on the host, and accumulation stays in FP32 before converting back to BF16 for the store.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/11/rollout-2026-07-11T18-46-05-019f5280-4520-7412-96cc-44b679e588b5.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-11T18:46:05Z",
+  "finished_at_utc": "2026-07-11T18:54:19Z"
+}

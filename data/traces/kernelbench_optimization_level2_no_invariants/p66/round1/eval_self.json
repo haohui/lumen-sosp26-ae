@@ -1,0 +1,32 @@
+{
+  "compiled": false,
+  "correctness": false,
+  "metadata": {
+    "original_model_file": "input_model.py",
+    "generated_model_file": "input_model.py",
+    "backend": "avelang",
+    "eval_config": {
+      "backend": "avelang",
+      "gpu_arch": "gfx942",
+      "precision": "bf16",
+      "num_correct_trials": 5,
+      "num_trials": 100
+    },
+    "gpu_arch": "gfx942",
+    "device": "cuda:0",
+    "hardware": "AMD Instinct MI300X",
+    "precision": "torch.bfloat16",
+    "seed": 42,
+    "num_correct_trials": 5,
+    "num_warmup": 5,
+    "num_trials": 100,
+    "cuda_graph": true,
+    "error": "module 'temp_module' has no attribute 'ModelNew'",
+    "error_name": "builtins.AttributeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/root/lumen-clean/lumen-sosp26-ae-origin/python/lumen/harness/datasets/kernelbench/evaluator.py\", line 162, in evaluate_generated_model\n    ModelNew, temp_file = load_custom_model_with_tempfile(\n                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/KernelBench/src/kernelbench/eval.py\", line 178, in load_custom_model_with_tempfile\n    ModelNew = getattr(temp_module, entry_point)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: module 'temp_module' has no attribute 'ModelNew'\n"
+  },
+  "runtime": -1.0,
+  "runtime_stats": {},
+  "ref_runtime": -1.0,
+  "ref_runtime_stats": {}
+}

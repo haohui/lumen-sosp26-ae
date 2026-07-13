@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5b5d-bad3-72a3-9955-3e8d45d8f212",
+  "turn_id": null,
+  "final_response": "The file is clean. Here's a summary of what was done:\n\n**Changes applied from `candidate_input.py` to `output_model_new.py`:**\n\n1. **Fused into a single kernel** \u2014 Eliminated the separate `postprocess_kernel`. The bias add, `min(2.0)`, and `subtract(2.0)` now happen inline during the matmul write-back (lines 290\u2013306), writing `bf16` directly to the output tensor instead of the old `f32` \u2192 `bf16` two-step.\n\n2. **Removed all OOB branches** \u2014 The `if wr_row < m and wr_c < n:` guard in the write-back loop and the `if idx < M * N:` guard in the former postprocess kernel are both gone. For these perfectly tile-aligned shapes (128\u00d7128 tiles dividing 128\u00d716384 evenly), the branches were dead code.\n\n3. **Added buffer resource descriptors with proper ranges** \u2014 `a_rsrc` (`m*k*2`), `b_rsrc` (`n*k*2`), and `y_rsrc` (`m*n*2`) encode exact byte ranges. OOB loads via `raw_buffer_load_x4` return zero and OOB stores are discarded, making the branch removal safe even for unaligned shapes.\n\n4. **Replaced `C_BITS`/`struct` with `al.convert(2.0, al.f32)`** \u2014 Direct float literal in kernel code, no bitcast gymnastics.\n\nThe kernel compiles successfully. The correctness failure (avg difference ~0.367) is a pre-existing issue in the candidate's MFMA lane-mapping \u2014 the shared-memory-to-register loading distributes K values across warp lanes in a way that doesn't match the MFMA instruction's expected K-index assignment. This affects both the original candidate and the fused version identically, and fixing it requires knowing AveLang's exact MFMA operand format, which isn't documented in the available spec.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/13/rollout-2026-07-13T12-04-57-019f5b5d-bad3-72a3-9955-3e8d45d8f212.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-13T12:04:57Z",
+  "finished_at_utc": "2026-07-13T12:42:42Z"
+}

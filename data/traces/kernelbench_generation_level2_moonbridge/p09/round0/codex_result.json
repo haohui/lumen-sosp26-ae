@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5204-c18d-77c3-9391-234778da4ec5",
+  "turn_id": null,
+  "final_response": "The kernel compiles and passes correctness. Here's a summary:\n\n**Result**: `compiled=true`, `correctness=true` (5/5 trials)\n\n**Performance** (MI300X, BF16):\n- Our fused AveLang kernel: **14.8 ms** mean\n- Reference PyTorch eager: **19.5 ms** mean\n\nThe kernel implements all four operations (matmul \u2192 subtract \u2192 multiply \u2192 ReLU) in a single fused launch using a 128\u00d7128 CTA tile with `mfma_32x32x8_bf16_f32` matrix instructions, FP32 accumulation, and 2\u00d72 warp grid. The epilogue applies bias, subtract, scale, and ReLU directly from accumulator registers before the BF16 writeback.\n\nThe writeback mapping and operand fetch follow the same pattern as other working kernels in the repo: operands are loaded from shared memory as `u32` vectors, reshaped via `al.view` into `(2, 2, 1)` views before being passed to MFMA. This avoids the type mismatch that the docs-only example hits.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/11/rollout-2026-07-11T16-31-11-019f5204-c18d-77c3-9391-234778da4ec5.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-11T16:31:11Z",
+  "finished_at_utc": "2026-07-11T16:35:05Z"
+}

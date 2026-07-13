@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "completed",
+  "thread_id": null,
+  "session_id": "019f5a02-032e-78b1-8efe-f09dcc18686e",
+  "turn_id": null,
+  "final_response": "The kernel passes all 5 correctness trials (runtime 2.91ms vs reference 0.34ms). Here's what changed from the candidate:\n\n**Root cause fix**: The candidate used K-major `(BK, BN)` layout for B shared memory, which doesn't match the MFMA operand extraction pattern. The MFMA expects each lane to receive the full K=16 values for a specific N column. With K-major layout, lanes received N-consecutive values for specific K rows instead \u2014 scrambling the dot products.\n\n**Changes applied**:\n\n1. **N-major B layout**: `B_sh_nm` is `(BN, BK)` (64 N-rows \u00d7 16 K-columns), loaded with weight directly (not `.t()`) using 1D layout `(N*K,)` so consecutive memory reads give consecutive K values.\n\n2. **Branch-free loading**: All `if tid < N` guards removed. Threads map to valid LDS indices via `tid & 63` (A loads) and `tid & 127` (B loads). Four threads redundantly load each A row; two threads redundantly load each B slot. OOB global loads return zero thanks to `make_rsrc` resource descriptors.\n\n3. **No OOB K-loop branch**: Single-tile iteration (`for kk in range(0, K, BK)`) eliminates the `if kk2 < K` guard that was needed for the paired-tile double-buffering approach.\n\n4. **Resource descriptors**: `make_rsrc` with full byte ranges (`M*K*2`, `N*K*2`) guarantees OOB loads return zero and OOB stores are discarded.\n\n5. **Explicit BF16 cast**: Added `x.to(dtype=torch.bfloat16)` in `forward()` for safety.",
+  "trace_path": "/root/.codex-moonbridge/sessions/2026/07/13/rollout-2026-07-13T05-45-09-019f5a02-032e-78b1-8efe-f09dcc18686e.jsonl",
+  "error": null,
+  "started_at_utc": "2026-07-13T05:45:09Z",
+  "finished_at_utc": "2026-07-13T06:31:56Z"
+}

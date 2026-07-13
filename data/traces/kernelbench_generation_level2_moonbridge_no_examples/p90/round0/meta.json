@@ -1,0 +1,17 @@
+{
+  "problem_id": 90,
+  "problem_name": "90_Conv3d_LeakyReLU_Sum_Clamp_GELU",
+  "has_prompt": true,
+  "has_output_model_new": true,
+  "stage": "generated",
+  "error": "Static check failed: ['Contains pass statement']. Warnings: []",
+  "prompt_provenance": {
+    "templates": [
+      "workspace_prompt.j2",
+      "codex_context.j2"
+    ],
+    "reference_mode": "language-spec-only",
+    "prompt_sha256": "e274a9eb11a5542b0ecab1fc07d978aac99a0316ce75908878f85acd2e78bf17",
+    "agents_sha256": "23bef78db135ee5d1f10b6d697c5876ef4438b9be572bb25e45cbe5e4e4b99d8"
+  }
+}

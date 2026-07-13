@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ipaddress
 import json
 import re
 from pathlib import Path
@@ -24,7 +25,7 @@ SENSITIVE_HEADERS = re.compile(
     re.I,
 )
 SENSITIVE_KEYS = re.compile(
-    r"(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|"
+    r"(api[_-]?key|token|"
     r"authorization|password|passwd|secret|cookie|session|credential|"
     r"private[_-]?key|openai[_-]?organization|email|phone|user[_-]?id)$",
     re.I,
@@ -37,8 +38,9 @@ TEXT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
     ("email", re.compile(r"(?<!\\)\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
     ("ipv4", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
-    ("host_home_path", re.compile(r"(?<![\w.-])/(?:data\d+/home|home|Users)/[^/\s\"':]+")),
+    ("host_home_path", re.compile(r"(?<![\w.-])(?:[A-Za-z]:)?[/\\](?:data\d+[/\\]home|home|Users)[/\\][^/\\\s\"':]+")),
 )
+IPV6_CANDIDATE = re.compile(r"(?<![\w.])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![\w.])")
 
 
 def bump(counts: dict[str, int], name: str, n: int = 1) -> None:
@@ -50,7 +52,18 @@ def redact_text(text: str, counts: dict[str, int]) -> str:
         text, n = pattern.subn(REDACTED, text)
         if n:
             bump(counts, name, n)
+    text = IPV6_CANDIDATE.sub(lambda match: redact_ipv6(match, counts), text)
     return text
+
+
+def redact_ipv6(match: re.Match[str], counts: dict[str, int]) -> str:
+    value = match.group(0)
+    try:
+        ipaddress.IPv6Address(value)
+    except ValueError:
+        return value
+    bump(counts, "ipv6")
+    return REDACTED
 
 
 def redact_json(value: Any, counts: dict[str, int], key: str | None = None) -> Any:
@@ -102,6 +115,10 @@ def sanitize_url(url: str, counts: dict[str, int]) -> str:
         parts = urlsplit(url)
     except Exception:
         return redact_text(url, counts)
+    netloc = parts.netloc
+    if "@" in netloc:
+        netloc = f"{REDACTED}@{netloc.rsplit('@', 1)[1]}"
+        bump(counts, "sensitive_url_auth")
     query = []
     for key, value in parse_qsl(parts.query, keep_blank_values=True):
         if SENSITIVE_QUERY.search(key):
@@ -109,7 +126,7 @@ def sanitize_url(url: str, counts: dict[str, int]) -> str:
             bump(counts, "sensitive_query")
         else:
             query.append((key, redact_text(value, counts)))
-    return urlunsplit((parts.scheme, parts.netloc, redact_text(parts.path, counts), urlencode(query), ""))
+    return urlunsplit((parts.scheme, netloc, redact_text(parts.path, counts), urlencode(query), redact_text(parts.fragment, counts)))
 
 
 def extract_body_text(body: dict[str, Any]) -> str | None:

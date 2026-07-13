@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sanitize mitmproxy traffic JSONL before publishing.
+"""Sanitize mitmproxy traffic JSONL from stdin to stdout.
 
 Raw traces can include API keys, auth headers, local paths, and lossless body
 bytes.  This script redacts sensitive text and always drops base64 payloads.
@@ -7,12 +7,11 @@ bytes.  This script redacts sensitive text and always drops base64 payloads.
 
 from __future__ import annotations
 
-import argparse
 import base64
 import ipaddress
 import json
 import re
-from pathlib import Path
+import sys
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -202,62 +201,25 @@ def sanitize_record(record: dict[str, Any], counts: dict[str, int]) -> dict[str,
     return out
 
 
-def trace_files(path: Path) -> list[Path]:
-    if path.is_file():
-        return [path]
-    if path.is_dir():
-        return sorted(path.rglob("traffic*.jsonl"))
-    raise SystemExit(f"input path does not exist: {path}")
-
-
-def destination(src: Path, root: Path, out: Path | None, single: bool) -> Path:
-    if out is None:
-        return src.with_name(f"{src.stem}.sanitized{src.suffix}")
-    if single and out.suffix:
-        return out
-    return out / (src.relative_to(root) if root.is_dir() else Path(src.name))
-
-
-def sanitize_file(src: Path, dst: Path, counts: dict[str, int]) -> dict[str, Any]:
-    dst.parent.mkdir(parents=True, exist_ok=True)
+def sanitize_stream(fin: Any, fout: Any) -> tuple[int, int]:
+    counts: dict[str, int] = {}
     records = invalid = 0
-    with src.open("r", encoding="utf-8") as fin, dst.open("w", encoding="utf-8") as fout:
-        for line in fin:
-            if not line.strip():
-                continue
-            records += 1
-            try:
-                item = json.loads(line)
-            except Exception:
-                invalid += 1
-                continue
-            clean = sanitize_record(item, counts) if isinstance(item, dict) else item
-            fout.write(json.dumps(clean, ensure_ascii=True) + "\n")
-    return {
-        "input": redact_text(str(src), counts),
-        "output": redact_text(str(dst), counts),
-        "records": records,
-        "invalid_json": invalid,
-    }
+    for line in fin:
+        if not line.strip():
+            continue
+        records += 1
+        try:
+            item = json.loads(line)
+        except Exception:
+            invalid += 1
+            continue
+        clean = sanitize_record(item, counts) if isinstance(item, dict) else item
+        fout.write(json.dumps(clean, ensure_ascii=True) + "\n")
+    return records, invalid
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="traffic.jsonl file or directory tree")
-    parser.add_argument("--out", type=Path, help="output file or directory")
-    parser.add_argument("--report", type=Path, help="write redaction report JSON")
-    args = parser.parse_args()
-
-    root = args.input.resolve()
-    files = trace_files(root)
-    out_root = args.out.resolve() if args.out else None
-    counts: dict[str, int] = {}
-    outputs = [sanitize_file(src, destination(src, root, out_root, len(files) == 1), counts) for src in files]
-    report = {"files": outputs, "redactions": dict(sorted(counts.items()))}
-    print(json.dumps(report, ensure_ascii=False, indent=2))
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    sanitize_stream(sys.stdin, sys.stdout)
     return 0
 
 

@@ -398,7 +398,8 @@ def _run_python_backend(
 
 def run_backend(*, backend: str, **kwargs) -> None:
     spec = BACKENDS[backend]
-    mod = load_module(kwargs["moe_root"] / spec.directory / "model.py")
+    model_path = kwargs.pop("model_path", None)
+    mod = load_module(model_path or kwargs["moe_root"] / spec.directory / "model.py")
     model_cls = getattr(mod, "Model", None)
     if model_cls is not None and hasattr(model_cls, "build_cases"):
         case_kwargs = dict(kwargs)

@@ -242,7 +242,7 @@ def _run_workspace(
             model_provider=config.model_provider,
             reasoning_effort=config.reasoning_effort,
             timeout_seconds=config.timeout_seconds,
-            env=_codex_env(config.gpu_id, workspace.round_dir),
+            env=_codex_env(config.gpu_id),
             config_overrides=config.config_overrides,
             bypass_approvals_and_sandbox=config.bypass_approvals_and_sandbox,
         )
@@ -271,13 +271,21 @@ def _run_workspace(
         workspace.round_dir,
         domain=spec.domain,
         gpu_id=config.gpu_id,
-        benchmark_root=workspace.round_dir / "datasets" / "inference",
         workloads=spec.workloads,
         workload_key=spec.workload_key,
         benchmark_args=(
             str(benchmark),
             "--backend",
             "lumen",
+            "--model-path",
+            str(
+                workspace.round_dir
+                / "datasets"
+                / "inference"
+                / spec.domain
+                / "lumen"
+                / "model.py"
+            ),
             "--check-correctness",
             spec.workload_flag,
             *(str(workload) for workload in spec.workloads),
@@ -388,7 +396,6 @@ def evaluate_candidate(
     *,
     domain: str,
     gpu_id: int | None,
-    benchmark_root: Path,
     workloads: tuple[int, ...],
     workload_key: str,
     benchmark_args: tuple[str, ...],
@@ -414,7 +421,6 @@ def evaluate_candidate(
     }
     env = os.environ.copy()
     env["IS_SANDBOX"] = "1"
-    env["LUMEN_BENCHMARK_ROOT"] = str(benchmark_root)
     if gpu_id is not None:
         env["HIP_VISIBLE_DEVICES"] = str(gpu_id)
     payload["formal_evaluation_ran"] = True
@@ -578,11 +584,8 @@ def _require_kernel(config: OptimizationConfig, spec: OptimizationSpec) -> Path:
     return config.kernel.expanduser().resolve()
 
 
-def _codex_env(gpu_id: int | None, round_dir: Path) -> dict[str, str]:
-    env = {
-        "IS_SANDBOX": "1",
-        "LUMEN_BENCHMARK_ROOT": str(round_dir / "datasets" / "inference"),
-    }
+def _codex_env(gpu_id: int | None) -> dict[str, str]:
+    env = {"IS_SANDBOX": "1"}
     if gpu_id is not None:
         env["HIP_VISIBLE_DEVICES"] = str(gpu_id)
     return env
@@ -646,7 +649,7 @@ Use `input_model.py` as the starting implementation and write the complete optim
 - You can only write `output_model_new.py`.
 - Preserve the kernel's public API.
 - After writing `output_model_new.py`, validate correctness and performance with:
-  `python {benchmark} --backend lumen --check-correctness {spec.workload_flag} {workloads}`.
+  `python {benchmark} --backend lumen --model-path {model_path} --check-correctness {spec.workload_flag} {workloads}`.
   - A benchmark command that exits nonzero or omits `"correctness":true` has failed.
 - Do not add eager PyTorch or external-library fallback compute paths.
 """

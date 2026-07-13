@@ -1,17 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
-
-def benchmark_root(repo_root: Path) -> Path:
-    configured = os.environ.get("LUMEN_BENCHMARK_ROOT")
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return repo_root / "datasets" / "inference"
-
-
 WORKLOADS = [1024, 2048, 4096, 8192, 16384]
 GEMM_WORKLOADS = list(WORKLOADS)
 ATTENTION_WORKLOADS = list(WORKLOADS)

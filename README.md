@@ -76,17 +76,6 @@ benchmark inputs and generated outputs live under `datasets/inference/`:
 - `python/lumen/harness/datasets/kernelbench/`: KernelBench generation and
   evaluation harness.
 
-## Lumen kernel optimization
-
-Run an optimization sequence from the repository root:
-
-```bash
-PYTHONPATH=python python -m lumen.tools.cli.lumen_optimize gemm --gpu-id 0
-```
-
-See the [Lumen optimization guide](python/lumen/harness/datasets/lumen/README.md)
-for GEMM, attention, and MoE usage.
-
 ## Reproducing the evaluation
 
 The repository provides a number of scripts under the `scripts/` directory to reproduce the evaluation results in the paper:
@@ -98,7 +87,20 @@ The repository provides a number of scripts under the `scripts/` directory to re
 - `table3/kernelbench_table.py` emits CSV/JSON summaries for the KernelBench rows of Table 3.
 - `figure2/bench_attn_ablation.py` regenerates the ablation of optimizations on the flash attention kernel.
 
-Note that for generation tasks, you will need to set the environment various `LUMEN_GENERATION_API_URL` and `LUMEN_GENERATION_API_KEY` to point to a valid API endpoint of the  chat completion API. 
+Note that for generation tasks, you will need to set the environment various `LUMEN_GENERATION_API_URL` and `LUMEN_GENERATION_API_KEY` to point to a valid API endpoint of the chat completion API. 
+
+We also provide a Codex-based harness for reproducing Lumen's optimization
+sequences for GEMM, Flash Attention, and fused MoE. The Codex CLI must be
+installed and configured before running the harness. For example, run the
+complete GEMM sequence from the repository root:
+
+```bash
+PYTHONPATH=python python -m lumen.tools.cli.lumen_optimize gemm --gpu-id 0
+```
+
+Use `attn` or `moe` instead of `gemm` for the other workloads. See the
+[Lumen optimization guide](python/lumen/harness/datasets/lumen/README.md) for
+complete usage and resume instructions.
 
 ## Intermediate data and trace
 

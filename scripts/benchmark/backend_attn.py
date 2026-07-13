@@ -99,6 +99,7 @@ def run_backend(
     *,
     backend: str,
     attn_root: Path,
+    model_path: Path | None = None,
     seq_lens: list[int],
     shared: dict[int, SharedInputs],
     device: torch.device,
@@ -114,7 +115,7 @@ def run_backend(
     graph_iters: int,
     check_correctness: bool = False,
 ) -> None:
-    path = attn_root / BACKENDS[backend].directory / "model.py"
+    path = model_path or attn_root / BACKENDS[backend].directory / "model.py"
     mod = load_module(path)
     model = build_model_instance(mod, device=device, dtype=dtype)
     for s in seq_lens:

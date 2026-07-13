@@ -182,13 +182,15 @@ __global__ void causal_attn_bf16_kernel(
     }
 }
 
-torch::Tensor causal_attention_bf16_hip(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
+torch::Tensor causal_attention_bf16_hip_out(torch::Tensor Q, torch::Tensor K, torch::Tensor V, torch::Tensor O) {
     TORCH_CHECK(Q.is_cuda() && K.is_cuda() && V.is_cuda(), "Q/K/V must be HIP tensors");
+    TORCH_CHECK(O.is_cuda(), "O must be a HIP tensor");
     TORCH_CHECK(Q.scalar_type() == at::kBFloat16, "Q must be bfloat16");
     TORCH_CHECK(K.scalar_type() == at::kBFloat16, "K must be bfloat16");
     TORCH_CHECK(V.scalar_type() == at::kBFloat16, "V must be bfloat16");
-    TORCH_CHECK(Q.dim() == 4 && K.dim() == 4 && V.dim() == 4, "Q/K/V must be [B, S, H, D]");
-    TORCH_CHECK(Q.is_contiguous() && K.is_contiguous() && V.is_contiguous(), "Q/K/V must be contiguous");
+    TORCH_CHECK(O.scalar_type() == at::kBFloat16, "O must be bfloat16");
+    TORCH_CHECK(Q.dim() == 4 && K.dim() == 4 && V.dim() == 4 && O.dim() == 4, "Q/K/V/O must be [B, S, H, D]");
+    TORCH_CHECK(Q.is_contiguous() && K.is_contiguous() && V.is_contiguous() && O.is_contiguous(), "Q/K/V/O must be contiguous");
 
     const int64_t B64 = Q.size(0);
     const int64_t S64 = Q.size(1);
@@ -199,6 +201,7 @@ torch::Tensor causal_attention_bf16_hip(torch::Tensor Q, torch::Tensor K, torch:
     TORCH_CHECK(K.size(1) == S64 && V.size(1) == S64, "S mismatch");
     TORCH_CHECK(K.size(3) == D64 && V.size(3) == D64, "D mismatch");
     TORCH_CHECK(K.size(2) == V.size(2), "K/V head mismatch");
+    TORCH_CHECK(O.size(0) == B64 && O.size(1) == S64 && O.size(2) == Hq64 && O.size(3) == D64, "O shape mismatch");
 
     const int64_t Hkv64 = K.size(2);
     TORCH_CHECK(Hq64 % Hkv64 == 0, "Hq must be divisible by Hkv");
@@ -210,8 +213,6 @@ torch::Tensor causal_attention_bf16_hip(torch::Tensor Q, torch::Tensor K, torch:
     const int Hkv = static_cast<int>(Hkv64);
     const int D = static_cast<int>(D64);
     const int groups = Hq / Hkv;
-
-    auto O = torch::empty_like(Q);
 
     const dim3 block(256, 1, 1);           // 4 wavefronts
     const dim3 grid(static_cast<unsigned int>(B * Hq),
@@ -243,12 +244,17 @@ torch::Tensor causal_attention_bf16_hip(torch::Tensor Q, torch::Tensor K, torch:
 
     return O;
 }
+
+torch::Tensor causal_attention_bf16_hip(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
+    auto O = torch::empty_like(Q);
+    return causal_attention_bf16_hip_out(Q, K, V, O);
+}
 """
 
 causal_attn_ext = load_inline(
-    name="causal_attn_bf16_hip_ext_v1",
+    name="causal_attn_bf16_hip_ext_v2",
     cpp_sources=causal_attn_cpp_source,
-    functions=["causal_attention_bf16_hip"],
+    functions=["causal_attention_bf16_hip", "causal_attention_bf16_hip_out"],
     extra_cflags=["-O3"],
     verbose=False,
 )
@@ -264,6 +270,17 @@ class ModelNew(nn.Module):
         return self.attn.causal_attention_bf16_hip(
             Q.contiguous(), K.contiguous(), V.contiguous()
         )
+
+    def build_call(self, *, q_bshd: torch.Tensor, k_bshd: torch.Tensor, v_bshd: torch.Tensor):
+        q = q_bshd.contiguous()
+        k = k_bshd.contiguous()
+        v = v_bshd.contiguous()
+        out = torch.empty_like(q)
+
+        def call():
+            return self.attn.causal_attention_bf16_hip_out(q, k, v, out)
+
+        return call
 
 
 batch_size = 16

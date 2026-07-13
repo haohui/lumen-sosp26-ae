@@ -17,42 +17,42 @@ BENCHMARK_DIR = REPO_ROOT / "scripts" / "benchmark"
 WORKLOADS = [1024, 2048, 4096, 8192, 16384]
 BASELINE_COLUMNS = [
     "lumen",
-    "kernelbench",
-    "cudaforge",
-    "kernelfalcon",
-    "ksearch",
     "hipblaslt",
     "hipkittens",
     "aiter",
     "triton",
+    "kernelfalcon",
+    "ksearch",
+    "kernelbench",
+    "cudaforge",
 ]
 GEMM_BACKENDS = (
     "lumen",
-    "kernelbench",
-    "cudaforge",
-    "kernelfalcon",
-    "ksearch",
-    "aiter",
     "hipblaslt",
     "hipkittens",
+    "aiter",
     "triton",
+    "kernelfalcon",
+    "ksearch",
+    "kernelbench",
+    "cudaforge",
 )
 ATTENTION_BACKENDS = (
     "lumen",
-    "kernelbench",
-    "cudaforge",
-    "kernelfalcon",
-    "ksearch",
     "aiter",
     "triton",
+    "kernelfalcon",
+    "ksearch",
+    "kernelbench",
+    "cudaforge",
 )
 MOE_BACKENDS = (
     "lumen",
-    "kernelbench",
-    "cudaforge",
+    "aiter",
     "kernelfalcon",
     "ksearch",
-    "aiter",
+    "kernelbench",
+    "cudaforge",
 )
 
 
@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--python", type=str, default=sys.executable)
     p.add_argument("--workloads", type=int, nargs="+", default=list(WORKLOADS))
     p.add_argument("--warmup", type=int, default=10)
-    p.add_argument("--repeat", type=int, default=100)
+    p.add_argument("--repeat", type=int, default=10)
     p.add_argument("--graph-iters", type=int, default=1)
     p.add_argument(
         "--skip-run",
@@ -113,13 +113,7 @@ def _run_jsonl_command(cmd: list[str], out_path: Path, *, backend: str) -> None:
         text=True,
         env=_env(backend=backend),
     )
-    if cp.returncode != 0:
-        print("command failed:", " ".join(cmd), file=sys.stderr)
-        if cp.stdout:
-            print(cp.stdout, file=sys.stderr, end="")
-        if cp.stderr:
-            print(cp.stderr, file=sys.stderr, end="")
-        raise subprocess.CalledProcessError(cp.returncode, cmd)
+    rows_written = 0
     with out_path.open("a", encoding="utf-8") as f:
         for line in cp.stdout.splitlines():
             line = line.strip()
@@ -127,6 +121,20 @@ def _run_jsonl_command(cmd: list[str], out_path: Path, *, backend: str) -> None:
                 continue
             json.loads(line)
             f.write(line + "\n")
+            rows_written += 1
+
+    if cp.returncode != 0:
+        print("command failed:", " ".join(cmd), file=sys.stderr)
+        print(
+            f"continuing with {rows_written} recorded JSON row(s); "
+            "missing table cells will be rendered as '-'",
+            file=sys.stderr,
+        )
+        if cp.stdout:
+            print(cp.stdout, file=sys.stderr, end="")
+        if cp.stderr:
+            print(cp.stderr, file=sys.stderr, end="")
+        return
     if cp.stderr:
         print(cp.stderr, file=sys.stderr, end="")
 

@@ -36,9 +36,10 @@ def benchmark_with_cudagraph(
         torch.cuda.synchronize()
 
         graph = torch.cuda.CUDAGraph()
+        captured_outputs = []
         with torch.cuda.graph(graph):
             for _ in range(graph_iters):
-                fn()
+                captured_outputs.append(fn())
         torch.cuda.synchronize()
 
         for _ in range(replay_warmup):

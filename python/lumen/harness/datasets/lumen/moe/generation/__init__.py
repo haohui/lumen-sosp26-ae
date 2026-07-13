@@ -1,19 +1,7 @@
-"""Codex-based generation and optimization for Lumen MoE kernels."""
+"""MoE configuration for the shared Lumen optimization runtime."""
 
 from lumen.harness.datasets.lumen.moe.generation.moe_optimization import (
-    MoEOptimizationConfig,
-    MoEOptimizationWorkspace,
-    prepare_moe_optimization,
-    resume_moe_optimization_sequence,
-    run_moe_optimization,
-    run_moe_optimization_sequence,
+    moe_optimization_spec,
 )
 
-__all__ = [
-    "MoEOptimizationConfig",
-    "MoEOptimizationWorkspace",
-    "prepare_moe_optimization",
-    "resume_moe_optimization_sequence",
-    "run_moe_optimization",
-    "run_moe_optimization_sequence",
-]
+__all__ = ["moe_optimization_spec"]

@@ -1,19 +1,7 @@
-"""Codex-based generation and optimization for Lumen GEMM kernels."""
+"""GEMM configuration for the shared Lumen optimization runtime."""
 
 from lumen.harness.datasets.lumen.gemm.generation.gemm_optimization import (
-    GemmOptimizationConfig,
-    GemmOptimizationWorkspace,
-    prepare_gemm_optimization,
-    resume_gemm_optimization_sequence,
-    run_gemm_optimization,
-    run_gemm_optimization_sequence,
+    gemm_optimization_spec,
 )
 
-__all__ = [
-    "GemmOptimizationConfig",
-    "GemmOptimizationWorkspace",
-    "prepare_gemm_optimization",
-    "resume_gemm_optimization_sequence",
-    "run_gemm_optimization",
-    "run_gemm_optimization_sequence",
-]
+__all__ = ["gemm_optimization_spec"]

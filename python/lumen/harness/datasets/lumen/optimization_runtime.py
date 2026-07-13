@@ -8,12 +8,284 @@ import os
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, replace
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from lumen.harness.backend.codex import CodexRunResult
+from lumen.harness.backend.codex import (
+    CodexRunner,
+    CodexRunnerConfig,
+    CodexRunResult,
+)
+
+
+@dataclass(frozen=True)
+class OptimizationSpec:
+    domain: str
+    run_slug: str
+    workloads: tuple[int, ...]
+    workload_key: str
+    workload_flag: str
+    benchmark_script: str
+    adapter_source: str
+
+
+@dataclass(frozen=True)
+class OptimizationConfig:
+    repo_root: Path
+    kernel: Path | None
+    run_dir: Path | None = None
+    gpu_id: int | None = None
+    codex_bin: Path | None = None
+    profile: str | None = None
+    model: str | None = None
+    model_provider: str | None = None
+    reasoning_effort: str | None = None
+    timeout_seconds: float | None = 3600
+    config_overrides: tuple[str, ...] = ()
+    bypass_approvals_and_sandbox: bool = True
+
+
+@dataclass(frozen=True)
+class OptimizationWorkspace:
+    run_dir: Path
+    round_dir: Path
+    input_model_path: Path
+    output_model_path: Path
+    prompt: str
+
+
+def prepare_optimization(
+    config: OptimizationConfig,
+    spec: OptimizationSpec,
+    prompt_file: Path,
+) -> OptimizationWorkspace:
+    repo_root = config.repo_root.expanduser().resolve()
+    kernel = _require_kernel(config, spec)
+    prompt = prompt_file.expanduser().resolve()
+    _validate_inputs(repo_root, kernel, (prompt,), config.gpu_id)
+
+    run_dir = _resolve_run_dir(repo_root, config.run_dir, spec.run_slug)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    _write_run_config(config, spec, run_dir, kernel, (prompt,))
+    return _prepare_round(
+        config,
+        spec,
+        run_dir=run_dir,
+        round_index=0,
+        kernel=kernel,
+        prompt_file=prompt,
+    )
+
+
+def run_optimization_sequence(
+    config: OptimizationConfig,
+    spec: OptimizationSpec,
+    prompt_files: Sequence[Path],
+) -> list[tuple[OptimizationWorkspace, CodexRunResult]]:
+    repo_root = config.repo_root.expanduser().resolve()
+    kernel = _require_kernel(config, spec)
+    prompts = tuple(path.expanduser().resolve() for path in prompt_files)
+    if not prompts:
+        raise ValueError("at least one prompt file is required")
+    _validate_inputs(repo_root, kernel, prompts, config.gpu_id)
+
+    run_dir = _resolve_run_dir(repo_root, config.run_dir, spec.run_slug)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    _write_run_config(config, spec, run_dir, kernel, prompts)
+    return _run_rounds(
+        config,
+        spec,
+        prompts=prompts,
+        run_dir=run_dir,
+        round_kernel=kernel,
+        start_index=0,
+    )
+
+
+def resume_optimization_sequence(
+    config: OptimizationConfig,
+    spec: OptimizationSpec,
+    prompt_files: Sequence[Path],
+    run_dir: Path,
+) -> list[tuple[OptimizationWorkspace, CodexRunResult]]:
+    repo_root = config.repo_root.expanduser().resolve()
+    prompts = tuple(path.expanduser().resolve() for path in prompt_files)
+    if not prompts:
+        raise ValueError("at least one prompt file is required")
+
+    resolved_run_dir = run_dir.expanduser().resolve()
+    start_index, round_kernel = resolve_resume_point(resolved_run_dir)
+    _validate_inputs(repo_root, round_kernel, prompts, config.gpu_id)
+    resumed_config = replace(config, kernel=round_kernel, run_dir=resolved_run_dir)
+    reset_run_tail(resolved_run_dir, start_index)
+    append_run_prompts(resolved_run_dir, prompts, start_index=start_index)
+    return _run_rounds(
+        resumed_config,
+        spec,
+        prompts=prompts,
+        run_dir=resolved_run_dir,
+        round_kernel=round_kernel,
+        start_index=start_index,
+    )
+
+
+def _prepare_round(
+    config: OptimizationConfig,
+    spec: OptimizationSpec,
+    *,
+    run_dir: Path,
+    round_index: int,
+    kernel: Path,
+    prompt_file: Path,
+) -> OptimizationWorkspace:
+    prompt = prompt_file.read_text(encoding="utf-8").strip()
+    if not prompt:
+        raise ValueError(f"prompt file is empty: {prompt_file}")
+
+    round_dir = run_dir / f"round{round_index}"
+    round_dir.mkdir()
+    input_model_path = round_dir / "input_model.py"
+    output_model_path = round_dir / "output_model_new.py"
+    shutil.copyfile(kernel, input_model_path)
+    output_model_path.write_text("", encoding="utf-8")
+
+    adapter_dir = round_dir / "datasets" / "inference" / spec.domain / "lumen"
+    adapter_dir.mkdir(parents=True)
+    adapter_path = adapter_dir / "model.py"
+    adapter_path.write_text(spec.adapter_source, encoding="utf-8")
+
+    prompt_path = round_dir / "prompt.txt"
+    prompt_path.write_text(prompt + "\n", encoding="utf-8")
+    agents_path = round_dir / "AGENTS.md"
+    agents_path.write_text(_render_agents_md(config.repo_root, spec), encoding="utf-8")
+    write_round_config(
+        round_dir,
+        domain=spec.domain,
+        round_index=round_index,
+        input_source=kernel,
+        input_model=input_model_path,
+        prompt_source=prompt_file,
+        prompt_path=prompt_path,
+        agents_path=agents_path,
+        adapter_path=adapter_path,
+        gpu_id=config.gpu_id,
+        workloads=spec.workloads,
+        codex_config=_codex_provenance(config),
+    )
+    return OptimizationWorkspace(
+        run_dir=run_dir,
+        round_dir=round_dir,
+        input_model_path=input_model_path,
+        output_model_path=output_model_path,
+        prompt=prompt,
+    )
+
+
+def _run_rounds(
+    config: OptimizationConfig,
+    spec: OptimizationSpec,
+    *,
+    prompts: tuple[Path, ...],
+    run_dir: Path,
+    round_kernel: Path,
+    start_index: int,
+) -> list[tuple[OptimizationWorkspace, CodexRunResult]]:
+    total_rounds = start_index + len(prompts)
+    rounds: list[tuple[OptimizationWorkspace, CodexRunResult]] = []
+    for round_index, prompt_file in enumerate(prompts, start=start_index):
+        workspace = _prepare_round(
+            config,
+            spec,
+            run_dir=run_dir,
+            round_index=round_index,
+            kernel=round_kernel,
+            prompt_file=prompt_file,
+        )
+        result = _run_workspace(config, spec, workspace)
+        rounds.append((workspace, result))
+        status = "passed" if result.ok else "failed"
+        print(
+            f"round {round_index + 1}/{total_rounds} {status}: "
+            f"{workspace.round_dir}",
+            flush=True,
+        )
+        if not result.ok:
+            break
+        round_kernel = workspace.output_model_path
+    return rounds
+
+
+def _run_workspace(
+    config: OptimizationConfig,
+    spec: OptimizationSpec,
+    workspace: OptimizationWorkspace,
+) -> CodexRunResult:
+    set_round_status(workspace.round_dir, "codex_running")
+    result = CodexRunner().execute(
+        CodexRunnerConfig(
+            work_dir=workspace.round_dir,
+            prompt=workspace.prompt,
+            codex_bin=config.codex_bin,
+            profile=config.profile,
+            model=config.model,
+            model_provider=config.model_provider,
+            reasoning_effort=config.reasoning_effort,
+            timeout_seconds=config.timeout_seconds,
+            env=_codex_env(config.gpu_id, workspace.round_dir),
+            config_overrides=config.config_overrides,
+            bypass_approvals_and_sandbox=config.bypass_approvals_and_sandbox,
+        )
+    )
+    result = save_codex_result(
+        workspace.round_dir,
+        workspace.output_model_path,
+        result,
+    )
+    if not result.ok:
+        set_round_status(
+            workspace.round_dir,
+            "failed",
+            error=result.error or result.status,
+        )
+        return result
+
+    set_round_status(workspace.round_dir, "evaluating")
+    benchmark = (
+        config.repo_root.resolve()
+        / "scripts"
+        / "benchmark"
+        / spec.benchmark_script
+    )
+    evaluation = evaluate_candidate(
+        workspace.round_dir,
+        domain=spec.domain,
+        gpu_id=config.gpu_id,
+        benchmark_root=workspace.round_dir / "datasets" / "inference",
+        workloads=spec.workloads,
+        workload_key=spec.workload_key,
+        benchmark_args=(
+            str(benchmark),
+            "--backend",
+            "lumen",
+            "--check-correctness",
+            spec.workload_flag,
+            *(str(workload) for workload in spec.workloads),
+        ),
+    )
+    if not evaluation["ok"]:
+        error = evaluation_error(evaluation)
+        set_round_status(workspace.round_dir, "failed", error=error)
+        return replace(
+            result,
+            ok=False,
+            status="failed",
+            error=_join_errors(result.error, error),
+        )
+    set_round_status(workspace.round_dir, "passed")
+    return result
 
 
 def write_round_config(
@@ -27,7 +299,6 @@ def write_round_config(
     prompt_path: Path,
     agents_path: Path,
     adapter_path: Path,
-    entrypoint: str,
     gpu_id: int | None,
     workloads: tuple[int, ...],
     codex_config: dict[str, Any],
@@ -44,7 +315,6 @@ def write_round_config(
         "prompt_sha256": sha256_file(prompt_path),
         "agents_sha256": sha256_file(agents_path),
         "adapter_sha256": sha256_file(adapter_path),
-        "entrypoint": entrypoint,
         "gpu_id": gpu_id,
         "workloads": list(workloads),
         "codex": codex_config,
@@ -230,6 +500,7 @@ def reset_run_tail(run_dir: Path, start_index: int) -> None:
         if path.is_dir() and suffix.isdigit() and int(suffix) >= start_index:
             shutil.rmtree(path)
 
+
 def append_run_prompts(
     run_dir: Path,
     prompt_files: tuple[Path, ...],
@@ -249,6 +520,123 @@ def append_run_prompts(
         payload["prompt_file"] = prompts[0]["prompt_file"]
         payload["prompt_sha256"] = prompts[0]["prompt_sha256"]
     _write_json(path, payload)
+
+
+def _validate_inputs(
+    repo_root: Path,
+    kernel: Path,
+    prompt_files: Sequence[Path],
+    gpu_id: int | None,
+) -> None:
+    if not (repo_root / "pyproject.toml").is_file():
+        raise ValueError(f"not a repository root: {repo_root}")
+    for directory in (repo_root / "scripts", repo_root / "skills"):
+        if not directory.is_dir():
+            raise ValueError(f"required directory not found: {directory}")
+    if not kernel.is_file():
+        raise ValueError(f"kernel file not found: {kernel}")
+    for prompt_file in prompt_files:
+        if not prompt_file.is_file():
+            raise ValueError(f"prompt file not found: {prompt_file}")
+        if not prompt_file.read_text(encoding="utf-8").strip():
+            raise ValueError(f"prompt file is empty: {prompt_file}")
+    if gpu_id is not None and gpu_id < 0:
+        raise ValueError(f"gpu_id must be non-negative (got {gpu_id})")
+
+
+def _require_kernel(config: OptimizationConfig, spec: OptimizationSpec) -> Path:
+    if config.kernel is None:
+        raise ValueError(
+            f"kernel is required when starting a new {spec.domain} run"
+        )
+    return config.kernel.expanduser().resolve()
+
+
+def _codex_env(gpu_id: int | None, round_dir: Path) -> dict[str, str]:
+    env = {
+        "IS_SANDBOX": "1",
+        "LUMEN_BENCHMARK_ROOT": str(round_dir / "datasets" / "inference"),
+    }
+    if gpu_id is not None:
+        env["HIP_VISIBLE_DEVICES"] = str(gpu_id)
+    return env
+
+
+def _write_run_config(
+    config: OptimizationConfig,
+    spec: OptimizationSpec,
+    run_dir: Path,
+    kernel: Path,
+    prompt_files: Sequence[Path],
+) -> None:
+    prompts = [
+        {"prompt_file": str(path), "prompt_sha256": sha256_file(path)}
+        for path in prompt_files
+    ]
+    _write_json(
+        run_dir / "run_config.json",
+        {
+            "domain": spec.domain,
+            "kernel": str(kernel),
+            "kernel_sha256": sha256_file(kernel),
+            "prompt_file": prompts[0]["prompt_file"],
+            "prompt_sha256": prompts[0]["prompt_sha256"],
+            "prompts": prompts,
+            "round_count": len(prompts),
+            "gpu_id": config.gpu_id,
+            "workloads": list(spec.workloads),
+        },
+    )
+
+
+def _resolve_run_dir(
+    repo_root: Path,
+    configured: Path | None,
+    run_slug: str,
+) -> Path:
+    if configured is not None:
+        path = configured.expanduser()
+        return path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+    return repo_root / "runs" / f"lumen_{run_slug}_codex_{timestamp}"
+
+
+def _render_agents_md(repo_root: Path, spec: OptimizationSpec) -> str:
+    scripts_root = repo_root.resolve() / "scripts"
+    skills_root = repo_root.resolve() / "skills"
+    benchmark = scripts_root / "benchmark" / spec.benchmark_script
+    workloads = " ".join(str(workload) for workload in spec.workloads)
+    model_path = f"datasets/inference/{spec.domain}/lumen/model.py"
+    return f"""
+## Goal
+Use `input_model.py` as the starting implementation and write the complete optimized implementation to `output_model_new.py`.
+
+## Notes
+
+- Do not read the parent repository except for the exact `scripts` and `skills` paths below. Do not read git history, other runs, or the network.
+- You may read `AGENTS.md`, `prompt.txt`, `input_model.py`,
+  `output_model_new.py`, `{scripts_root}/**`, `{skills_root}/**`, and
+  `{model_path}`.
+- You can only write `output_model_new.py`.
+- Preserve the kernel's public API.
+- After writing `output_model_new.py`, validate correctness and performance with:
+  `python {benchmark} --backend lumen --check-correctness {spec.workload_flag} {workloads}`.
+  - A benchmark command that exits nonzero or omits `"correctness":true` has failed.
+- Do not add eager PyTorch or external-library fallback compute paths.
+"""
+
+
+def _codex_provenance(config: OptimizationConfig) -> dict[str, object]:
+    return {
+        "codex_bin": str(config.codex_bin) if config.codex_bin else None,
+        "profile": config.profile,
+        "model": config.model,
+        "model_provider": config.model_provider,
+        "reasoning_effort": config.reasoning_effort,
+        "timeout_seconds": config.timeout_seconds,
+        "config_overrides": list(config.config_overrides),
+        "bypass_approvals_and_sandbox": config.bypass_approvals_and_sandbox,
+    }
 
 
 def sha256_file(path: Path) -> str:

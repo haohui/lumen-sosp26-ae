@@ -1,19 +1,7 @@
-"""Codex-based generation and optimization for Lumen kernels."""
+"""Attention configuration for the shared Lumen optimization runtime."""
 
 from lumen.harness.datasets.lumen.attn.generation.attention_optimization import (
-    AttentionOptimizationConfig,
-    AttentionOptimizationWorkspace,
-    prepare_attention_optimization,
-    resume_attention_optimization_sequence,
-    run_attention_optimization,
-    run_attention_optimization_sequence,
+    attention_optimization_spec,
 )
 
-__all__ = [
-    "AttentionOptimizationConfig",
-    "AttentionOptimizationWorkspace",
-    "prepare_attention_optimization",
-    "resume_attention_optimization_sequence",
-    "run_attention_optimization",
-    "run_attention_optimization_sequence",
-]
+__all__ = ["attention_optimization_spec"]

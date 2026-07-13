@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import gc
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -217,6 +218,13 @@ def _time_call(
     )
 
 
+def _release_correctness_temporaries() -> None:
+    gc.collect()
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
+
 def _emit_record(
     *,
     backend: str,
@@ -284,8 +292,9 @@ def _run_case_backend(
         )
         for fn in cases:
             if check_correctness:
+                actual = fn()
                 _check_correctness(
-                    actual=fn(),
+                    actual=actual,
                     inputs=shared_inputs[tokens],
                     weights=shared_weights,
                     tokens=tokens,
@@ -294,6 +303,8 @@ def _run_case_backend(
                     experts=experts,
                     input_dtype_name=input_dtype_name,
                 )
+                del actual
+                _release_correctness_temporaries()
             timing = _time_call(
                 fn,
                 warmup=warmup,
@@ -346,8 +357,9 @@ def _run_python_backend(
             shared_weights["fc2_scale"],
         )
         if check_correctness:
+            actual = call()
             _check_correctness(
-                actual=call(),
+                actual=actual,
                 inputs=x,
                 weights=shared_weights,
                 tokens=tokens,
@@ -356,6 +368,8 @@ def _run_python_backend(
                 experts=experts,
                 input_dtype_name=input_dtype_name,
             )
+            del actual
+            _release_correctness_temporaries()
         timing = _time_call(
             call,
             warmup=warmup,

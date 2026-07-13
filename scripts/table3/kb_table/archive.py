@@ -1,11 +1,12 @@
-"""Read KernelBench Table 3 trace files directly from tar archives."""
+"""Summarize KernelBench Table 3 traces while streaming tar archives."""
 
 from __future__ import annotations
 
+import io
 import json
 import tarfile
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -19,10 +20,7 @@ from kb_table.common import (
 from kb_table.models import GenerationStats, OptimizationStats, RoundRecord
 from kb_table.reward_hacking import reward_hacking_reasons_from_source
 from kb_table.runs import expected_problem_ids_from_config
-from kb_table.trace_stats import (
-    files_read_from_trace_text,
-    token_usage_from_trace_text,
-)
+from kb_table.trace_stats import trace_stats_from_lines
 
 INTERESTING_FILENAMES = {
     "generation_config.json",
@@ -32,73 +30,128 @@ INTERESTING_FILENAMES = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass
+class RoundState:
+    problem_id: int
+    round_name: str
+    meta: dict[str, Any] | None = None
+    reward_hacking: tuple[str, ...] | None = None
+
+    @property
+    def round_index(self) -> int:
+        return parse_round_index(self.round_name) or 0
+
+    def to_record(self, run_name: str) -> RoundRecord | None:
+        if self.meta is None:
+            return None
+        return RoundRecord(
+            problem_id=self.problem_id,
+            round_index=self.round_index,
+            round_dir=Path(run_name) / f"p{self.problem_id:02d}" / self.round_name,
+            correct=bool(self.meta.get("correctness")),
+            speedup=as_float(self.meta.get("speedup")),
+            reward_hacking=(
+                self.reward_hacking
+                if self.reward_hacking is not None
+                else ("missing output_model_new.py",)
+            ),
+        )
+
+
+@dataclass
+class TraceState:
+    files_read: set[str]
+    token_usage: int | None
+
+
+@dataclass
+class ProblemTraceState:
+    traces: dict[str, TraceState] = field(default_factory=dict)
+
+    def files_read_count(self) -> int | None:
+        if not self.traces:
+            return None
+        files: set[str] = set()
+        for trace in self.traces.values():
+            files.update(trace.files_read)
+        return len(files)
+
+    def token_usage_sum(self) -> int | None:
+        values = [
+            trace.token_usage
+            for trace in self.traces.values()
+            if trace.token_usage is not None
+        ]
+        return sum(values) if values else None
+
+
+@dataclass
 class ArchiveRun:
     name: str
-    files: dict[str, str]
+    config: dict[str, Any] = field(default_factory=dict)
+    rounds: dict[tuple[int, str], RoundState] = field(default_factory=dict)
+    problem_traces: dict[int, ProblemTraceState] = field(default_factory=dict)
 
-    def read_text(self, relative_path: str) -> str | None:
-        return self.files.get(relative_path)
+    def add_config(self, data: dict[str, Any]) -> None:
+        self.config = data
 
-    def read_json(self, relative_path: str) -> dict[str, Any]:
-        text = self.read_text(relative_path)
-        if text is None:
-            return {}
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
+    def add_meta(self, problem_id: int, round_name: str, data: dict[str, Any]) -> None:
+        self.round_state(problem_id, round_name).meta = data
+
+    def add_output(self, problem_id: int, round_name: str, source: str) -> None:
+        self.round_state(problem_id, round_name).reward_hacking = tuple(
+            reward_hacking_reasons_from_source(
+                source,
+                filename=f"{self.name}/p{problem_id:02d}/{round_name}/output_model_new.py",
+            )
+        )
+
+    def add_trace(
+        self,
+        problem_id: int,
+        relative_path: str,
+        files_read: set[str],
+        token_usage: int | None,
+    ) -> None:
+        problem = self.problem_traces.setdefault(problem_id, ProblemTraceState())
+        problem.traces[relative_path] = TraceState(
+            files_read=files_read,
+            token_usage=token_usage,
+        )
+
+    def round_state(self, problem_id: int, round_name: str) -> RoundState:
+        key = (problem_id, round_name)
+        if key not in self.rounds:
+            self.rounds[key] = RoundState(
+                problem_id=problem_id,
+                round_name=round_name,
+            )
+        return self.rounds[key]
 
     def round_records(self) -> dict[int, list[RoundRecord]]:
         records: dict[int, list[RoundRecord]] = {}
-        for relative_path in sorted(self.files, key=record_path_sort_key):
-            parts = PurePosixPath(relative_path).parts
-            if len(parts) != 3 or parts[2] != "meta.json":
-                continue
-            pid = parse_problem_id(parts[0])
-            round_index = parse_record_round_index(parts[1])
-            if pid is None or round_index is None:
-                continue
-
-            meta = self.read_json(relative_path)
-            if not meta:
-                continue
-            output_path = f"{parts[0]}/{parts[1]}/output_model_new.py"
-            output = self.read_text(output_path)
-            if output is None:
-                reward_hacking = ["missing output_model_new.py"]
-            else:
-                reward_hacking = reward_hacking_reasons_from_source(
-                    output,
-                    filename=f"{self.name}/{output_path}",
-                )
-            records.setdefault(pid, []).append(
-                RoundRecord(
-                    problem_id=pid,
-                    round_index=round_index,
-                    round_dir=Path(self.name) / parts[0] / parts[1],
-                    correct=bool(meta.get("correctness")),
-                    speedup=as_float(meta.get("speedup")),
-                    reward_hacking=tuple(reward_hacking),
-                )
-            )
+        states = sorted(
+            self.rounds.values(),
+            key=lambda state: record_sort_key(state.problem_id, state.round_name),
+        )
+        for state in states:
+            record = state.to_record(self.name)
+            if record is not None:
+                records.setdefault(record.problem_id, []).append(record)
         return records
 
-    def problem_trace_texts(self, problem_id: int) -> list[tuple[str, str]]:
-        prefix = f"p{problem_id:02d}/"
-        traces = [
-            (relative_path, text)
-            for relative_path, text in self.files.items()
-            if relative_path.startswith(prefix)
-            and relative_path.endswith("/trace.jsonl")
-        ]
-        return sorted(traces, key=lambda item: parse_trace_round(item[0]))
+    def files_read_for_problem(self, problem_id: int) -> int | None:
+        problem = self.problem_traces.get(problem_id)
+        return problem.files_read_count() if problem is not None else None
+
+    def token_usage_for_problem(self, problem_id: int) -> int | None:
+        problem = self.problem_traces.get(problem_id)
+        return problem.token_usage_sum() if problem is not None else None
 
 
 class ArchiveRuns:
-    def __init__(self, files_by_run: dict[str, dict[str, str]]) -> None:
-        self.files_by_run = files_by_run
+    def __init__(self, runs: dict[str, ArchiveRun]) -> None:
+        self.runs = runs
 
     @classmethod
     def from_archives(
@@ -106,35 +159,88 @@ class ArchiveRuns:
         archives: Iterable[Path],
         run_names: Iterable[str],
     ) -> ArchiveRuns:
-        run_names_set = set(run_names)
-        files_by_run = {name: {} for name in run_names_set}
+        runs = {name: ArchiveRun(name=name) for name in set(run_names)}
         for archive in archives:
-            read_archive(archive, run_names_set, files_by_run)
-        return cls(files_by_run)
+            read_archive(archive, runs)
+        return cls(runs)
 
     def run(self, name: str) -> ArchiveRun:
-        return ArchiveRun(name=name, files=self.files_by_run.get(name, {}))
+        return self.runs.get(name, ArchiveRun(name=name))
 
 
-def read_archive(
-    archive: Path,
-    run_names: set[str],
-    files_by_run: dict[str, dict[str, str]],
-) -> None:
+def read_archive(archive: Path, runs: dict[str, ArchiveRun]) -> None:
     with tarfile.open(archive, mode="r|xz") as tar:
         for member in tar:
             if not member.isfile() or not is_interesting_member(member.name):
                 continue
-            run_name, relative_path = split_run_path(member.name, run_names)
-            if run_name is None or relative_path is None:
+            run_name, relative_parts = split_run_path(member.name, set(runs))
+            if run_name is None or relative_parts is None:
                 continue
             file_obj = tar.extractfile(member)
             if file_obj is None:
                 continue
-            files_by_run[run_name][relative_path] = file_obj.read().decode(
-                "utf-8",
-                errors="replace",
-            )
+            with file_obj:
+                process_member(runs[run_name], relative_parts, file_obj)
+
+
+def process_member(
+    run: ArchiveRun,
+    relative_parts: tuple[str, ...],
+    file_obj: io.BufferedIOBase,
+) -> None:
+    filename = relative_parts[-1]
+    if relative_parts == ("generation_config.json",):
+        run.add_config(read_json_member(file_obj))
+        return
+    if len(relative_parts) != 3:
+        return
+
+    problem_id = parse_problem_id(relative_parts[0])
+    round_name = relative_parts[1]
+    if problem_id is None or not is_round_dir_name(round_name):
+        return
+    if filename == "meta.json":
+        run.add_meta(problem_id, round_name, read_json_member(file_obj))
+    elif filename == "output_model_new.py":
+        run.add_output(problem_id, round_name, read_text_member(file_obj))
+    elif filename == "trace.jsonl":
+        relative_path = str(PurePosixPath(*relative_parts))
+        default_cwd = str(Path(run.name) / Path(relative_path).parent)
+        files_read, token_usage = trace_stats_from_lines(
+            text_lines_member(file_obj),
+            default_cwd=default_cwd,
+        )
+        run.add_trace(problem_id, relative_path, files_read, token_usage)
+
+
+def read_json_member(file_obj: io.BufferedIOBase) -> dict[str, Any]:
+    try:
+        data = json.loads(read_text_member(file_obj))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def read_text_member(file_obj: io.BufferedIOBase) -> str:
+    return file_obj.read().decode("utf-8", errors="replace")
+
+
+def text_lines_member(
+    file_obj: io.BufferedIOBase,
+    *,
+    chunk_size: int = 1024 * 1024,
+) -> Iterable[str]:
+    pending = ""
+    while chunk := file_obj.read(chunk_size):
+        text = pending + chunk.decode("utf-8", errors="replace")
+        lines = text.splitlines(keepends=True)
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            pending = lines.pop()
+        else:
+            pending = ""
+        yield from lines
+    if pending:
+        yield pending
 
 
 def is_interesting_member(member_name: str) -> bool:
@@ -144,14 +250,14 @@ def is_interesting_member(member_name: str) -> bool:
 def split_run_path(
     member_name: str,
     run_names: set[str],
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, tuple[str, ...] | None]:
     parts = PurePosixPath(member_name).parts
     for index, part in enumerate(parts):
         if part not in run_names:
             continue
         relative_parts = parts[index + 1 :]
         if is_interesting_relative_path(relative_parts):
-            return part, str(PurePosixPath(*relative_parts))
+            return part, relative_parts
     return None, None
 
 
@@ -174,7 +280,7 @@ def summarize_generation_archive(
 ) -> GenerationStats:
     records = run.round_records()
     problem_ids = expected_problem_ids_from_config(
-        run.read_json("generation_config.json"),
+        run.config,
         records.keys(),
         strict_denominator,
     )
@@ -193,7 +299,7 @@ def summarize_generation_archive(
         if first_valid and first_valid.speedup is not None:
             speedups.append(first_valid.speedup)
 
-        files_read = files_read_for_archive_problem(run, pid)
+        files_read = run.files_read_for_problem(pid)
         if files_read is not None:
             files_read_values.append(files_read)
 
@@ -217,7 +323,7 @@ def summarize_optimization_archive(
 ) -> OptimizationStats:
     records = run.round_records()
     problem_ids = expected_problem_ids_from_config(
-        run.read_json("generation_config.json"),
+        run.config,
         records.keys(),
         strict_denominator,
     )
@@ -228,7 +334,7 @@ def summarize_optimization_archive(
         rounds = sorted(records.get(pid, []), key=lambda item: item.round_index)
         if rounds and all(item.clean_correct for item in rounds):
             pass_all_rounds += 1
-        token_usage = token_usage_for_archive_problem(run, pid)
+        token_usage = run.token_usage_for_problem(pid)
         if token_usage is not None:
             token_values.append(token_usage)
 
@@ -239,51 +345,14 @@ def summarize_optimization_archive(
     )
 
 
-def files_read_for_archive_problem(run: ArchiveRun, problem_id: int) -> int | None:
-    trace_texts = run.problem_trace_texts(problem_id)
-    if not trace_texts:
-        return None
-    files: set[str] = set()
-    for relative_path, text in trace_texts:
-        files.update(
-            files_read_from_trace_text(
-                text,
-                default_cwd=str(Path(run.name) / Path(relative_path).parent),
-            )
-        )
-    return len(files)
-
-
-def token_usage_for_archive_problem(run: ArchiveRun, problem_id: int) -> int | None:
-    values = [
-        value
-        for _, text in run.problem_trace_texts(problem_id)
-        if (value := token_usage_from_trace_text(text)) is not None
-    ]
-    return sum(values) if values else None
-
-
 def is_round_dir_name(name: str) -> bool:
     return len(name) > len("round") and name.startswith("round") and name[5].isdigit()
 
 
-def parse_record_round_index(name: str) -> int | None:
-    if not is_round_dir_name(name):
-        return None
-    return parse_round_index(name) or 0
-
-
-def parse_trace_round(relative_path: str) -> int:
-    parts = PurePosixPath(relative_path).parts
-    if len(parts) < 2:
-        return 10**9
-    round_index = parse_round_index(parts[1])
-    return round_index if round_index is not None else 10**9
-
-
-def record_path_sort_key(relative_path: str) -> tuple[int, str]:
-    parts = PurePosixPath(relative_path).parts
-    if len(parts) < 2:
-        return (10**9, relative_path)
-    round_index = parse_round_index(parts[1])
-    return (round_index if round_index is not None else 10**9, relative_path)
+def record_sort_key(problem_id: int, round_name: str) -> tuple[int, int, str]:
+    round_index = parse_round_index(round_name)
+    return (
+        problem_id,
+        round_index if round_index is not None else 10**9,
+        round_name,
+    )

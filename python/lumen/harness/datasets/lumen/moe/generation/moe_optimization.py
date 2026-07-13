@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from lumen.harness.backend.codex import CodexRunner, CodexRunnerConfig, CodexRunResult
+from lumen.harness.datasets.lumen.optimization_runtime import (
+    evaluate_candidate,
+    evaluation_error,
+    save_codex_result,
+    set_round_status,
+    sha256_file,
+    write_round_config,
+)
 
 MOE_WORKLOADS = (1024, 2048, 4096, 8192, 16384)
 
@@ -78,8 +85,6 @@ def _prepare_round(
     round_dir = run_dir / f"round{round_index}"
     round_dir.mkdir()
 
-    _copy_directory(repo_root / "scripts", round_dir / "scripts")
-    _copy_directory(repo_root / "skills", round_dir / "skills")
     input_model_path = round_dir / "input_model.py"
     output_model_path = round_dir / "output_model_new.py"
     shutil.copy2(kernel, input_model_path)
@@ -87,15 +92,33 @@ def _prepare_round(
 
     adapter_dir = round_dir / "datasets" / "inference" / "moe" / "lumen"
     adapter_dir.mkdir(parents=True)
-    (adapter_dir / "model.py").write_text(
+    adapter_path = adapter_dir / "model.py"
+    adapter_path.write_text(
         _render_benchmark_adapter(repo_root, config.entrypoint),
         encoding="utf-8",
     )
 
-    (round_dir / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
-    (round_dir / "AGENTS.md").write_text(
-        _render_agents_md(config.gpu_id),
+    prompt_path = round_dir / "prompt.txt"
+    prompt_path.write_text(prompt + "\n", encoding="utf-8")
+    agents_path = round_dir / "AGENTS.md"
+    agents_path.write_text(
+        _render_agents_md(repo_root),
         encoding="utf-8",
+    )
+    write_round_config(
+        round_dir,
+        domain="moe",
+        round_index=round_index,
+        input_source=kernel,
+        input_model=input_model_path,
+        prompt_source=prompt_file,
+        prompt_path=prompt_path,
+        agents_path=agents_path,
+        adapter_path=adapter_path,
+        entrypoint=config.entrypoint,
+        gpu_id=config.gpu_id,
+        workloads=MOE_WORKLOADS,
+        codex_config=_codex_provenance(config),
     )
     return MoEOptimizationWorkspace(
         run_dir=run_dir,
@@ -140,6 +163,12 @@ def run_moe_optimization_sequence(
         )
         result = _run_workspace(config, workspace)
         rounds.append((workspace, result))
+        status = "passed" if result.ok else "failed"
+        print(
+            f"round {round_index + 1}/{len(prompts)} {status}: "
+            f"{workspace.round_dir}",
+            flush=True,
+        )
         if not result.ok:
             break
         round_kernel = workspace.output_model_path
@@ -150,6 +179,7 @@ def _run_workspace(
     config: MoEOptimizationConfig,
     workspace: MoEOptimizationWorkspace,
 ) -> CodexRunResult:
+    set_round_status(workspace.round_dir, "codex_running")
     result = CodexRunner().execute(
         CodexRunnerConfig(
             work_dir=workspace.round_dir,
@@ -160,22 +190,51 @@ def _run_workspace(
             model_provider=config.model_provider,
             reasoning_effort=config.reasoning_effort,
             timeout_seconds=config.timeout_seconds,
-            env=_codex_env(config.gpu_id),
+            env=_codex_env(config.gpu_id, workspace.round_dir),
             config_overrides=config.config_overrides,
             bypass_approvals_and_sandbox=config.bypass_approvals_and_sandbox,
         )
     )
-    if result.ok and not _is_nonempty_file(workspace.output_model_path):
-        result = replace(
+    result = save_codex_result(
+        workspace.round_dir,
+        workspace.output_model_path,
+        result,
+    )
+    if not result.ok:
+        set_round_status(
+            workspace.round_dir,
+            "failed",
+            error=result.error or result.status,
+        )
+        return result
+
+    set_round_status(workspace.round_dir, "evaluating")
+    evaluation = evaluate_candidate(
+        workspace.round_dir,
+        domain="moe",
+        gpu_id=config.gpu_id,
+        benchmark_root=workspace.round_dir / "datasets" / "inference",
+        workloads=MOE_WORKLOADS,
+        workload_key="tokens",
+        benchmark_args=(
+            str(config.repo_root.resolve() / "scripts" / "benchmark" / "bench_moe.py"),
+            "--backend",
+            "lumen",
+            "--check-correctness",
+            "--tokens",
+            *(str(workload) for workload in MOE_WORKLOADS),
+        ),
+    )
+    if not evaluation["ok"]:
+        error = evaluation_error(evaluation)
+        set_round_status(workspace.round_dir, "failed", error=error)
+        return replace(
             result,
             ok=False,
             status="failed",
-            error=_join_errors(
-                result.error,
-                "Codex completed without producing a non-empty output_model_new.py.",
-            ),
+            error=_join_errors(result.error, error),
         )
-    result = _save_result(workspace, result)
+    set_round_status(workspace.round_dir, "passed")
     return result
 
 
@@ -201,8 +260,11 @@ def _validate_inputs(
         raise ValueError(f"gpu_id must be non-negative (got {gpu_id})")
 
 
-def _codex_env(gpu_id: int | None) -> dict[str, str]:
-    env = {"IS_SANDBOX": "1"}
+def _codex_env(gpu_id: int | None, round_dir: Path) -> dict[str, str]:
+    env = {
+        "IS_SANDBOX": "1",
+        "LUMEN_BENCHMARK_ROOT": str(round_dir / "datasets" / "inference"),
+    }
     if gpu_id is not None:
         env["HIP_VISIBLE_DEVICES"] = str(gpu_id)
     return env
@@ -217,13 +279,13 @@ def _write_run_config(
     prompts = [
         {
             "prompt_file": str(path),
-            "prompt_sha256": _sha256(path),
+            "prompt_sha256": sha256_file(path),
         }
         for path in prompt_files
     ]
     payload = {
         "kernel": str(kernel),
-        "kernel_sha256": _sha256(kernel),
+        "kernel_sha256": sha256_file(kernel),
         "prompt_file": prompts[0]["prompt_file"],
         "prompt_sha256": prompts[0]["prompt_sha256"],
         "prompts": prompts,
@@ -238,13 +300,6 @@ def _write_run_config(
     )
 
 
-def _is_nonempty_file(path: Path) -> bool:
-    try:
-        return path.is_file() and path.stat().st_size > 0
-    except OSError:
-        return False
-
-
 def _resolve_run_dir(repo_root: Path, configured: Path | None) -> Path:
     if configured is not None:
         path = configured.expanduser()
@@ -253,59 +308,24 @@ def _resolve_run_dir(repo_root: Path, configured: Path | None) -> Path:
     return repo_root / "runs" / f"lumen_moe_codex_{timestamp}"
 
 
-def _copy_directory(source: Path, destination: Path) -> None:
-    shutil.copytree(
-        source,
-        destination,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-    )
-
-
-def _save_result(
-    workspace: MoEOptimizationWorkspace,
-    result: CodexRunResult,
-) -> CodexRunResult:
-    if result.trace_path:
-        source = Path(result.trace_path).expanduser()
-        destination = workspace.round_dir / "trace.jsonl"
-        try:
-            if source.is_file() and source.resolve() != destination.resolve():
-                shutil.copy2(source, destination)
-                result = replace(result, trace_path=str(destination))
-        except OSError as exc:
-            result = replace(
-                result,
-                error=_join_errors(result.error, f"Failed to copy trace: {exc}"),
-            )
-    (workspace.round_dir / "codex_result.json").write_text(
-        json.dumps(asdict(result), indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return result
-
-
-def _render_agents_md(gpu_id: int | None) -> str:
-    gpu_prefix = f"HIP_VISIBLE_DEVICES={gpu_id} " if gpu_id is not None else ""
-    gpu_note = (
-        f"- Use physical GPU {gpu_id} for all GPU work. Keep "
-        f"`HIP_VISIBLE_DEVICES={gpu_id}` on benchmark commands.\n"
-        if gpu_id is not None
-        else ""
-    )
+def _render_agents_md(repo_root: Path) -> str:
+    scripts_root = repo_root / "scripts"
+    skills_root = repo_root / "skills"
+    benchmark = scripts_root / "benchmark" / "bench_moe.py"
     return f"""
 ## Goal
 Use `input_model.py` as the starting implementation and write the complete optimized implementation to `output_model_new.py`.
 
 ## Notes
 
-- Do not read files outside of this directory. Do not read the parent repository, git history, other runs, or the network.
+- Do not read the parent repository except for the exact `scripts` and `skills` paths below. Do not read git history, other runs, or the network.
 - You may read `AGENTS.md`, `prompt.txt`, `input_model.py`,
-  `output_model_new.py`, `scripts/**`, `skills/**`, and
+  `output_model_new.py`, `{scripts_root}/**`, `{skills_root}/**`, and
   `datasets/inference/moe/lumen/model.py`.
 - You can only write `output_model_new.py`.
 - Preserve the kernel's public API.
-{gpu_note}- After writing `output_model_new.py`, validate correctness and performance with:
-  `{gpu_prefix}python scripts/benchmark/bench_moe.py --backend lumen --check-correctness --tokens 1024 2048 4096 8192 16384`.
+- After writing `output_model_new.py`, validate correctness and performance with:
+  `python {benchmark} --backend lumen --check-correctness --tokens 1024 2048 4096 8192 16384`.
   - A benchmark command that exits nonzero or omits `"correctness":true` has failed.
 - Do not add eager PyTorch or external-library fallback compute paths.
 """
@@ -338,12 +358,17 @@ def _render_benchmark_adapter(repo_root: Path, entrypoint: str) -> str:
     )
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _codex_provenance(config: MoEOptimizationConfig) -> dict[str, object]:
+    return {
+        "codex_bin": str(config.codex_bin) if config.codex_bin else None,
+        "profile": config.profile,
+        "model": config.model,
+        "model_provider": config.model_provider,
+        "reasoning_effort": config.reasoning_effort,
+        "timeout_seconds": config.timeout_seconds,
+        "config_overrides": list(config.config_overrides),
+        "bypass_approvals_and_sandbox": config.bypass_approvals_and_sandbox,
+    }
 
 
 def _join_errors(*errors: str | None) -> str | None:

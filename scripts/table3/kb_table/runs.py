@@ -113,8 +113,16 @@ def expected_problem_ids(
     observed: Any,
     strict_denominator: bool,
 ) -> list[int]:
-    observed_ids = sorted(int(pid) for pid in observed)
     config = read_json(run_dir / "generation_config.json")
+    return expected_problem_ids_from_config(config, observed, strict_denominator)
+
+
+def expected_problem_ids_from_config(
+    config: dict[str, Any],
+    observed: Any,
+    strict_denominator: bool,
+) -> list[int]:
+    observed_ids = sorted(int(pid) for pid in observed)
     dataset = config.get("dataset") if isinstance(config, dict) else {}
     problem_ids = dataset.get("problem_ids") if isinstance(dataset, dict) else None
     if problem_ids:

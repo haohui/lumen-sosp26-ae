@@ -8,15 +8,16 @@ import csv
 import io
 import json
 import sys
-import tarfile
-import tempfile
-from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any
 
+from kb_table.archive import (
+    ArchiveRuns,
+    summarize_generation_archive,
+    summarize_optimization_archive,
+)
 from kb_table.config import DEFAULT_RUN_DIRS, REPO_ROOT
 from kb_table.models import GenerationStats, OptimizationStats
-from kb_table.runs import summarize_generation, summarize_optimization
 
 DEFAULT_GENERATION_ARCHIVE = (
     REPO_ROOT / "data" / "traces" / "kernelbench_generation_dsv4-07-13-2026.tar.xz"
@@ -28,30 +29,33 @@ DEFAULT_OPTIMIZATION_ARCHIVE = (
 
 def main() -> None:
     args = parse_args()
-    with trace_root_context(args) as trace_root:
-        rows = build_rows(args, trace_root)
-        write_rows(rows, args)
+    archive_runs = ArchiveRuns.from_archives(
+        [args.generation_archive, args.optimization_archive],
+        run_names(args),
+    )
+    rows = build_rows(args, archive_runs)
+    write_rows(rows, args)
 
 
-def build_rows(args: argparse.Namespace, trace_root: Path) -> list[dict[str, Any]]:
+def build_rows(args: argparse.Namespace, archive_runs: ArchiveRuns) -> list[dict[str, Any]]:
     rows = []
     strict_denominator = not args.observed_denominator
 
     for level in (1, 2):
-        gen_with_context = summarize_generation(
-            trace_root / getattr(args, f"generation_l{level}"),
+        gen_with_context = summarize_generation_archive(
+            archive_runs.run(getattr(args, f"generation_l{level}")),
             strict_denominator=strict_denominator,
         )
-        gen_without_context = summarize_generation(
-            trace_root / getattr(args, f"generation_no_examples_l{level}"),
+        gen_without_context = summarize_generation_archive(
+            archive_runs.run(getattr(args, f"generation_no_examples_l{level}")),
             strict_denominator=strict_denominator,
         )
-        opt_without_invariants = summarize_optimization(
-            trace_root / getattr(args, f"optimization_no_invariants_l{level}"),
+        opt_without_invariants = summarize_optimization_archive(
+            archive_runs.run(getattr(args, f"optimization_no_invariants_l{level}")),
             strict_denominator=strict_denominator,
         )
-        opt_with_invariants = summarize_optimization(
-            trace_root / getattr(args, f"optimization_invariants_l{level}"),
+        opt_with_invariants = summarize_optimization_archive(
+            archive_runs.run(getattr(args, f"optimization_invariants_l{level}")),
             strict_denominator=strict_denominator,
         )
         rows.append(
@@ -70,6 +74,10 @@ def build_rows(args: argparse.Namespace, trace_root: Path) -> list[dict[str, Any
             }
         )
     return rows
+
+
+def run_names(args: argparse.Namespace) -> list[str]:
+    return [getattr(args, key) for key in DEFAULT_RUN_DIRS]
 
 
 def generation_performance_columns(stats: GenerationStats) -> dict[str, Any]:
@@ -137,15 +145,6 @@ def parse_args() -> argparse.Namespace:
         description="Generate the KernelBench Table 3 row summary from traces."
     )
     parser.add_argument(
-        "--trace-root",
-        type=Path,
-        default=REPO_ROOT / "data" / "traces",
-        help=(
-            "Directory containing already extracted KernelBench run directories. "
-            "Used only with --use-expanded-traces."
-        ),
-    )
-    parser.add_argument(
         "--generation-archive",
         type=Path,
         default=DEFAULT_GENERATION_ARCHIVE,
@@ -156,11 +155,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_OPTIMIZATION_ARCHIVE,
         help="KernelBench optimization trace tar.xz archive.",
-    )
-    parser.add_argument(
-        "--use-expanded-traces",
-        action="store_true",
-        help="Read already extracted run directories from --trace-root.",
     )
     for key, default in DEFAULT_RUN_DIRS.items():
         parser.add_argument(f"--{key.replace('_', '-')}", default=default)
@@ -184,75 +178,6 @@ def parse_args() -> argparse.Namespace:
         help="Write output to this file instead of stdout.",
     )
     return parser.parse_args()
-
-
-def trace_root_context(args: argparse.Namespace) -> AbstractContextManager[Path]:
-    if args.use_expanded_traces:
-        return nullcontext(args.trace_root)
-    return ExtractedTraceRoot(args.generation_archive, args.optimization_archive)
-
-
-class ExtractedTraceRoot(AbstractContextManager[Path]):
-    def __init__(self, generation_archive: Path, optimization_archive: Path) -> None:
-        self.generation_archive = generation_archive
-        self.optimization_archive = optimization_archive
-        self._tempdir: tempfile.TemporaryDirectory[str] | None = None
-
-    def __enter__(self) -> Path:
-        self._tempdir = tempfile.TemporaryDirectory(prefix="lumen-table3-traces-")
-        try:
-            extract_root = Path(self._tempdir.name)
-            extract_archive(self.generation_archive, extract_root)
-            extract_archive(self.optimization_archive, extract_root)
-            return discover_trace_root(extract_root)
-        except BaseException:
-            self._tempdir.cleanup()
-            self._tempdir = None
-            raise
-
-    def __exit__(self, *args: object) -> None:
-        if self._tempdir is not None:
-            self._tempdir.cleanup()
-
-
-def extract_archive(archive: Path, destination: Path) -> None:
-    try:
-        with tarfile.open(archive, mode="r:xz") as tar:
-            if hasattr(tarfile, "data_filter"):
-                tar.extractall(destination, filter="data")
-            else:
-                tar.extractall(destination)
-    except tarfile.TarError as exc:
-        if is_git_lfs_pointer(archive):
-            raise RuntimeError(
-                f"{archive} is a Git LFS pointer, not the trace archive. "
-                "Run `git lfs pull` and retry."
-            ) from exc
-        raise
-
-
-def is_git_lfs_pointer(path: Path) -> bool:
-    try:
-        with path.open("rb") as file:
-            prefix = file.read(80)
-    except OSError:
-        return False
-    return prefix.startswith(b"version https://git-lfs.github.com/spec/")
-
-
-def discover_trace_root(extract_root: Path) -> Path:
-    expected = set(DEFAULT_RUN_DIRS.values())
-    candidates = [
-        extract_root,
-        *(path for path in extract_root.rglob("*") if path.is_dir()),
-    ]
-    for candidate in candidates:
-        present = {path.name for path in candidate.iterdir() if path.is_dir()}
-        if expected.issubset(present):
-            return candidate
-    raise FileNotFoundError(
-        "Could not find all KernelBench run directories in extracted archives."
-    )
 
 
 def write_rows(rows: list[dict[str, Any]], args: argparse.Namespace) -> None:

@@ -123,8 +123,16 @@ def reward_hacking_reasons(path: Path) -> list[str]:
     if not path.is_file():
         return ["missing output_model_new.py"]
     source = path.read_text(encoding="utf-8", errors="replace")
+    return reward_hacking_reasons_from_source(source, filename=str(path))
+
+
+def reward_hacking_reasons_from_source(
+    source: str,
+    *,
+    filename: str = "<memory>",
+) -> list[str]:
     try:
-        tree = ast.parse(source, filename=str(path))
+        tree = ast.parse(source, filename=filename)
     except SyntaxError as exc:
         return [f"syntax error while checking reward hacking: {exc}"]
 

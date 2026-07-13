@@ -64,8 +64,17 @@ def trace_paths_for_problem(problem_dir: Path) -> list[Path]:
 
 def files_read_from_trace(trace_path: Path) -> set[str]:
     cwd = str(trace_path.parent)
+    try:
+        text = trace_path.read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    return files_read_from_trace_text(text, default_cwd=cwd)
+
+
+def files_read_from_trace_text(text: str, *, default_cwd: str) -> set[str]:
+    cwd = default_cwd
     files: set[str] = set()
-    for payload in trace_payloads(trace_path):
+    for payload in trace_payloads_from_text(text):
         if payload.get("type") == "session_meta" and isinstance(
             payload.get("payload"),
             dict,
@@ -84,8 +93,16 @@ def files_read_from_trace(trace_path: Path) -> set[str]:
 
 
 def token_usage_from_trace(trace_path: Path) -> int | None:
+    try:
+        text = trace_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return token_usage_from_trace_text(text)
+
+
+def token_usage_from_trace_text(text: str) -> int | None:
     max_total: int | None = None
-    for payload in trace_payloads(trace_path):
+    for payload in trace_payloads_from_text(text):
         if payload.get("type") != "event_msg":
             continue
         event = payload.get("payload")
@@ -102,18 +119,22 @@ def token_usage_from_trace(trace_path: Path) -> int | None:
 
 
 def trace_payloads(trace_path: Path) -> list[dict[str, Any]]:
-    payloads: list[dict[str, Any]] = []
     try:
-        with trace_path.open(encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    item = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(item, dict):
-                    payloads.append(item)
+        text = trace_path.read_text(encoding="utf-8")
     except OSError:
-        pass
+        return []
+    return trace_payloads_from_text(text)
+
+
+def trace_payloads_from_text(text: str) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            payloads.append(item)
     return payloads
 
 

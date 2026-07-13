@@ -34,7 +34,7 @@ index 6ffb8d3..986d5e0 100644
              messages = [
                  {"role": "system", "content": system_prompt},
 diff --git a/main.py b/main.py
-index 0085c71..ee3c5c8 100644
+index 0085c71..ad68c1c 100644
 --- a/main.py
 +++ b/main.py
 @@ -1,6 +1,7 @@
@@ -158,7 +158,7 @@ index 0085c71..ee3c5c8 100644
                  )
                  prompt_file = io_dir / f"round{round_idx:03d}_repair_prompt.txt"
                  prompt_file.write_text(repair_prompt, encoding="utf-8")
-@@ -555,16 +584,36 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -555,16 +584,55 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                  kernel_names = extract_cuda_kernel_names(test_kernel)
                  print("=============================================================")
                  print(f"Detected kernel names: {kernel_names}")
@@ -167,30 +167,49 @@ index 0085c71..ee3c5c8 100644
 -                metrics_df = load_ncu_metrics(csv_path, extra_keep=("Kernel Name",),
 -                                              name_list=kernel_names, select="last")
 -                metrics_block = metrics_to_prompt(metrics_df)
-+                if args.backend == "cuda":
-+                    from run_ncu import profile_bench, load_ncu_metrics, metrics_to_prompt
++                bench_py = "bench_ref_inputs_0.py"
++                bench_args = [
++                    "--ref", f"ref_{args.subproc_id}.py",
++                    "--test", f"test_kernel_{args.subproc_id}.py",
++                ]
++                try:
++                    if args.backend == "cuda":
++                        from run_ncu import profile_bench, load_ncu_metrics, metrics_to_prompt
 +
-+                    csv_path = profile_bench(
-+                        bench_py=f"bench_ref_inputs_{args.subproc_id}.py",
-+                        out_csv=str(eval_dir / f"ncu_temp_{args.subproc_id}.csv"),
-+                    )
-+                    metrics_df = load_ncu_metrics(csv_path, extra_keep=("Kernel Name",),
-+                                                  name_list=kernel_names, select="last")
-+                    metrics_block = metrics_to_prompt(metrics_df)
-+                else:
-+                    from run_rocprof import (
-+                        load_rocm_metrics,
-+                        metrics_to_prompt_rocm,
-+                        profile_bench_rocm,
-+                    )
++                        csv_path = profile_bench(
++                            bench_py=bench_py,
++                            bench_args=bench_args,
++                            out_csv=str(eval_dir / f"ncu_temp_{args.subproc_id}.csv"),
++                        )
++                        metrics_df = load_ncu_metrics(csv_path, extra_keep=("Kernel Name",),
++                                                      name_list=kernel_names, select="last")
++                        metrics_block = metrics_to_prompt(metrics_df)
++                    else:
++                        from run_rocprof import (
++                            load_rocm_metrics,
++                            metrics_to_prompt_rocm,
++                            profile_bench_rocm,
++                        )
 +
-+                    csv_path = profile_bench_rocm(
-+                        bench_py=f"bench_ref_inputs_{args.subproc_id}.py",
-+                        out_csv=eval_dir / f"rocprof_temp_{args.subproc_id}.csv",
-+                        kernel_names=kernel_names,
-+                    )
-+                    metrics_df = load_rocm_metrics(csv_path, name_list=kernel_names, select="last")
-+                    metrics_block = metrics_to_prompt_rocm(metrics_df)
++                        csv_path = profile_bench_rocm(
++                            bench_py=bench_py,
++                            bench_args=bench_args,
++                            out_csv=eval_dir / f"rocprof_temp_{args.subproc_id}.csv",
++                            kernel_names=kernel_names,
++                        )
++                        metrics_df = load_rocm_metrics(csv_path, name_list=kernel_names, select="last")
++                        metrics_block = metrics_to_prompt_rocm(metrics_df)
++                except (Exception, SystemExit) as exc:
++                    message = f"profiler failed before optimization: {exc}"
++                    print(f"[Profile] {message}")
++                    current_kernel.metrics = {
++                        "runnable": False,
++                        "phase": "profile",
++                        "error_type": type(exc).__name__,
++                        "message": message,
++                    }
++                    current_kernel.score = float("-inf")
++                    continue
                  sys_judge__prompt, judge_prompt = build_judger_optimization_prompts(
                      arch_path=task_path,
                      gpu_name=args.gpu,
@@ -200,7 +219,7 @@ index 0085c71..ee3c5c8 100644
                  )
                  prompt_file = io_dir / f"round{round_idx:03d}_judge_optimization_prompt.txt"
                  prompt_file.write_text(judge_prompt, encoding="utf-8")
-@@ -578,6 +627,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
+@@ -578,6 +646,7 @@ def _run_single_task(task_path: Path, args, batch_dir: Path) -> Dict[str, Any]:
                  opt_prompt = build_optimization_prompt(
                      arch_path=current_kernel.code_path,  # type: ignore[union-attr]
                      gpu_name=args.gpu,
@@ -716,12 +735,30 @@ index 57e0a04..49cee76 100644
 \ No newline at end of file
 +        BACKEND_LABEL=backend_label,
 +    )
+diff --git a/run_ncu.py b/run_ncu.py
+index 7fcc5bd..87be5d2 100644
+--- a/run_ncu.py
++++ b/run_ncu.py
+@@ -75,5 +75,6 @@ METRIC_COLUMNS: List[str] = [s.strip() for s in METRICS.split(",")]
+ def profile_bench(
+     bench_py: str = "bench_ref_inputs.py",
++    bench_args: Optional[Sequence[str]] = None,
+     kernel_names: Optional[List[str]] = None,
+     conda_bin: str = "/root/miniconda3/envs/CudaForge/bin",
+     out_csv: Union[str, Path] = "ncu_temp.csv",
+@@ -104,5 +105,6 @@ def profile_bench(
+         "--launch-skip=0",
+         "--launch-count=20",
+         sys.executable, bench_py,
++        *(bench_args or []),
+         "--repeat", str(repeat),
+     ]
 diff --git a/run_rocprof.py b/run_rocprof.py
 new file mode 100644
-index 0000000..a052c6f
+index 0000000..f4d7a1a
 --- /dev/null
 +++ b/run_rocprof.py
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,208 @@
 +#!/usr/bin/env python3
 +from __future__ import annotations
 +
@@ -763,6 +800,7 @@ index 0000000..a052c6f
 +
 +def profile_bench_rocm(
 +    bench_py: str = "bench_ref_inputs.py",
++    bench_args: Optional[Sequence[str]] = None,
 +    kernel_names: Optional[list[str]] = None,
 +    out_csv: Union[str, Path] = "rocprof_temp.csv",
 +    repeat: int = 100,
@@ -785,8 +823,10 @@ index 0000000..a052c6f
 +        "csv",
 +        "-d",
 +        str(out_dir),
++        "--",
 +        sys.executable,
 +        bench_py,
++        *(bench_args or []),
 +        "--repeat",
 +        str(repeat),
 +    ]

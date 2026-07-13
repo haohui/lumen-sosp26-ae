@@ -209,8 +209,7 @@ lumen_moe_requirements = """
    at::matmul/mm/bmm/einsum/addmm/linear, at::silu.
 3) load_inline is allowed ONLY as compilation wrapper; compute must be inside custom kernels.
 4) No per-expert eager matmul loop. Expert loop is allowed only for kernel launch bookkeeping, not ATen compute.
-5) If any forbidden API is required, output exactly: UNSAT_FUSED_NOHACK
-6) Output must include ANTI_HACK_MANIFEST:
+5) Output must include ANTI_HACK_MANIFEST:
    - forbidden_api_used: []
    - main_compute_kernels: [kernel names]
    - single_runtime_op: true

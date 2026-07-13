@@ -109,10 +109,6 @@ class CodexRunner:
             stdout = _coerce_output(exc.stdout)
             session_id = find_codex_session_id(stderr)
             trace_path = find_trace_path(session_id, env)
-            error = _join_error_parts(
-                f"Timed out after {config.timeout_seconds}s.",
-                stderr.strip(),
-            )
             return _result(
                 ok=False,
                 status="timed_out",
@@ -120,7 +116,7 @@ class CodexRunner:
                 session_id=session_id,
                 trace_path=trace_path,
                 final_response=_read_final_response(last_message_path, stdout),
-                error=error,
+                error=f"Timed out after {config.timeout_seconds}s.",
             )
         except Exception:
             return _result(
@@ -241,13 +237,6 @@ def _coerce_output(output: str | bytes | None) -> str:
     if isinstance(output, bytes):
         return output.decode("utf-8", errors="replace")
     return output
-
-
-def _join_error_parts(*parts: str | None) -> str | None:
-    filtered = [part for part in parts if part]
-    if not filtered:
-        return None
-    return "\n".join(filtered)
 
 
 def _result(

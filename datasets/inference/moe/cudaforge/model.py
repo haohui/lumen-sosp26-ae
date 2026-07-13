@@ -7,6 +7,7 @@ source = r"""
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAException.h>
+#include <c10/hip/HIPStream.h>
 #include <stdint.h>
 #include <math.h>
 
@@ -239,7 +240,7 @@ torch::Tensor fused_moe_forward(
     c10::cuda::CUDAGuard device_guard(input_q.device());
     auto out = torch::empty({tokens, dim}, input_q.options().dtype(at::kBFloat16));
 
-    auto stream = at::cuda::getCurrentCUDAStream(input_q.get_device()).stream();
+    hipStream_t stream = c10::hip::getCurrentHIPStream();
 
     const uint8_t* input_q_ptr = reinterpret_cast<const uint8_t*>(input_q.data_ptr());
     const uint8_t* w1_q_ptr = reinterpret_cast<const uint8_t*>(w1_q.data_ptr());

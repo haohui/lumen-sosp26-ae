@@ -140,25 +140,21 @@ def _validate_shared_weights(
 
 def _quantize_fp8_block_per_token(
     x: torch.Tensor,
+    out_q: torch.Tensor,
+    out_scale: torch.Tensor,
     *,
     block_k: int = BLOCK_K,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> None:
     rows, cols = x.shape
     if cols % block_k != 0:
         raise ValueError(f"cols must be divisible by {block_k}, got {cols}")
-    dtype = getattr(torch, "float8_e4m3fnuz", None) or getattr(
-        torch,
-        "float8_e4m3fn",
-        None,
-    )
-    if dtype is None:
-        raise RuntimeError("torch float8 dtype is unavailable")
-    xb = x.float().view(rows, cols // block_k, block_k)
+    x_float = x.float()
+    xb = x_float.view(rows, cols // block_k, block_k)
     amax = xb.abs().amax(dim=-1, keepdim=True).clamp_min_(1e-6)
     q_scale = 240.0 / amax
-    dq_scale = (1.0 / q_scale).squeeze(-1).contiguous()
-    q = (xb * q_scale).to(dtype).view(rows, cols).contiguous()
-    return q, dq_scale
+    torch.reciprocal(q_scale.squeeze(-1), out=out_scale)
+    xb.mul_(q_scale)
+    out_q.copy_(x_float.view(rows, cols))
 
 
 class Model:
@@ -261,6 +257,7 @@ class Model:
             device=x.input_q.device,
         )
         stage2_topk_weights = x.topk_weights.reshape(-1, 1).contiguous()
+        input_scale_contiguous = x.input_scale.contiguous()
 
         def run_triton() -> torch.Tensor:
             stage1.zero_()
@@ -270,7 +267,7 @@ class Model:
                 x.input_q,
                 w["w1_q"],
                 stage1,
-                x.input_scale.contiguous(),
+                input_scale_contiguous,
                 fc1_scale_3d,
                 None,
                 x.topk_weights,
@@ -288,9 +285,12 @@ class Model:
                 config=cfg,
             )
 
-            q, scale = _quantize_fp8_block_per_token(stage1, block_k=BLOCK_K)
-            stage2_in_q.copy_(q)
-            stage2_in_scale.copy_(scale)
+            _quantize_fp8_block_per_token(
+                stage1,
+                stage2_in_q,
+                stage2_in_scale,
+                block_k=BLOCK_K,
+            )
 
             rt.fused_moe(
                 stage2_in_q,

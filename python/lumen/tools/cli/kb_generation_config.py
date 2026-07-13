@@ -12,6 +12,7 @@ from lumen.harness.datasets.kernelbench.generation import (
     KernelBenchDatasetConfig,
     KernelBenchEvaluationConfig,
     OptimizationConfig,
+    PromptReferenceConfig,
 )
 
 
@@ -65,6 +66,7 @@ def generation_config_from_mapping(
     dataset_values = values["dataset"]
     codex_values = values.get("codex", {})
     evaluation_values = values.get("evaluation", {})
+    prompt_values = values.get("prompt", {})
 
     dataset = KernelBenchDatasetConfig(
         source=dataset_values["source"],
@@ -103,11 +105,15 @@ def generation_config_from_mapping(
         num_perf_trials=evaluation_values.get("num_perf_trials", 10),
         gpu_arch=evaluation_values.get("gpu_arch", "gfx942"),
     )
+    prompt = PromptReferenceConfig(
+        reference_mode=prompt_values.get("reference_mode", "full"),
+    )
     return GenerationConfig(
         dataset=dataset,
         run_dir=_resolve_path(values["run_dir"], base_dir),
         codex=codex,
         evaluation=evaluation,
+        prompt=prompt,
         num_workers=values.get("num_workers", 1),
     )
 

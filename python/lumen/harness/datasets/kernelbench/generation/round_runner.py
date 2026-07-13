@@ -89,6 +89,7 @@ def run_generation_round(
             round_dir,
             ref_arch_src=ref_arch_src,
             evaluation=config.evaluation,
+            reference_mode=config.prompt.reference_mode,
         )
     else:
         workspace = prepared_workspace

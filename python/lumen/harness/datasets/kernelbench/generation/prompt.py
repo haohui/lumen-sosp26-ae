@@ -97,6 +97,7 @@ def render_agents_md(
     python_root: str | Path | None = None,
     skills_root: str | Path | None = None,
     python_executable: str | Path = sys.executable,
+    reference_mode: str = "full",
 ) -> str:
     """Render the `AGENTS.md` guidance used by Codex workspaces."""
     return _render_agents_md(
@@ -104,6 +105,7 @@ def render_agents_md(
         skills_root=skills_root,
         python_executable=python_executable,
         optimization=False,
+        reference_mode=reference_mode,
     )
 
 
@@ -119,6 +121,7 @@ def render_optimization_agents_md(
         skills_root=skills_root,
         python_executable=python_executable,
         optimization=True,
+        reference_mode="language-spec-only",
     )
 
 
@@ -128,6 +131,7 @@ def _render_agents_md(
     skills_root: str | Path | None,
     python_executable: str | Path,
     optimization: bool,
+    reference_mode: str,
 ) -> str:
     python_path = (
         Path(python_root) if python_root is not None else _discover_python_root()
@@ -150,7 +154,7 @@ def _render_agents_md(
     skills_section = (
         _render_optimization_skills_section(skills_path)
         if optimization
-        else _render_skills_section(skills_path)
+        else _render_skills_section(skills_path, reference_mode=reference_mode)
     )
     return _render_template(
         AGENTS_TEMPLATE,
@@ -173,6 +177,7 @@ def write_generation_workspace(
     python_root: str | Path | None = None,
     skills_root: str | Path | None = None,
     python_executable: str | Path = sys.executable,
+    reference_mode: str = "full",
 ) -> dict[str, Path]:
     """Write prompt-side files for one Codex KernelBench workspace.
 
@@ -184,6 +189,7 @@ def write_generation_workspace(
         python_root=python_root,
         skills_root=skills_root,
         python_executable=python_executable,
+        reference_mode=reference_mode,
     )
     return _write_workspace_files(
         work_dir,
@@ -194,6 +200,7 @@ def write_generation_workspace(
         gpu_arch=gpu_arch,
         eval_num_correct_trials=eval_num_correct_trials,
         eval_num_perf_trials=eval_num_perf_trials,
+        reference_mode=reference_mode,
     )
 
 
@@ -240,6 +247,7 @@ def write_optimization_workspace(
         gpu_arch=gpu_arch,
         eval_num_correct_trials=eval_num_correct_trials,
         eval_num_perf_trials=eval_num_perf_trials,
+        reference_mode="language-spec-only",
     )
     if candidate_src is not None:
         path = Path(work_dir).expanduser()
@@ -262,6 +270,7 @@ def _write_workspace_files(
     gpu_arch: str,
     eval_num_correct_trials: int,
     eval_num_perf_trials: int,
+    reference_mode: str,
 ) -> dict[str, Path]:
     path = Path(work_dir).expanduser()
     path.mkdir(parents=True, exist_ok=True)
@@ -293,6 +302,7 @@ def _write_workspace_files(
         json.dumps(
             {
                 "templates": [WORKSPACE_TEMPLATE, AGENTS_TEMPLATE],
+                "reference_mode": reference_mode,
                 "prompt_sha256": sha256(prompt.encode()).hexdigest(),
                 "agents_sha256": sha256(agents.encode()).hexdigest(),
             },
@@ -304,7 +314,13 @@ def _write_workspace_files(
     return files_written
 
 
-def _render_skills_section(skills_root: Path) -> str:
+def _render_skills_section(skills_root: Path, *, reference_mode: str) -> str:
+    if reference_mode not in {"full", "language-spec-only"}:
+        raise ValueError(
+            "reference_mode must be either 'full' or 'language-spec-only', "
+            f"got {reference_mode!r}"
+        )
+
     if not skills_root.is_dir():
         return (
             f"No local skills directory was found at `{skills_root}`. Use the "
@@ -312,6 +328,22 @@ def _render_skills_section(skills_root: Path) -> str:
         )
 
     spec = skills_root / "languages" / "avelang-language-spec.md"
+    if reference_mode == "language-spec-only":
+        if spec.is_file():
+            return "\n".join(
+                [
+                    f"- AveLang syntax/API: `{spec}`",
+                    "",
+                    "Use only this language specification as a local reference.",
+                    "Do not inspect local AveLang examples, generic kernel knowledge, "
+                    "or optimization technique notes.",
+                ]
+            )
+        return (
+            f"No AveLang language spec was found at `{spec}`. Use the "
+            "AveLang constraints in `prompt.txt` as the source of truth."
+        )
+
     examples = skills_root / "languages" / "avelang" / "index.md"
     kernels = skills_root / "knowledges" / "kernels"
     techniques = skills_root / "knowledges" / "techniques"

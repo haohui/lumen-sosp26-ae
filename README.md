@@ -90,6 +90,7 @@ The repository provides a number of scripts under the `scripts/` directory to re
 - `figure1/validate_invariant.py` validates the data flow invariants described in Figure 1.
 - `table2/benchmark.py` reproduces the benchmark results of Table 2.
 - `table2/agent_generate.py` regenerates the GPU kernels with KernelFalcon, KSearch, KernelBench, CUDAForge. 
+- `table3/run_kernelbench_table3.py` regenerates the KernelBench traces used by Table 3.
 - `table3/kernelbench_table.py` emits CSV/JSON summaries for the KernelBench rows of Table 3.
 - `figure2/bench_attn_ablation.py` regenerates the ablation of optimizations on the flash attention kernel.
 

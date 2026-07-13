@@ -1,0 +1,27 @@
+# KernelBench Level 2 generation without local AveLang examples/knowledge notes.
+run_dir = "data/traces/kernelbench_generation_level2_moonbridge_no_examples"
+num_workers = 8
+
+[dataset]
+source = "huggingface"
+name = "ScalingIntelligence/KernelBench"
+level = 2
+subset = [1, 100]
+problem_ids = []
+
+[prompt]
+reference_mode = "language-spec-only"
+
+[codex]
+timeout_seconds = 3000
+max_retries = 3
+bypass_approvals_and_sandbox = true
+save_trajectory = true
+config_overrides = []
+
+[evaluation]
+gpu_ids = [0, 1, 2, 3, 4, 5, 6, 7]
+precision = "bf16"
+num_correct_trials = 5
+num_perf_trials = 100
+gpu_arch = "gfx942"

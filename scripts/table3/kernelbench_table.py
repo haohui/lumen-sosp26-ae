@@ -11,80 +11,133 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from kb_table.archive import (
+    ArchiveRuns,
+    summarize_generation_archive,
+    summarize_optimization_archive,
+)
 from kb_table.config import DEFAULT_RUN_DIRS, REPO_ROOT
-from kb_table.runs import summarize_generation, summarize_optimization
+from kb_table.models import GenerationStats, OptimizationStats
+
+DEFAULT_GENERATION_ARCHIVE = (
+    REPO_ROOT / "data" / "traces" / "kernelbench_generation_dsv4-07-13-2026.tar.xz"
+)
+DEFAULT_OPTIMIZATION_ARCHIVE = (
+    REPO_ROOT / "data" / "traces" / "kernelbench_optimization_dsv4-07-13-2026.tar.xz"
+)
 
 
 def main() -> None:
     args = parse_args()
+    archive_runs = ArchiveRuns.from_archives(
+        [args.generation_archive, args.optimization_archive],
+        run_names(args),
+    )
+    rows = build_rows(args, archive_runs)
+    write_rows(rows, args)
+
+
+def build_rows(args: argparse.Namespace, archive_runs: ArchiveRuns) -> list[dict[str, Any]]:
     rows = []
     strict_denominator = not args.observed_denominator
 
     for level in (1, 2):
-        gen = summarize_generation(
-            args.trace_root / getattr(args, f"generation_l{level}"),
+        gen_with_context = summarize_generation_archive(
+            archive_runs.run(getattr(args, f"generation_l{level}")),
             strict_denominator=strict_denominator,
         )
-        gen_no_examples = summarize_generation(
-            args.trace_root / getattr(args, f"generation_no_examples_l{level}"),
+        gen_without_context = summarize_generation_archive(
+            archive_runs.run(getattr(args, f"generation_no_examples_l{level}")),
             strict_denominator=strict_denominator,
         )
-        opt_no_inv = summarize_optimization(
-            args.trace_root / getattr(args, f"optimization_no_invariants_l{level}"),
+        opt_without_invariants = summarize_optimization_archive(
+            archive_runs.run(getattr(args, f"optimization_no_invariants_l{level}")),
             strict_denominator=strict_denominator,
         )
-        opt_inv = summarize_optimization(
-            args.trace_root / getattr(args, f"optimization_invariants_l{level}"),
+        opt_with_invariants = summarize_optimization_archive(
+            archive_runs.run(getattr(args, f"optimization_invariants_l{level}")),
             strict_denominator=strict_denominator,
-        )
-        gen_pass1_no_examples = percent(
-            gen_no_examples.pass1,
-            gen_no_examples.denominator,
-        )
-        gen_pass3_no_examples = percent(
-            gen_no_examples.pass3,
-            gen_no_examples.denominator,
-        )
-        opt_pass1_no_inv = percent(
-            opt_no_inv.pass_all_rounds,
-            opt_no_inv.denominator,
-        )
-        opt_pass1_inv = percent(
-            opt_inv.pass_all_rounds,
-            opt_inv.denominator,
         )
         rows.append(
             {
-                "Level": f"Level {level}",
-                "Valid%": format_percent(percent(gen.valid_count, gen.denominator)),
-                "GeoMean": format_number(gen.geom),
-                "Min": format_number(gen.min_speedup),
-                "Max": format_number(gen.max_speedup),
-                "> 1x": str(gen.gt1_count),
-                "Examples Pass@1%": arrow(
-                    format_percent(gen_pass1_no_examples),
-                    format_percent(percent(gen.pass1, gen.denominator)),
+                "level": level,
+                **generation_performance_columns(gen_with_context),
+                **generation_ablation_columns(
+                    gen_without_context,
+                    gen_with_context,
                 ),
-                "Examples Pass@3%": arrow(
-                    format_percent(gen_pass3_no_examples),
-                    format_percent(percent(gen.pass3, gen.denominator)),
+                **optimization_columns(
+                    "without_invariants",
+                    opt_without_invariants,
                 ),
-                "Avg. files read": arrow(
-                    format_number(gen_no_examples.avg_files_read),
-                    format_number(gen.avg_files_read),
-                ),
-                "Invariants Pass@1%": arrow(
-                    format_percent(opt_pass1_no_inv),
-                    format_percent(opt_pass1_inv),
-                ),
-                "Avg. token usage": arrow(
-                    format_millions(opt_no_inv.avg_token_usage),
-                    format_millions(opt_inv.avg_token_usage),
-                ),
+                **optimization_columns("with_invariants", opt_with_invariants),
             }
         )
+    return rows
 
-    write_rows(rows, args)
+
+def run_names(args: argparse.Namespace) -> list[str]:
+    return [getattr(args, key) for key in DEFAULT_RUN_DIRS]
+
+
+def generation_performance_columns(stats: GenerationStats) -> dict[str, Any]:
+    return {
+        "generation_with_in_context_denominator": stats.denominator,
+        "generation_with_in_context_valid_count": stats.valid_count,
+        "generation_with_in_context_valid_percent": percent(
+            stats.valid_count,
+            stats.denominator,
+        ),
+        "generation_with_in_context_geomean": stats.geom,
+        "generation_with_in_context_min_speedup": stats.min_speedup,
+        "generation_with_in_context_max_speedup": stats.max_speedup,
+        "generation_with_in_context_gt1_count": stats.gt1_count,
+    }
+
+
+def generation_ablation_columns(
+    without_context: GenerationStats,
+    with_context: GenerationStats,
+) -> dict[str, Any]:
+    return {
+        "generation_without_in_context_pass1_count": without_context.pass1,
+        "generation_without_in_context_pass1_percent": percent(
+            without_context.pass1,
+            without_context.denominator,
+        ),
+        "generation_with_in_context_pass1_count": with_context.pass1,
+        "generation_with_in_context_pass1_percent": percent(
+            with_context.pass1,
+            with_context.denominator,
+        ),
+        "generation_without_in_context_pass3_count": without_context.pass3,
+        "generation_without_in_context_pass3_percent": percent(
+            without_context.pass3,
+            without_context.denominator,
+        ),
+        "generation_with_in_context_pass3_count": with_context.pass3,
+        "generation_with_in_context_pass3_percent": percent(
+            with_context.pass3,
+            with_context.denominator,
+        ),
+        "generation_without_in_context_avg_files_read": (
+            without_context.avg_files_read
+        ),
+        "generation_with_in_context_avg_files_read": with_context.avg_files_read,
+    }
+
+
+def optimization_columns(label: str, stats: OptimizationStats) -> dict[str, Any]:
+    prefix = f"optimization_{label}"
+    return {
+        f"{prefix}_denominator": stats.denominator,
+        f"{prefix}_pass1_count": stats.pass_all_rounds,
+        f"{prefix}_pass1_percent": percent(
+            stats.pass_all_rounds,
+            stats.denominator,
+        ),
+        f"{prefix}_avg_token_usage": stats.avg_token_usage,
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,13 +145,16 @@ def parse_args() -> argparse.Namespace:
         description="Generate the KernelBench Table 3 row summary from traces."
     )
     parser.add_argument(
-        "--trace-root",
+        "--generation-archive",
         type=Path,
-        default=REPO_ROOT / "data" / "traces",
-        help=(
-            "Directory containing KernelBench run directories. Defaults to "
-            "data/traces, matching the artifact README."
-        ),
+        default=DEFAULT_GENERATION_ARCHIVE,
+        help="KernelBench generation trace tar.xz archive.",
+    )
+    parser.add_argument(
+        "--optimization-archive",
+        type=Path,
+        default=DEFAULT_OPTIMIZATION_ARCHIVE,
+        help="KernelBench optimization trace tar.xz archive.",
     )
     for key, default in DEFAULT_RUN_DIRS.items():
         parser.add_argument(f"--{key.replace('_', '-')}", default=default)
@@ -150,35 +206,6 @@ def percent(count: int, denominator: int) -> float | None:
     if denominator <= 0:
         return None
     return 100.0 * count / denominator
-
-
-def arrow(left: str, right: str) -> str:
-    return f"{left}->{right}"
-
-
-def format_percent(value: float | None) -> str:
-    if value is None:
-        return ""
-    return f"{format_decimal(value, 1)}%"
-
-
-def format_number(value: float | None) -> str:
-    if value is None:
-        return ""
-    return format_decimal(value, 2)
-
-
-def format_millions(value: float | None) -> str:
-    if value is None:
-        return ""
-    return f"{format_decimal(value / 1_000_000, 2)}M"
-
-
-def format_decimal(value: float, digits: int) -> str:
-    text = f"{value:.{digits}f}"
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    return text
 
 
 if __name__ == "__main__":

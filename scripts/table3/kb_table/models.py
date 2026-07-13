@@ -24,6 +24,10 @@ class RoundRecord:
             and not self.reward_hacking
         )
 
+    @property
+    def clean_correct(self) -> bool:
+        return self.correct and not self.reward_hacking
+
 
 @dataclass(frozen=True)
 class GenerationStats:
@@ -41,5 +45,5 @@ class GenerationStats:
 @dataclass(frozen=True)
 class OptimizationStats:
     denominator: int
-    pass_final: int
+    pass_all_rounds: int
     avg_token_usage: float | None

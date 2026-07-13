@@ -54,6 +54,35 @@ FORBIDDEN_TORCH_CALLS = {
     "torch.where",
 }
 
+FORBIDDEN_TENSOR_METHODS = {
+    "addmm",
+    "argmax",
+    "argmin",
+    "baddbmm",
+    "bmm",
+    "clamp",
+    "cumprod",
+    "cumsum",
+    "einsum",
+    "gather",
+    "gelu",
+    "index_select",
+    "inner",
+    "matmul",
+    "max",
+    "mean",
+    "min",
+    "mm",
+    "prod",
+    "relu",
+    "sigmoid",
+    "softmax",
+    "sort",
+    "sum",
+    "topk",
+    "where",
+}
+
 FORBIDDEN_MODULE_PREFIXES = (
     "torch.nn.functional.",
     "torch.functional.",
@@ -156,6 +185,8 @@ def fallback_reasons_in_node(node: ast.AST, module_attrs: set[str]) -> list[str]
             continue
         if name in FORBIDDEN_TORCH_CALLS:
             reasons.append(f"uses fallback call {name}()")
+        if is_forbidden_tensor_method_call(child.func):
+            reasons.append(f"uses fallback tensor method .{child.func.attr}()")
         if name in FORBIDDEN_NN_MODULES:
             reasons.append(f"constructs fallback module {name}() outside __init__")
         if any(name.startswith(prefix) for prefix in FORBIDDEN_MODULE_PREFIXES):
@@ -165,6 +196,22 @@ def fallback_reasons_in_node(node: ast.AST, module_attrs: set[str]) -> list[str]
         if name in {"eval", "exec", "open", "__import__"}:
             reasons.append(f"uses suspicious Python builtin {name}()")
     return reasons
+
+
+def is_forbidden_tensor_method_call(func: ast.AST) -> bool:
+    if not isinstance(func, ast.Attribute):
+        return False
+    if func.attr not in FORBIDDEN_TENSOR_METHODS:
+        return False
+
+    receiver_name = dotted_name(func.value)
+    if receiver_name in {"al", "avelang", "math", "torch", "F"}:
+        return False
+    if receiver_name and receiver_name.startswith(
+        ("al.", "avelang.", "math.", "torch.", "F.")
+    ):
+        return False
+    return True
 
 
 def is_self_module_call(func: ast.AST, module_attrs: set[str]) -> bool:

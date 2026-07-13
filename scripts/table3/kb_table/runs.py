@@ -61,21 +61,20 @@ def summarize_optimization(
 ) -> OptimizationStats:
     records = load_round_records(run_dir)
     problem_ids = expected_problem_ids(run_dir, records.keys(), strict_denominator)
-    pass_final = 0
+    pass_all_rounds = 0
     token_values: list[int] = []
 
     for pid in problem_ids:
         rounds = sorted(records.get(pid, []), key=lambda item: item.round_index)
-        final = rounds[-1] if rounds else None
-        if final and final.valid:
-            pass_final += 1
+        if rounds and all(item.clean_correct for item in rounds):
+            pass_all_rounds += 1
         token_usage = token_usage_for_problem(run_dir / f"p{pid:02d}")
         if token_usage is not None:
             token_values.append(token_usage)
 
     return OptimizationStats(
         denominator=len(problem_ids),
-        pass_final=pass_final,
+        pass_all_rounds=pass_all_rounds,
         avg_token_usage=mean(token_values),
     )
 

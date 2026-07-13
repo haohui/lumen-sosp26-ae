@@ -37,29 +37,50 @@ def main() -> None:
             args.trace_root / getattr(args, f"optimization_invariants_l{level}"),
             strict_denominator=strict_denominator,
         )
+        gen_pass1_no_examples = percent(
+            gen_no_examples.pass1,
+            gen_no_examples.denominator,
+        )
+        gen_pass3_no_examples = percent(
+            gen_no_examples.pass3,
+            gen_no_examples.denominator,
+        )
+        opt_pass1_no_inv = percent(
+            opt_no_inv.pass_all_rounds,
+            opt_no_inv.denominator,
+        )
+        opt_pass1_inv = percent(
+            opt_inv.pass_all_rounds,
+            opt_inv.denominator,
+        )
         rows.append(
             {
-                "level": level,
-                "performance_denominator": gen.denominator,
-                "performance_valid": gen.valid_count,
-                "performance_valid_percent": percent(gen.valid_count, gen.denominator),
-                "performance_geomean": gen.geom,
-                "performance_min": gen.min_speedup,
-                "performance_max": gen.max_speedup,
-                "performance_gt1": gen.gt1_count,
-                "examples_pass1_no_examples": gen_no_examples.pass1,
-                "examples_pass1_full": gen.pass1,
-                "examples_pass3_no_examples": gen_no_examples.pass3,
-                "examples_pass3_full": gen.pass3,
-                "examples_avg_files_read_no_examples": gen_no_examples.avg_files_read,
-                "examples_avg_files_read_full": gen.avg_files_read,
-                "invariants_denominator": opt_inv.denominator,
-                "invariants_pass1_no_invariants": opt_no_inv.pass_final,
-                "invariants_pass1_invariants": opt_inv.pass_final,
-                "invariants_avg_token_usage_no_invariants": (
-                    opt_no_inv.avg_token_usage
+                "Level": f"Level {level}",
+                "Valid%": format_percent(percent(gen.valid_count, gen.denominator)),
+                "GeoMean": format_number(gen.geom),
+                "Min": format_number(gen.min_speedup),
+                "Max": format_number(gen.max_speedup),
+                "> 1x": str(gen.gt1_count),
+                "Examples Pass@1%": arrow(
+                    format_percent(gen_pass1_no_examples),
+                    format_percent(percent(gen.pass1, gen.denominator)),
                 ),
-                "invariants_avg_token_usage_invariants": opt_inv.avg_token_usage,
+                "Examples Pass@3%": arrow(
+                    format_percent(gen_pass3_no_examples),
+                    format_percent(percent(gen.pass3, gen.denominator)),
+                ),
+                "Avg. files read": arrow(
+                    format_number(gen_no_examples.avg_files_read),
+                    format_number(gen.avg_files_read),
+                ),
+                "Invariants Pass@1%": arrow(
+                    format_percent(opt_pass1_no_inv),
+                    format_percent(opt_pass1_inv),
+                ),
+                "Avg. token usage": arrow(
+                    format_millions(opt_no_inv.avg_token_usage),
+                    format_millions(opt_inv.avg_token_usage),
+                ),
             }
         )
 
@@ -129,6 +150,35 @@ def percent(count: int, denominator: int) -> float | None:
     if denominator <= 0:
         return None
     return 100.0 * count / denominator
+
+
+def arrow(left: str, right: str) -> str:
+    return f"{left}->{right}"
+
+
+def format_percent(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{format_decimal(value, 1)}%"
+
+
+def format_number(value: float | None) -> str:
+    if value is None:
+        return ""
+    return format_decimal(value, 2)
+
+
+def format_millions(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{format_decimal(value / 1_000_000, 2)}M"
+
+
+def format_decimal(value: float, digits: int) -> str:
+    text = f"{value:.{digits}f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
 
 
 if __name__ == "__main__":

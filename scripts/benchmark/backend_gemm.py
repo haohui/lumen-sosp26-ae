@@ -106,6 +106,7 @@ def run_backend(
             repeat=repeat,
             graph_iters=graph_iters,
         )
+        tflops = 2 * s**3 / (timing.mean_ms / 1000) / 1e12
         emit_jsonl(
             {
                 "domain": "gemm",
@@ -117,6 +118,7 @@ def run_backend(
                 "dtype": dtype_name,
                 "mean_ms": timing.mean_ms,
                 **({"correctness": True} if check_correctness else {}),
+                "tflops": tflops,
             }
         )
     exit_after_success_if_requested(mod)

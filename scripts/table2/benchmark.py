@@ -273,6 +273,7 @@ def record_tflops(record: dict[str, Any]) -> float:
     elif domain == "attention":
         flops = (
             4.0
+            * 2.0
             * float(record["batch_size"])
             * float(record["num_q_heads"])
             * float(record["seq_len"])

@@ -51,15 +51,9 @@ def _matmul_a_bt_kernel(
     tl.store(c_ptrs, c, mask=c_mask)
 
 
-def kernel_function(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+def _launch_matmul_a_bt(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor) -> torch.Tensor:
     """
-    Triton wrapper for C = A @ B^T.
-
-    Fusion note:
-    - The model pipeline is a single matmul only.
-    - We "fuse" transpose handling into the kernel memory access pattern:
-      B is never explicitly transposed; kernel loads B with [k, n] indexing.
-    - No extra PyTorch compute ops are used in the wrapper.
+    Launch C = A @ B^T into a caller-provided output tensor.
     """
     if not isinstance(A, torch.Tensor) or not isinstance(B, torch.Tensor):
         raise TypeError("kernel_function expects two torch.Tensor inputs")
@@ -84,7 +78,10 @@ def kernel_function(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     M, K = A.shape
     N = B.shape[0]
 
-    C = torch.empty((M, N), device=A.device, dtype=A.dtype)
+    if C.shape != (M, N):
+        raise ValueError(f"Expected C shape {(M, N)}, got {tuple(C.shape)}")
+    if C.device != A.device or C.dtype != A.dtype:
+        raise ValueError("C must share device and dtype with A")
 
     # Nothing to launch for empty outputs.
     if M == 0 or N == 0:
@@ -114,3 +111,32 @@ def kernel_function(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     )
 
     return C
+
+
+def kernel_function(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+    """
+    Triton wrapper for C = A @ B^T.
+
+    Fusion note:
+    - The model pipeline is a single matmul only.
+    - We "fuse" transpose handling into the kernel memory access pattern:
+      B is never explicitly transposed; kernel loads B with [k, n] indexing.
+    - No extra PyTorch compute ops are used in the wrapper.
+    """
+    C = torch.empty((A.shape[0], B.shape[0]), device=A.device, dtype=A.dtype)
+    return _launch_matmul_a_bt(A, B, C)
+
+
+class ModelNew(torch.nn.Module):
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        return kernel_function(A, B)
+
+    def build_call(self, *, a_mk: torch.Tensor, b_nk: torch.Tensor):
+        a = a_mk.contiguous()
+        b = b_nk.contiguous()
+        out = torch.empty((a.shape[0], b.shape[0]), device=a.device, dtype=a.dtype)
+
+        def call():
+            return _launch_matmul_a_bt(a, b, out)
+
+        return call

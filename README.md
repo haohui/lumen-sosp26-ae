@@ -23,26 +23,6 @@ ruff format .
 ruff check .
 ```
 
-## Benchmark Source Setup
-
-The benchmark harness expects the AITER source checkout pinned in
-`third_party/aiter.source`. Prepare it from the repository root:
-
-```bash
-scripts/benchmark/prepare_sources.sh --install-aiter
-```
-
-The HipKittens GEMM backend uses an external HipKittens checkout. With the
-checkout pinned to `7d58fa1026b4582a75ebdaf7ab5e45e3747a2b7b`, install its
-separate binding package as follows:
-
-```bash
-HIPKITTENS_ROOT=/path/to/HipKittens uv pip install -e ./packages/hipkittens
-```
-
-`HIPKITTENS_ROOT` is required at build time and is not assumed to live under
-this repository.
-
 ## Scope
 
 The artifact is intended to support the evaluation of Lumen on:
@@ -69,19 +49,22 @@ The experiments reported in the paper were run on a server with:
 
 ## Repository Layout
 
-The repository is organized so Python code lives under `python/`, while
-benchmark inputs and generated outputs live under `data/`:
+The repository is organized so shared Python code lives under `python/`, while
+the benchmark datasets and kernel implementations live under `datasets/`:
 
 - `python/lumen/`: shared Python implementation used by benchmarking,
   generation, and evaluation scripts. Common helpers, configuration loaders,
   result parsing, and reusable benchmark utilities should live here.
 - `scripts/benchmark/`: standalone artifact benchmarking tools that emit JSONL
   timing records.
-- `data/benchmarks/gemm/`, `data/benchmarks/attn/`, `data/benchmarks/moe/`: kernel
-  implementations produced by Lumen and by baseline agentic systems for GEMM,
-  flash attention, and fused MoE.
-- `data/benchmarks/kernelbench/lumen/`: Lumen-generated KernelBench solutions,
-  including multiple optimization rounds when applicable.
+- `datasets/inference/`: inference benchmark datasets. Its `gemm/`,
+  `attention/`, and `moe/` subdirectories contain implementations for BF16
+  GEMM, flash attention, and fused MoE, respectively. Within each workload,
+  implementations are organized by system (for example, `lumen/`, `aiter/`,
+  `kernelbench/`, `kernelfalcon/`, `ksearch/`, `cudaforge/`, and `triton/`).
+- `data/traces/`: compressed agent trajectories and their associated prompts,
+  model inputs and outputs, evaluation results, and run metadata. See
+  [Traces](#traces) for the available bundles.
 
 ## Reproducing the evaluation
 
@@ -96,10 +79,18 @@ The repository provides a number of scripts under the `scripts/` directory to re
 
 Note that for generation tasks, you will need to set the environment various `LUMEN_GENERATION_API_URL` and `LUMEN_GENERATION_API_KEY` to point to a valid API endpoint of the  chat completion API. 
 
-## Intermediate data and trace
+## Traces
 
-We also provide the traces of agent harness and interactions of LLM. For cost reasons we regenerate the trace with DeepSeek V4. The traces are available at `data/traces`. 
+`data/traces/` contains archives of agent trajectories. Each round typically
+includes the agent trace, prompt, input and generated model files, evaluation
+configuration and result, and per-round metadata. For cost reasons we
+regenerate some of the traces with DeepSeek V4. The archives are:
 
-For the generations of GEMM, Flash Attention and MoE, we use [mitmproxy](https://pypi.org/project/mitmproxy/) to collect the interactions with LLM with PII information redacted.
+- `kernelbench_generation_dsv4-07-13-2026.tar.xz`: DeepSeek-V4 KernelBench generation trajectories for levels 1 and 2, each run with and without DSL examples.
+- `kernelbench_optimization_dsv4-07-13-2026.tar.xz`: DeepSeek-V4 KernelBench optimization trajectories for levels 1 and 2, each run with and without invariant guidance.
+- `lumen_optimization_codex-07-13-2026.tar.xz`: Codex optimization trajectories for the Lumen GEMM, flash-attention, and fused-MoE kernels.
+- `table2_agentic_generation_gpt53codex-07-13-2026.tar.xz`: redacted GPT-5.3-Codex HTTP traffic from the agentic-generation runs for CUDAForge, KernelBench, KernelFalcon, and KSearch across GEMM, flash attention, and fused MoE.
 
-We collect the session traces from Codex for the generations and optimizations on KernelBench problems.
+The trace bundles contain the recorded interaction data only; they are not
+needed to run the benchmark or reproduce the reported measurements. Any PII
+in the captured LLM interactions has been redacted.

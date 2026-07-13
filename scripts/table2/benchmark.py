@@ -57,6 +57,30 @@ MOE_BACKENDS = (
 )
 
 
+def _parse_percent(value: Any) -> int | None:
+    try:
+        return int(str(value).strip().rstrip("%"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _avelang_env_key(name: str, fallback: str) -> str:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        return str(getattr(avelang_knobs, name))
+    except Exception:
+        return fallback
+
+
+def _attn_opt_env() -> dict[str, str]:
+    return {_avelang_env_key("ENABLE_ATTN_OPT_ENV", "ENABLE_ATTN_OPT"): "1"}
+
+
+def _moe_opt_env() -> dict[str, str]:
+    return {_avelang_env_key("ENABLE_MOE_OPT_ENV", "ENABLE_MOE_OPT"): "1"}
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Reproduce Table 2 benchmark results")
     p.add_argument("--workspace-dir", type=Path, default=None)
@@ -78,7 +102,7 @@ def default_workspace() -> Path:
     return Path(__file__).resolve().parent / "workspace" / run_id
 
 
-def _env(*, backend: str) -> dict[str, str]:
+def _env(*, backend: str, extra_env: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
     pythonpath = str(BENCHMARK_DIR)
     existing = env.get("PYTHONPATH")
@@ -103,16 +127,24 @@ def _env(*, backend: str) -> dict[str, str]:
 
     env["PYTHONPATH"] = pythonpath
     env["AITER_JIT_DIR"] = str(REPO_ROOT / ".aiter" / "jit")
+    if extra_env is not None:
+        env.update(extra_env)
     return env
 
 
-def _run_jsonl_command(cmd: list[str], out_path: Path, *, backend: str) -> None:
+def _run_jsonl_command(
+    cmd: list[str],
+    out_path: Path,
+    *,
+    backend: str,
+    extra_env: dict[str, str] | None = None,
+) -> None:
     cp = subprocess.run(
         cmd,
         check=False,
         capture_output=True,
         text=True,
-        env=_env(backend=backend),
+        env=_env(backend=backend, extra_env=extra_env),
     )
     rows_written = 0
     with out_path.open("a", encoding="utf-8") as f:
@@ -203,6 +235,7 @@ def run_benchmarks(
             ],
             workspace / "attention.jsonl",
             backend=backend,
+            extra_env=_attn_opt_env(),
         )
 
     for backend in MOE_BACKENDS:
@@ -228,6 +261,7 @@ def run_benchmarks(
             ],
             workspace / "moe.jsonl",
             backend=backend,
+            extra_env=_moe_opt_env(),
         )
 
 

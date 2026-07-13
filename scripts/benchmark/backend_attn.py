@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import sys
 
@@ -34,6 +35,16 @@ BACKENDS = {
         "triton",
     )
 }
+
+
+def _enable_attn_opt() -> None:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.enable_attn_opt = True
+    except Exception:
+        os.environ["ENABLE_ATTN_OPT"] = "1"
+
 
 @dataclass
 class SharedInputs:
@@ -115,6 +126,8 @@ def run_backend(
     check_correctness: bool = False,
 ) -> None:
     path = attn_root / BACKENDS[backend].directory / "model.py"
+    if backend == "lumen":
+        _enable_attn_opt()
     mod = load_module(path)
     model = build_model_instance(mod, device=device, dtype=dtype)
     for s in seq_lens:

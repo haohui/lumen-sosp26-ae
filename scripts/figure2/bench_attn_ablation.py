@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -18,6 +19,15 @@ if str(BENCHMARK_DIR) not in sys.path:
     sys.path.insert(0, str(BENCHMARK_DIR))
 
 from backends import load_module  # noqa: E402
+
+
+def _enable_attn_opt() -> None:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.enable_attn_opt = True
+    except Exception:
+        os.environ["ENABLE_ATTN_OPT"] = "1"
 
 
 ABLATIONS = [
@@ -154,6 +164,7 @@ def benchmark(
 
 
 def main() -> None:
+    _enable_attn_opt()
     args = parse_args()
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for the attention ablation benchmark.")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gc
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 import torch.nn.functional as F
@@ -48,6 +49,15 @@ BACKENDS.update(
         for name in ("aiter",)
     }
 )
+
+
+def _enable_moe_opt() -> None:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.enable_moe_opt = True
+    except Exception:
+        os.environ["ENABLE_MOE_OPT"] = "1"
 
 
 @dataclass
@@ -405,6 +415,8 @@ def _run_python_backend(
 
 def run_backend(*, backend: str, **kwargs) -> None:
     spec = BACKENDS[backend]
+    if backend == "lumen":
+        _enable_moe_opt()
     mod = load_module(kwargs["moe_root"] / spec.directory / "model.py")
     model_cls = getattr(mod, "Model", None)
     if model_cls is not None and hasattr(model_cls, "build_cases"):

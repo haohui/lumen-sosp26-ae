@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, List
@@ -15,7 +16,17 @@ _THIS_DIR = Path(__file__).resolve().parent
 _MOE_MODULE = "fused_moe.py"
 
 
+def _enable_moe_opt() -> None:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.enable_moe_opt = True
+    except Exception:
+        os.environ["ENABLE_MOE_OPT"] = "1"
+
+
 def _load_kernel_module():
+    _enable_moe_opt()
     path = _THIS_DIR / _MOE_MODULE
     module_name = f"lumen_moe_{path.stem}_{abs(hash(str(path.resolve()))):x}"
     spec = importlib.util.spec_from_file_location(module_name, path)

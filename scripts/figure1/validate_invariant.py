@@ -6,6 +6,12 @@ import os
 from pathlib import Path
 
 os.environ["AVELANG_VALIDATE_INVARIANTS"] = "1"
+try:
+    from avelang import knobs as avelang_knobs
+
+    avelang_knobs.amdgpu.enable_attn_opt = True
+except Exception:
+    os.environ["ENABLE_ATTN_OPT"] = "1"
 
 import torch  # noqa: E402
 

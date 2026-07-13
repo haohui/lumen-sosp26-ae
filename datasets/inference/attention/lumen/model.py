@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,17 @@ _THIS_DIR = Path(__file__).resolve().parent
 _ATTENTION_MODULE = "attn_06_inst_scheduling.py"
 
 
+def _enable_attn_opt() -> None:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.enable_attn_opt = True
+    except Exception:
+        os.environ["ENABLE_ATTN_OPT"] = "1"
+
+
 def _load_kernel_module():
+    _enable_attn_opt()
     path = _THIS_DIR / _ATTENTION_MODULE
     module_name = f"lumen_attn_{path.stem}_{abs(hash(str(path.resolve()))):x}"
     spec = importlib.util.spec_from_file_location(module_name, path)

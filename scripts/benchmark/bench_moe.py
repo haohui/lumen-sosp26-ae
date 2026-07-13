@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 from backend_moe import (
     BACKENDS,
@@ -14,6 +15,19 @@ from backend_moe import (
 from cli_utils import add_timer_args, cuda_runtime
 from config import MOE_DEFAULTS, MOE_WORKLOADS, TIMER_DEFAULTS, benchmark_root
 from paths import resolve_repo_root
+
+
+def _enable_moe_opt() -> None:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.enable_moe_opt = True
+        avelang_knobs.amdgpu.enable_attn_opt = True
+        avelang_knobs.amdgpu.xiangyun = False
+    except Exception:
+        os.environ["ENABLE_MOE_OPT"] = "1"
+        os.environ["ENABLE_ATTN_OPT"] = "1"
+        os.environ["XIANGYUN"] = "0"
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,6 +61,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.backend == "lumen":
+        _enable_moe_opt()
     validate_config(
         dim=args.dim,
         inter_dim=args.inter_dim,

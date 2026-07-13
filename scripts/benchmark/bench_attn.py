@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 from backend_attn import BACKENDS, build_shared_inputs, parse_dtype, run_backend
 from cli_utils import add_timer_args, cuda_runtime
@@ -12,6 +13,17 @@ from config import (
     benchmark_root,
 )
 from paths import resolve_repo_root
+
+
+def _enable_attn_opt() -> None:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.enable_attn_opt = True
+        avelang_knobs.amdgpu.xiangyun = False
+    except Exception:
+        os.environ["ENABLE_ATTN_OPT"] = "1"
+        os.environ["XIANGYUN"] = "0"
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,6 +63,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.backend == "lumen":
+        _enable_attn_opt()
     device, dtype_name, dtype = cuda_runtime(
         seed=args.seed, dtype_name=args.dtype, parse_dtype=parse_dtype
     )

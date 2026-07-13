@@ -322,6 +322,11 @@ def _run_case_backend(
                 mean_ms=timing.mean_ms,
                 check_correctness=check_correctness,
             )
+        shared_inputs.pop(tokens, None)
+        out_cache = getattr(model, "_out_cache", None)
+        if isinstance(out_cache, dict):
+            out_cache.clear()
+        _release_correctness_temporaries()
 
 
 def _run_python_backend(
@@ -387,6 +392,8 @@ def _run_python_backend(
             mean_ms=timing.mean_ms,
             check_correctness=check_correctness,
         )
+        shared_inputs.pop(tokens, None)
+        _release_correctness_temporaries()
 
 
 def run_backend(*, backend: str, **kwargs) -> None:

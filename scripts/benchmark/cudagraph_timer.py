@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -19,10 +18,17 @@ def benchmark_with_cudagraph(
     warmup: int,
     repeat: int,
     graph_iters: int,
+    replay_warmup: int | None = None,
+    measure_trials: int = 2,
 ) -> CUDAGraphTimingResult:
     warmup = max(0, int(warmup))
     repeat = max(1, int(repeat))
     graph_iters = max(1, int(graph_iters))
+    if replay_warmup is None:
+        replay_warmup = max(1, min(5, warmup))
+    else:
+        replay_warmup = max(0, int(replay_warmup))
+    measure_trials = max(1, int(measure_trials))
 
     with torch.inference_mode():
         for _ in range(warmup):
@@ -35,13 +41,21 @@ def benchmark_with_cudagraph(
                 fn()
         torch.cuda.synchronize()
 
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        for _ in range(repeat):
+        for _ in range(replay_warmup):
             graph.replay()
-        end.record()
         torch.cuda.synchronize()
 
-    elapsed_ms = float(start.elapsed_time(end))
-    return CUDAGraphTimingResult(mean_ms=elapsed_ms / float(repeat * graph_iters))
+        elapsed_ms = []
+        for _ in range(measure_trials):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            start.record()
+            for _ in range(repeat):
+                graph.replay()
+            end.record()
+            torch.cuda.synchronize()
+            elapsed_ms.append(float(start.elapsed_time(end)))
+
+    return CUDAGraphTimingResult(
+        mean_ms=min(elapsed_ms) / float(repeat * graph_iters)
+    )

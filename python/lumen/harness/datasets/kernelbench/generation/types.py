@@ -38,6 +38,11 @@ class KernelBenchEvaluationConfig:
 
 
 @dataclass(frozen=True)
+class PromptReferenceConfig:
+    reference_mode: str = "full"
+
+
+@dataclass(frozen=True)
 class GenerationConfig:
     dataset: KernelBenchDatasetConfig
     run_dir: Path
@@ -45,6 +50,7 @@ class GenerationConfig:
     evaluation: KernelBenchEvaluationConfig = field(
         default_factory=KernelBenchEvaluationConfig
     )
+    prompt: PromptReferenceConfig = field(default_factory=PromptReferenceConfig)
     num_workers: int = 1
 
 

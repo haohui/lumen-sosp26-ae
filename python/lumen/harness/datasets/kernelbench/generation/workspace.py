@@ -21,6 +21,7 @@ def prepare_round_workspace(
     *,
     ref_arch_src: str,
     evaluation: KernelBenchEvaluationConfig,
+    reference_mode: str = "full",
 ) -> RoundWorkspace:
     paths = _write_generation_workspace(
         round_dir,
@@ -29,6 +30,7 @@ def prepare_round_workspace(
         gpu_arch=evaluation.gpu_arch,
         eval_num_correct_trials=evaluation.num_correct_trials,
         eval_num_perf_trials=evaluation.num_perf_trials,
+        reference_mode=reference_mode,
     )
     prompt = paths["prompt"].read_text(encoding="utf-8")
     return RoundWorkspace(round_dir=Path(round_dir), prompt=prompt)

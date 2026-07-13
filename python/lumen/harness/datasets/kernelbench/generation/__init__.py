@@ -8,6 +8,7 @@ from lumen.harness.datasets.kernelbench.generation.types import (
     KernelBenchDatasetConfig,
     KernelBenchEvaluationConfig,
     OptimizationConfig,
+    PromptReferenceConfig,
 )
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "GenerationConfig",
     "KernelBenchDatasetConfig",
     "KernelBenchEvaluationConfig",
+    "PromptReferenceConfig",
     "run_generation",
     "OptimizationConfig",
     "run_optimization",

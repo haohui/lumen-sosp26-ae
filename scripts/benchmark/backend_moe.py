@@ -33,7 +33,14 @@ class BackendSpec:
 
 BACKENDS = {
     name: BackendSpec(directory=name, variant=name)
-    for name in ("cudaforge", "kernelbench", "kernelfalcon", "ksearch", "lumen")
+    for name in (
+        "cudaforge",
+        "kernelbench",
+        "kernelfalcon",
+        "ksearch",
+        "lumen",
+        "triton",
+    )
 }
 BACKENDS.update(
     {

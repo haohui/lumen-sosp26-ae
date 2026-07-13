@@ -49,6 +49,7 @@ ATTENTION_BACKENDS = (
 MOE_BACKENDS = (
     "lumen",
     "aiter",
+    "triton",
     "kernelfalcon",
     "ksearch",
     "kernelbench",

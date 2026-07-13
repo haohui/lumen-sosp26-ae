@@ -25,14 +25,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m pip install --no-cache-dir uv \
     && uv venv --python 3.12 /home/lumen/.venv \
-    && cp -a /opt/venv/lib/python3.12/site-packages/torch* \
+    && cp -al /opt/venv/lib/python3.12/site-packages/torch* \
+        /opt/venv/lib/python3.12/site-packages/triton* \
         /home/lumen/.venv/lib/python3.12/site-packages/
 
 RUN getent group render >/dev/null || groupadd --system render \
     && getent group video >/dev/null || groupadd --system video \
-    && groupadd --gid 1000 lumen \
-    && useradd --uid 1000 --gid lumen --create-home --shell /bin/bash lumen \
-    && usermod --append --groups render,video lumen
+    && groupmod --new-name lumen ubuntu \
+    && usermod --login lumen --home /home/lumen ubuntu \
+    && chown -R lumen:lumen /home/lumen \
+    && usermod --gid lumen --append --groups render,video lumen
 
 ENV VIRTUAL_ENV=/home/lumen/.venv \
     PATH=/home/lumen/.venv/bin:/opt/llvm/bin:/opt/rocm/bin:${PATH} \
@@ -50,11 +52,12 @@ RUN --mount=type=ssh git clone --depth 1 --branch lumen \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/opt/llvm \
         -DLLVM_ENABLE_ASSERTIONS=ON \
+        -DLLVM_ENABLE_RTTI=ON \
         -DLLVM_ENABLE_PROJECTS=clang\;mlir\;compiler-rt \
-        -DLLVM_TARGETS_TO_BUILD=X86;AMDGPU \
+        -DLLVM_TARGETS_TO_BUILD=X86\;AMDGPU \
     && cmake --build /workspace/llvm-project/build --parallel "$(nproc)" \
     && cmake --install /workspace/llvm-project/build \
-    && rm -rf /workspace/llvm-project/build
+    && rm -rf /workspace/llvm-project
 
 RUN git clone --depth 1 https://github.com/haohui/avelang.git /workspace/avelang
 
@@ -76,14 +79,29 @@ RUN /home/lumen/.venv/bin/python /workspace/lumen/dev-support/prepare-dependency
         --source /workspace/lumen/third_party/HipKittens/source.toml \
         --dest /workspace/third_party/HipKittens/HipKittens
 
-# Reuse the ROCm image's PyTorch copied into the isolated UV environment.
-RUN uv pip install --python /home/lumen/.venv/bin/python Jinja2 numpy pybind11 setuptools wheel \
+# Reuse the ROCm image's PyTorch/Triton copied into the isolated UV environment.
+RUN uv pip install --python /home/lumen/.venv/bin/python Jinja2 numpy pip pybind11 pytest setuptools wheel \
+        scikit-build-core setuptools-scm \
+        sympy networkx \
+        ninja pandas matplotlib einops psutil \
+        openai python-dotenv pydra-config anthropic omegaconf requests \
+        modal datasets transformers tabulate tomli litellm mitmproxy \
+    && git clone --depth 1 --branch v0.3.1+amd.1 \
+        https://github.com/ROCm/flashinfer.git /workspace/flashinfer-rocm \
+    && FLASHINFER_HIP_ARCHITECTURES=gfx942 \
+        /home/lumen/.venv/bin/python -m pip wheel /workspace/flashinfer-rocm \
+        --wheel-dir=/workspace/flashinfer-wheelhouse --no-deps --no-build-isolation -v \
+    && uv pip install --python /home/lumen/.venv/bin/python --no-index \
+        --find-links /workspace/flashinfer-wheelhouse amd-flashinfer==0.3.1+amd.1 \
+    && rm -rf /workspace/flashinfer-rocm /workspace/flashinfer-wheelhouse \
+    && uv pip install --python /home/lumen/.venv/bin/python --no-deps \
+        git+https://github.com/caoshiyi/flashinfer-bench-ksearch.git \
     && uv pip install --python /home/lumen/.venv/bin/python --no-deps \
         git+https://github.com/ROCm/aiter.git@v0.1.10.post3 \
     && CC=/opt/llvm/bin/clang CXX=/opt/llvm/bin/clang++ \
         CMAKE_ARGS="-DAVE_LANG_BACKEND=rocm -DWITH_PYTHON=ON -DCMAKE_PREFIX_PATH=/opt/llvm;/opt/rocm -DLLVM_DIR=/opt/llvm/lib/cmake/llvm -DMLIR_DIR=/opt/llvm/lib/cmake/mlir -DClang_DIR=/opt/llvm/lib/cmake/clang" \
         uv pip install --python /home/lumen/.venv/bin/python --no-deps /workspace/avelang \
-    && HIPKITTENS_ROOT=/workspace/lumen/third_party/HipKittens/HipKittens HIPKITTENS_ARCH=gfx942 \
+    && HIPKITTENS_ROOT=/workspace/third_party/HipKittens/HipKittens HIPKITTENS_ARCH=gfx942 \
         uv pip install --python /home/lumen/.venv/bin/python --no-build-isolation \
         -e /workspace/lumen/packages/hipkittens \
     && uv pip install --python /home/lumen/.venv/bin/python -e /workspace/lumen

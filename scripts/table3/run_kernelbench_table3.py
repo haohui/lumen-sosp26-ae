@@ -7,12 +7,19 @@ import argparse
 import os
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "scripts" / "table3" / "config"
+DATA_ROOT = REPO_ROOT / "data"
 TRACE_ROOT = REPO_ROOT / "data" / "traces"
+DEFAULT_CANDIDATE_ARCHIVE = (
+    DATA_ROOT / "seeds" / "kernelbench_optimization_naive_avelang_seeds.tar.xz"
+)
+SEED_ROOT_NAME = "kernelbench_optimization_naive_avelang_seeds"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -21,6 +28,7 @@ def main(argv: list[str] | None = None) -> int:
         python_bin=args.python,
         codex_home=args.codex_home,
         candidate_root=args.candidate_root,
+        candidate_archive=args.candidate_archive,
     )
     args.func(runner, args)
     return 0
@@ -48,13 +56,20 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--candidate-root",
         type=Path,
-        default=Path(
-            os.environ.get(
-                "TABLE3_CANDIDATE_ROOT",
-                str(TRACE_ROOT / "kernelbench_optimization_naive_avelang_seeds"),
-            )
+        default=candidate_root_default(),
+        help=(
+            "Root containing already extracted optimization seed candidates. "
+            "Defaults to TABLE3_CANDIDATE_ROOT when set; otherwise the seed "
+            "archive is extracted automatically."
         ),
-        help="Root containing optimization seed candidate manifests.",
+    )
+    parser.add_argument(
+        "--candidate-archive",
+        type=Path,
+        default=Path(
+            os.environ.get("TABLE3_CANDIDATE_ARCHIVE", str(DEFAULT_CANDIDATE_ARCHIVE))
+        ),
+        help="Tar.xz archive containing optimization seed candidates.",
     )
 
     subparsers = parser.add_subparsers(required=True)
@@ -76,16 +91,18 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 class Runner:
     def __init__(
-        self,
-        *,
-        python_bin: str,
-        codex_home: Path | None,
-        candidate_root: Path,
-    ) -> None:
-        self.python_bin = python_bin
-        self.codex_home = codex_home.expanduser() if codex_home is not None else None
-        self.candidate_root = candidate_root.expanduser()
-        self.log_dir = TRACE_ROOT / "logs"
+          self,
+          *,
+          python_bin: str,
+          codex_home: Path | None,
+          candidate_root: Path | None,
+          candidate_archive: Path,
+      ) -> None:
+          self.python_bin = python_bin
+          self.codex_home = codex_home.expanduser() if codex_home is not None else None
+          self.candidate_root = candidate_root.expanduser() if candidate_root else None
+          self.candidate_archive = candidate_archive.expanduser()
+          self.log_dir = TRACE_ROOT / "logs"
 
     def generation(self, level: str, mode: str) -> None:
         suffix = generation_suffix(mode)
@@ -109,12 +126,24 @@ class Runner:
         )
 
     def optimization(self, level: str, profile: str) -> None:
+        if self.candidate_root is not None:
+            self._optimization(level, profile, self.candidate_root)
+            return
+
+        with tempfile.TemporaryDirectory(prefix="lumen-table3-seeds-") as tempdir:
+            candidate_root = extract_candidate_archive(
+                self.candidate_archive,
+                Path(tempdir),
+            )
+            self._optimization(level, profile, candidate_root)
+
+    def _optimization(self, level: str, profile: str, candidate_root: Path) -> None:
         level_num = level.removeprefix("level")
         suffix = optimization_suffix(profile)
         config = CONFIG_DIR / f"kernelbench_optimization_{level}.toml"
         opt_config = CONFIG_DIR / f"kernelbench_optimization_{level}_{suffix}.toml"
         candidates = (
-            self.candidate_root
+            candidate_root
             / "manifests"
             / f"kernelbench_level{level_num}_naive_avelang_candidates.toml"
         )
@@ -209,6 +238,27 @@ def optimization_suffix(profile: str) -> str:
 def codex_home_default() -> Path | None:
     value = os.environ.get("CODEX_HOME")
     return Path(value) if value else None
+
+
+def candidate_root_default() -> Path | None:
+    value = os.environ.get("TABLE3_CANDIDATE_ROOT")
+    return Path(value) if value else None
+
+
+def extract_candidate_archive(archive: Path, destination: Path) -> Path:
+    if not archive.is_file():
+        raise FileNotFoundError(f"candidate archive not found: {archive}")
+    with tarfile.open(archive, mode="r:xz") as tar:
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(destination, filter="data")
+        else:
+            tar.extractall(destination)
+    candidate_root = destination / SEED_ROOT_NAME
+    if not (candidate_root / "manifests").is_dir():
+        raise FileNotFoundError(
+            f"candidate archive does not contain {SEED_ROOT_NAME}/manifests"
+        )
+    return candidate_root
 
 
 def prepend_path(path: str, existing: str | None) -> str:

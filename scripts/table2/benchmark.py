@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--python", type=str, default=sys.executable)
     p.add_argument("--workloads", type=int, nargs="+", default=list(WORKLOADS))
     p.add_argument("--warmup", type=int, default=10)
-    p.add_argument("--repeat", type=int, default=10)
+    p.add_argument("--repeat", type=int, default=100)
     p.add_argument("--graph-iters", type=int, default=1)
     p.add_argument(
         "--skip-run",

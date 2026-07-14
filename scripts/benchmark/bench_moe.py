@@ -17,8 +17,13 @@ from cli_utils import add_timer_args, cuda_runtime
 from config import MOE_DEFAULTS, MOE_WORKLOADS, TIMER_DEFAULTS
 from paths import resolve_repo_root
 
+ROCM_PATH = Path("/opt/rocm")
+
 
 def _enable_moe_opt() -> None:
+    os.environ["ROCM_PATH"] = str(ROCM_PATH)
+    os.environ["ROCM_HOME"] = str(ROCM_PATH)
+    os.environ["HIP_PATH"] = str(ROCM_PATH)
     os.environ["HACK_MFMA_VGPR_FORM"] = "1"
     try:
         from avelang import knobs as avelang_knobs

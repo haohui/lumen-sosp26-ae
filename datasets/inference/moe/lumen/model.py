@@ -242,22 +242,44 @@ class Model:
             out = torch.empty((seq_len, dim), dtype=torch.bfloat16, device=x.input_q.device)
             self._out_cache[key] = out
 
-        fn = getattr(self._kernel_module(), "fused_moe_fp8_blockscale_g1u1")
+        kernel_mod = self._kernel_module()
+        kernel = getattr(kernel_mod, "_fused_moe_blockscale_fp8_kernel")
+        split_k = (inter_dim + kernel_mod.GROUP_DIM - 1) // kernel_mod.GROUP_DIM
+        split_k_ctas = (
+            split_k + kernel_mod.SPLIT_K_PER_CTA - 1
+        ) // kernel_mod.SPLIT_K_PER_CTA
+        route_groups = max(1, sorted_expert_ids.numel())
+        grid = (split_k_ctas, route_groups, 1)
+        block = (kernel_mod.THREADS, 1, 1)
+
+        sorted_ids_i32 = sorted_ids.to(dtype=torch.int32)
+        sorted_expert_ids_i32 = sorted_expert_ids.to(dtype=torch.int32)
+        num_valid_ids_i32 = num_valid_ids.to(dtype=torch.int32)
+        sorted_weights_u32 = sorted_weights.view(torch.uint32)
+        input_scale_u32 = x.input_scale.transpose(0, 1).contiguous().view(torch.uint32)
+        fc1_scale_u32 = w["fc1_scale"].view(torch.uint32)
+        fc2_scale_u32 = w["fc2_scale"].view(torch.uint32)
 
         def run_lumen() -> torch.Tensor:
-            fn(
-                x.input_q,
-                w1_kernel,
-                w2_kernel,
-                sorted_ids,
-                sorted_weights,
-                sorted_expert_ids,
-                num_valid_ids,
+            out.zero_()
+            kernel[lambda: (grid, block)](
+                out,
+                x.input_q.view(torch.uint8),
+                w1_kernel.view(torch.uint8),
+                w2_kernel.view(torch.uint8),
+                sorted_ids_i32,
+                sorted_weights_u32,
+                sorted_expert_ids_i32,
+                num_valid_ids_i32,
                 topk,
-                x.input_scale,
-                w["fc1_scale"],
-                w["fc2_scale"],
-                out=out,
+                input_scale_u32,
+                fc1_scale_u32,
+                fc2_scale_u32,
+                seq_len,
+                dim,
+                inter_dim,
+                0,
+                num_warps=kernel_mod.NUM_WARPS,
             )
             return out
 

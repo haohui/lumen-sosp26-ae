@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import os
 
 from backend_attn import BACKENDS, build_shared_inputs, parse_dtype, run_backend
 from cli_utils import add_timer_args, cuda_runtime
@@ -12,6 +13,15 @@ from config import (
     TIMER_DEFAULTS,
 )
 from paths import resolve_repo_root
+
+
+def _enable_attn_opt() -> None:
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.hack_single_wave_per_eu = True
+    except Exception:
+        os.environ["HACK_SINGLE_WAVE_PER_EU"] = "1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +67,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.backend == "lumen":
+        _enable_attn_opt()
     device, dtype_name, dtype = cuda_runtime(
         seed=args.seed, dtype_name=args.dtype, parse_dtype=parse_dtype
     )

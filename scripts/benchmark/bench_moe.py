@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from backend_moe import (
@@ -15,6 +16,16 @@ from backend_moe import (
 from cli_utils import add_timer_args, cuda_runtime
 from config import MOE_DEFAULTS, MOE_WORKLOADS, TIMER_DEFAULTS
 from paths import resolve_repo_root
+
+
+def _enable_moe_opt() -> None:
+    os.environ["HACK_MFMA_VGPR_FORM"] = "1"
+    try:
+        from avelang import knobs as avelang_knobs
+
+        avelang_knobs.amdgpu.hack_mfma_vgpr_form = True
+    except Exception:
+        pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +65,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.backend == "lumen":
+        _enable_moe_opt()
     validate_config(
         dim=args.dim,
         inter_dim=args.inter_dim,

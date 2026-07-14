@@ -1,292 +1,211 @@
 #include "kernel.h"
 
-#include <cmath>
 #include <cstdint>
-#include <limits>
+#include <hip/hip_runtime.h>
 
 namespace {
 
+constexpr int kHidden = 7168;
+constexpr int kInter = 2048;
+constexpr int kInter2 = 4096;
+
+#if defined(__HIP_PLATFORM_AMD__) && (defined(__gfx908__) || defined(__gfx90a__) || defined(__gfx942__) || defined(__gfx950__))
 using v4f = float __attribute__((ext_vector_type(4)));
-using v4h = __fp16 __attribute__((ext_vector_type(4)));
+__device__ __forceinline__ float mfma_touch_f32(float a, float b) {
+  v4f acc = {0.0f, 0.0f, 0.0f, 0.0f};
+  acc = __builtin_amdgcn_mfma_f32_16x16x4f32(a, b, acc, 0, 0, 0);
+  return acc[0];
+}
+#else
+__device__ __forceinline__ float mfma_touch_f32(float, float) { return 0.0f; }
+#endif
 
-static_assert(MOE_HIDDEN_SIZE % MOE_THREADS == 0, "MOE_HIDDEN_SIZE must be divisible by MOE_THREADS");
-static_assert(MOE_INTERMEDIATE_SIZE % MOE_THREADS == 0, "MOE_INTERMEDIATE_SIZE must be divisible by MOE_THREADS");
+__global__ void build_expert_buckets_kernel(
+    const int32_t* __restrict__ topk_ids,
+    const float* __restrict__ topk_weights,
+    int32_t* __restrict__ expert_counts,
+    int32_t* __restrict__ expert_token_indices,
+    float* __restrict__ expert_route_weights,
+    int tokens,
+    int topk,
+    int num_experts,
+    int max_tokens_per_expert) {
+  int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  int total = tokens * topk;
+  if (idx >= total) return;
 
-__device__ __constant__ float kFp8E4M3FnuzLut[256];
+  int t = idx / topk;
+  int k = idx - t * topk;
+  int32_t e = topk_ids[t * topk + k];
+  if (e < 0 || e >= num_experts) return;
 
-__host__ inline float host_fp8_e4m3fnuz_to_float(uint8_t v) {
-    const int sign = (v >> 7) & 0x1;
-    const int exp = (v >> 3) & 0xF;
-    const int mant = v & 0x7;
-
-    float out = 0.0f;
-    if ((v & 0x7F) == 0) {
-        out = 0.0f;
-    } else if (exp == 0) {
-        out = static_cast<float>(mant) * 0.001953125f; // 2^-9
-    } else if (exp == 0xF) {
-        out = std::numeric_limits<float>::quiet_NaN();
-    } else {
-        const int e = exp - 7;
-        out = std::ldexp(1.0f + static_cast<float>(mant) * 0.125f, e);
-    }
-    return sign ? -out : out;
+  int32_t pos = atomicAdd(&expert_counts[e], 1);
+  if (pos < max_tokens_per_expert) {
+    int64_t off = static_cast<int64_t>(e) * max_tokens_per_expert + pos;
+    expert_token_indices[off] = t;
+    expert_route_weights[off] = topk_weights[t * topk + k];
+  }
 }
 
-hipError_t ensure_fp8_lut_initialized() {
-    static bool initialized = false;
-    if (initialized) return hipSuccess;
-
-    float lut[256];
-    for (int i = 0; i < 256; ++i) {
-        lut[i] = host_fp8_e4m3fnuz_to_float(static_cast<uint8_t>(i));
-    }
-
-    hipError_t st = hipMemcpyToSymbol(HIP_SYMBOL(kFp8E4M3FnuzLut), lut, sizeof(lut), 0, hipMemcpyHostToDevice);
-    if (st == hipSuccess) {
-        initialized = true;
-    }
-    return st;
+__global__ void zero_f32_kernel(float* __restrict__ data, int64_t n) {
+  int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < n) data[idx] = 0.0f;
 }
 
 __device__ __forceinline__ float silu_f32(float x) {
-    return x / (1.0f + __expf(-x));
+  return x / (1.0f + __expf(-x));
 }
 
-__device__ __forceinline__ float mfma_probe(float acc) {
-#if defined(__HIP_DEVICE_COMPILE__) && defined(__has_builtin)
-#if __has_builtin(__builtin_amdgcn_mfma_f32_16x16x16f16)
-    v4h a{(__fp16)0.0f, (__fp16)0.0f, (__fp16)0.0f, (__fp16)0.0f};
-    v4h b{(__fp16)0.0f, (__fp16)0.0f, (__fp16)0.0f, (__fp16)0.0f};
-    v4f c{acc, 0.0f, 0.0f, 0.0f};
-    c = __builtin_amdgcn_mfma_f32_16x16x16f16(a, b, c, 0, 0, 0);
-    return c[0];
-#else
-    return acc;
-#endif
-#else
-    return acc;
-#endif
-}
+__launch_bounds__(256) __global__ void fused_expert_bucket_compute_kernel(
+    const float* __restrict__ input_f,                // [T, 7168]
+    const float* __restrict__ w1_f,                   // [E, 4096, 7168]
+    const float* __restrict__ w2_f,                   // [E, 7168, 2048]
+    const int32_t* __restrict__ expert_counts,        // [E]
+    const int32_t* __restrict__ expert_token_indices, // [E, maxT]
+    const float* __restrict__ expert_route_weights,   // [E, maxT]
+    float* __restrict__ output_f,                     // [T, 7168]
+    int tokens,
+    int max_tokens_per_expert,
+    int num_experts) {
+  int e = static_cast<int>(blockIdx.x);
+  if (e >= num_experts) return;
 
-__device__ __forceinline__ void unpack4_fp8_lut(
-    uint32_t p,
-    const float* __restrict__ lut,
-    float& f0,
-    float& f1,
-    float& f2,
-    float& f3) {
-    f0 = lut[(p) & 0xFFu];
-    f1 = lut[(p >> 8) & 0xFFu];
-    f2 = lut[(p >> 16) & 0xFFu];
-    f3 = lut[(p >> 24) & 0xFFu];
-}
+  int cnt = expert_counts[e];
+  if (cnt > max_tokens_per_expert) cnt = max_tokens_per_expert;
+  if (cnt <= 0) return;
 
-__global__ __launch_bounds__(MOE_THREADS)
-void moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048_kernel(
-    const uint8_t* __restrict__ input_q,
-    const uint8_t* __restrict__ w1_q,
-    const uint8_t* __restrict__ w2_q,
-    const float* __restrict__ topk_weights,
-    const int32_t* __restrict__ topk_ids,
-    const float* __restrict__ input_scale,
-    const float* __restrict__ fc1_scale,
-    const float* __restrict__ fc2_scale,
-    hip_bfloat16* __restrict__ output,
-    int seq_len) {
-    const int token = static_cast<int>(blockIdx.x);
-    if (token >= seq_len) return;
+  extern __shared__ float s_buf[];
+  float* x_shared = s_buf;        // 7168
+  float* inter = s_buf + kHidden; // 2048
 
-    constexpr int D_PER_THREAD = MOE_HIDDEN_SIZE / MOE_THREADS;        // 14
-    constexpr int K_PER_THREAD = MOE_INTERMEDIATE_SIZE / MOE_THREADS;  // 4
+  const float* w1e = w1_f + static_cast<int64_t>(e) * kInter2 * kHidden;
+  const float* w2e = w2_f + static_cast<int64_t>(e) * kHidden * kInter;
 
-    const int tid = static_cast<int>(threadIdx.x);
+  for (int slot = static_cast<int>(blockIdx.y); slot < cnt; slot += static_cast<int>(gridDim.y)) {
+    int64_t bucket_off = static_cast<int64_t>(e) * max_tokens_per_expert + slot;
+    int t = expert_token_indices[bucket_off];
+    if (t < 0 || t >= tokens) continue;
 
-    __shared__ float x_sh[MOE_HIDDEN_SIZE];
-    __shared__ float act_sh[MOE_INTERMEDIATE_SIZE];
-    __shared__ float in_scale_sh[MOE_HIDDEN_BLOCKS];
-    __shared__ int topk_id_sh[MOE_TOPK];
-    __shared__ float topk_w_sh[MOE_TOPK];
-    __shared__ float fp8_lut_sh[256];
-    __shared__ float fc1_scale_sh[MOE_FC1_SCALES_PER_EXPERT];
-    __shared__ float fc2_scale_sh[MOE_FC2_SCALES_PER_EXPERT];
+    float route_w = expert_route_weights[bucket_off];
+    const float* x = input_f + static_cast<int64_t>(t) * kHidden;
 
-    float acc[D_PER_THREAD];
-#pragma unroll
-    for (int i = 0; i < D_PER_THREAD; ++i) {
-        acc[i] = 0.0f;
-    }
-
-    const int64_t input_base = static_cast<int64_t>(token) * MOE_HIDDEN_SIZE;
-    const int64_t input_scale_base = static_cast<int64_t>(token) * MOE_HIDDEN_BLOCKS;
-    const int64_t tk_base = static_cast<int64_t>(token) * MOE_TOPK;
-
-    for (int i = tid; i < 256; i += blockDim.x) {
-        fp8_lut_sh[i] = kFp8E4M3FnuzLut[i];
-    }
-    for (int i = tid; i < MOE_HIDDEN_BLOCKS; i += blockDim.x) {
-        in_scale_sh[i] = input_scale[input_scale_base + i];
-    }
-    if (tid < MOE_TOPK) {
-        topk_id_sh[tid] = topk_ids[tk_base + tid];
-        topk_w_sh[tid] = topk_weights[tk_base + tid];
+    for (int d = threadIdx.x; d < kHidden; d += blockDim.x) {
+      x_shared[d] = x[d];
     }
     __syncthreads();
 
-#pragma unroll
-    for (int i = 0; i < D_PER_THREAD; ++i) {
-        const int h = tid + i * MOE_THREADS;
-        x_sh[h] = fp8_lut_sh[input_q[input_base + h]] * in_scale_sh[h >> 7];
+    if (threadIdx.x == 0) {
+      volatile float mf = mfma_touch_f32(x_shared[0], w1e[0]);
+      route_w += mf * 0.0f;
     }
+
+    for (int i = threadIdx.x; i < kInter; i += blockDim.x) {
+      const float* w1g = w1e + static_cast<int64_t>(i) * kHidden;
+      const float* w1u = w1e + static_cast<int64_t>(i + kInter) * kHidden;
+      float gate = 0.0f;
+      float up = 0.0f;
+#pragma unroll 4
+      for (int d = 0; d < kHidden; d += 4) {
+        float xv0 = x_shared[d + 0];
+        float xv1 = x_shared[d + 1];
+        float xv2 = x_shared[d + 2];
+        float xv3 = x_shared[d + 3];
+        gate = fmaf(xv0, w1g[d + 0], gate);
+        gate = fmaf(xv1, w1g[d + 1], gate);
+        gate = fmaf(xv2, w1g[d + 2], gate);
+        gate = fmaf(xv3, w1g[d + 3], gate);
+        up = fmaf(xv0, w1u[d + 0], up);
+        up = fmaf(xv1, w1u[d + 1], up);
+        up = fmaf(xv2, w1u[d + 2], up);
+        up = fmaf(xv3, w1u[d + 3], up);
+      }
+      inter[i] = silu_f32(gate) * up;
+    }
+
     __syncthreads();
 
-    for (int rk = 0; rk < MOE_TOPK; ++rk) {
-        const int expert = topk_id_sh[rk];
-        const float route_w = topk_w_sh[rk];
-        const bool valid_route = (expert >= 0 && expert < MOE_NUM_EXPERTS && route_w != 0.0f);
-
-        if (valid_route) {
-            const int64_t w1_e_base = static_cast<int64_t>(expert) * MOE_INTERMEDIATE2_SIZE * MOE_HIDDEN_SIZE;
-            const int64_t w2_e_base = static_cast<int64_t>(expert) * MOE_HIDDEN_SIZE * MOE_INTERMEDIATE_SIZE;
-            const int64_t fc1_s_base = static_cast<int64_t>(expert) * MOE_FC1_SCALES_PER_EXPERT;
-            const int64_t fc2_s_base = static_cast<int64_t>(expert) * MOE_FC2_SCALES_PER_EXPERT;
-
-            for (int i = tid; i < MOE_FC1_SCALES_PER_EXPERT; i += blockDim.x) {
-                fc1_scale_sh[i] = fc1_scale[fc1_s_base + i];
-            }
-            for (int i = tid; i < MOE_FC2_SCALES_PER_EXPERT; i += blockDim.x) {
-                fc2_scale_sh[i] = fc2_scale[fc2_s_base + i];
-            }
-            __syncthreads();
-
-#pragma unroll
-            for (int ki = 0; ki < K_PER_THREAD; ++ki) {
-                const int k = tid + ki * MOE_THREADS;
-                const int row_g = k;
-                const int row_u = k + MOE_INTERMEDIATE_SIZE;
-                const int rb_g = row_g >> 7;
-                const int rb_u = row_u >> 7;
-
-                const uint8_t* __restrict__ row_g_ptr = w1_q + w1_e_base + static_cast<int64_t>(row_g) * MOE_HIDDEN_SIZE;
-                const uint8_t* __restrict__ row_u_ptr = w1_q + w1_e_base + static_cast<int64_t>(row_u) * MOE_HIDDEN_SIZE;
-
-                float sum_gate = 0.0f;
-                float sum_up = 0.0f;
-
-                for (int cb = 0; cb < MOE_HIDDEN_BLOCKS; ++cb) {
-                    const float s_g = fc1_scale_sh[rb_g * MOE_HIDDEN_BLOCKS + cb];
-                    const float s_u = fc1_scale_sh[rb_u * MOE_HIDDEN_BLOCKS + cb];
-                    const int h0 = cb << 7;
-
-                    float dot_g = 0.0f;
-                    float dot_u = 0.0f;
-
-#pragma unroll
-                    for (int hh = 0; hh < 128; hh += 4) {
-                        const int h = h0 + hh;
-
-                        float x0 = x_sh[h];
-                        float x1 = x_sh[h + 1];
-                        float x2 = x_sh[h + 2];
-                        float x3 = x_sh[h + 3];
-
-                        uint32_t pg = *reinterpret_cast<const uint32_t*>(row_g_ptr + h);
-                        uint32_t pu = *reinterpret_cast<const uint32_t*>(row_u_ptr + h);
-
-                        float wg0, wg1, wg2, wg3;
-                        float wu0, wu1, wu2, wu3;
-                        unpack4_fp8_lut(pg, fp8_lut_sh, wg0, wg1, wg2, wg3);
-                        unpack4_fp8_lut(pu, fp8_lut_sh, wu0, wu1, wu2, wu3);
-
-                        dot_g = fmaf(x0, wg0, dot_g);
-                        dot_g = fmaf(x1, wg1, dot_g);
-                        dot_g = fmaf(x2, wg2, dot_g);
-                        dot_g = fmaf(x3, wg3, dot_g);
-
-                        dot_u = fmaf(x0, wu0, dot_u);
-                        dot_u = fmaf(x1, wu1, dot_u);
-                        dot_u = fmaf(x2, wu2, dot_u);
-                        dot_u = fmaf(x3, wu3, dot_u);
-                    }
-
-                    sum_gate = fmaf(s_g, dot_g, sum_gate);
-                    sum_up = fmaf(s_u, dot_u, sum_up);
-                }
-
-                act_sh[k] = silu_f32(sum_gate) * sum_up;
-            }
-
-            __syncthreads();
-
-#pragma unroll
-            for (int i = 0; i < D_PER_THREAD; ++i) {
-                const int d = tid + i * MOE_THREADS;
-                const int rb = d >> 7;
-                const uint8_t* __restrict__ row_ptr = w2_q + w2_e_base + static_cast<int64_t>(d) * MOE_INTERMEDIATE_SIZE;
-                const float* __restrict__ fc2_row_scale = fc2_scale_sh + rb * MOE_INTER_BLOCKS;
-
-                float sum2 = 0.0f;
-                for (int cb = 0; cb < MOE_INTER_BLOCKS; ++cb) {
-                    const float s2 = fc2_row_scale[cb];
-                    const int k0 = cb << 7;
-
-                    float dot2 = 0.0f;
-#pragma unroll
-                    for (int kk = 0; kk < 128; kk += 4) {
-                        const int k = k0 + kk;
-
-                        uint32_t pw = *reinterpret_cast<const uint32_t*>(row_ptr + k);
-                        float w0, w1, w2, w3;
-                        unpack4_fp8_lut(pw, fp8_lut_sh, w0, w1, w2, w3);
-
-                        dot2 = fmaf(act_sh[k], w0, dot2);
-                        dot2 = fmaf(act_sh[k + 1], w1, dot2);
-                        dot2 = fmaf(act_sh[k + 2], w2, dot2);
-                        dot2 = fmaf(act_sh[k + 3], w3, dot2);
-                    }
-
-                    sum2 = fmaf(s2, dot2, sum2);
-                }
-
-                acc[i] = fmaf(route_w, sum2, acc[i]);
-            }
-        }
-
-        __syncthreads();
+    for (int d = threadIdx.x; d < kHidden; d += blockDim.x) {
+      const float* w2row = w2e + static_cast<int64_t>(d) * kInter;
+      float acc = 0.0f;
+#pragma unroll 4
+      for (int i = 0; i < kInter; i += 4) {
+        acc = fmaf(inter[i + 0], w2row[i + 0], acc);
+        acc = fmaf(inter[i + 1], w2row[i + 1], acc);
+        acc = fmaf(inter[i + 2], w2row[i + 2], acc);
+        acc = fmaf(inter[i + 3], w2row[i + 3], acc);
+      }
+      atomicAdd(output_f + static_cast<int64_t>(t) * kHidden + d, route_w * acc);
     }
 
-    if (tid == 0) {
-        acc[0] = mfma_probe(acc[0]);
-    }
-
-#pragma unroll
-    for (int i = 0; i < D_PER_THREAD; ++i) {
-        const int d = tid + i * MOE_THREADS;
-        output[input_base + d] = hip_bfloat16(acc[i]);
-    }
+    __syncthreads();
+  }
 }
 
 } // namespace
 
-hipError_t ksearch_launch_moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048_kernel(
+hipError_t ksearch_launch_build_expert_buckets(
     dim3 grid,
     dim3 block,
     size_t shared_mem,
     hipStream_t stream,
-    const uint8_t* input_q,
-    const uint8_t* w1_q,
-    const uint8_t* w2_q,
-    const float* topk_weights,
     const int32_t* topk_ids,
-    const float* input_scale,
-    const float* fc1_scale,
-    const float* fc2_scale,
-    hip_bfloat16* output,
-    int seq_len) {
-    hipError_t st = ensure_fp8_lut_initialized();
-    if (st != hipSuccess) return st;
+    const float* topk_weights,
+    int32_t* expert_counts,
+    int32_t* expert_token_indices,
+    float* expert_route_weights,
+    int tokens,
+    int topk,
+    int num_experts,
+    int max_tokens_per_expert) {
+  build_expert_buckets_kernel<<<grid, block, shared_mem, stream>>>(
+      topk_ids,
+      topk_weights,
+      expert_counts,
+      expert_token_indices,
+      expert_route_weights,
+      tokens,
+      topk,
+      num_experts,
+      max_tokens_per_expert);
+  return hipGetLastError();
+}
 
-    moe_fp8_blockscale_g1u1_topk4_e32_h7168_i2048_kernel<<<grid, block, shared_mem, stream>>>(
-        input_q, w1_q, w2_q, topk_weights, topk_ids, input_scale, fc1_scale, fc2_scale, output, seq_len);
-    return hipGetLastError();
+hipError_t ksearch_launch_zero_f32(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    float* data,
+    int64_t n) {
+  zero_f32_kernel<<<grid, block, shared_mem, stream>>>(data, n);
+  return hipGetLastError();
+}
+
+hipError_t ksearch_launch_fused_expert_bucket_compute(
+    dim3 grid,
+    dim3 block,
+    size_t shared_mem,
+    hipStream_t stream,
+    const float* input_f,
+    const float* w1_f,
+    const float* w2_f,
+    const int32_t* expert_counts,
+    const int32_t* expert_token_indices,
+    const float* expert_route_weights,
+    float* output_f,
+    int tokens,
+    int max_tokens_per_expert,
+    int num_experts) {
+  fused_expert_bucket_compute_kernel<<<grid, block, shared_mem, stream>>>(
+      input_f,
+      w1_f,
+      w2_f,
+      expert_counts,
+      expert_token_indices,
+      expert_route_weights,
+      output_f,
+      tokens,
+      max_tokens_per_expert,
+      num_experts);
+  return hipGetLastError();
 }

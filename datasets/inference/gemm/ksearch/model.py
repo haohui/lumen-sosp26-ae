@@ -61,27 +61,3 @@ class ModelNew(nn.Module):
         a_mk = a_mk.contiguous()
         b_nk = b_nk.contiguous()
         return self._ext.run(a_mk, b_nk)
-
-    def build_call(self, *, a_mk: torch.Tensor, b_nk: torch.Tensor):
-        if self._ext is None:
-            raise RuntimeError("KSearch extension is not available on this runtime")
-        if a_mk.dim() != 2 or b_nk.dim() != 2:
-            raise ValueError(
-                f"Expected 2D tensors, got a_mk.dim={a_mk.dim()}, b_nk.dim={b_nk.dim()}"
-            )
-        if a_mk.shape[1] != b_nk.shape[1]:
-            raise ValueError(
-                f"Incompatible shapes for A@B^T: a_mk={tuple(a_mk.shape)}, b_nk={tuple(b_nk.shape)}"
-            )
-
-        a = a_mk if a_mk.dtype == torch.bfloat16 else a_mk.to(torch.bfloat16)
-        b = b_nk if b_nk.dtype == torch.bfloat16 else b_nk.to(torch.bfloat16)
-        a = a.contiguous()
-        b = b.contiguous()
-        out = torch.empty((a.shape[0], b.shape[0]), device=a.device, dtype=torch.bfloat16)
-
-        def call():
-            self._ext.run_out(a, b, out)
-            return out
-
-        return call

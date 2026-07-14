@@ -173,7 +173,7 @@ N_TILES_PER_WARP = WARP_MAT_N // 16
 Use only:
 
 ```python
-al.amdgpu.mfma_16x16x16_bf16_f32(data_a, data_b, acc)
+al.amdgpu.mfma_16x16x16_bf16_f32_tied(data_a, data_b, acc)
 ```
 
 For one logical 16x16x16 MFMA tile, its native lane mapping is:
@@ -245,10 +245,10 @@ issue exactly two calls in natural fragment order:
 frag_a = al.view(data_a[m_tile], al.Tensor((2, 2, 1), al.u32))
 frag_b = al.view(data_b[n_tile], al.Tensor((2, 2, 1), al.u32))
 
-acc[m_tile, n_tile] = al.amdgpu.mfma_16x16x16_bf16_f32(
+acc[m_tile, n_tile] = al.amdgpu.mfma_16x16x16_bf16_f32_tied(
     frag_a[0], frag_b[0], acc[m_tile, n_tile]
 )
-acc[m_tile, n_tile] = al.amdgpu.mfma_16x16x16_bf16_f32(
+acc[m_tile, n_tile] = al.amdgpu.mfma_16x16x16_bf16_f32_tied(
     frag_a[1], frag_b[1], acc[m_tile, n_tile]
 )
 ```

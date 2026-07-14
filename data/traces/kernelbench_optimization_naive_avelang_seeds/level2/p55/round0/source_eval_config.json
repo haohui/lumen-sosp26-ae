@@ -1,5 +1,0 @@
-{
-  "backend": "substrate",
-  "precision": "bf16",
-  "gpu_arch": "gfx942"
-}

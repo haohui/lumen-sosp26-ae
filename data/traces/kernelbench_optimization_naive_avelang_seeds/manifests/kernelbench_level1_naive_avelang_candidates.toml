@@ -1,0 +1,114 @@
+# KernelBench level 1 naive AveLang seed candidates
+# Regenerate with examples/prepare_kernelbench_optimization_seeds.py
+
+[[candidate]]
+problem_id = 1
+path = "../level1/p01/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 2
+path = "../level1/p02/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 3
+path = "../level1/p03/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 4
+path = "../level1/p04/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 5
+path = "../level1/p05/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 6
+path = "../level1/p06/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 7
+path = "../level1/p07/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 8
+path = "../level1/p08/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 9
+path = "../level1/p09/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 10
+path = "../level1/p10/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 11
+path = "../level1/p11/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 12
+path = "../level1/p12/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 13
+path = "../level1/p13/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 14
+path = "../level1/p14/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 15
+path = "../level1/p15/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 16
+path = "../level1/p16/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 17
+path = "../level1/p17/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 18
+path = "../level1/p18/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 55
+path = "../level1/p55/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 56
+path = "../level1/p56/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 62
+path = "../level1/p62/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 63
+path = "../level1/p63/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 82
+path = "../level1/p82/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 83
+path = "../level1/p83/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 84
+path = "../level1/p84/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 85
+path = "../level1/p85/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 86
+path = "../level1/p86/round0/output_model_new.py"
+
+[[candidate]]
+problem_id = 87
+path = "../level1/p87/round0/output_model_new.py"

@@ -14,8 +14,13 @@ from config import (
 )
 from paths import resolve_repo_root
 
+ROCM_PATH = Path("/opt/rocm")
+
 
 def _enable_attn_opt() -> None:
+    os.environ["ROCM_PATH"] = str(ROCM_PATH)
+    os.environ["ROCM_HOME"] = str(ROCM_PATH)
+    os.environ["HIP_PATH"] = str(ROCM_PATH)
     os.environ["HACK_SINGLE_WAVE_PER_EU"] = "1"
     try:
         from avelang import knobs as avelang_knobs

@@ -20,8 +20,13 @@ if str(BENCHMARK_DIR) not in sys.path:
 
 from backends import load_module  # noqa: E402
 
+ROCM_PATH = Path("/opt/rocm")
+
 
 def _enable_attn_opt() -> None:
+    os.environ["ROCM_PATH"] = str(ROCM_PATH)
+    os.environ["ROCM_HOME"] = str(ROCM_PATH)
+    os.environ["HIP_PATH"] = str(ROCM_PATH)
     os.environ["HACK_SINGLE_WAVE_PER_EU"] = "1"
     try:
         from avelang import knobs as avelang_knobs

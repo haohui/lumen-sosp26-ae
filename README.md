@@ -5,22 +5,10 @@ for the Lumen SOSP'26 paper.
 
 ## Installation
 
-The Python environment for this repository is expected to be managed with
-`uv`. From the repository root:
+The corresponding docker image pre-installed the dependency. To start the evaluation, activate the virtual environment:
 
 ```bash
-uv venv --python 3.12
 source .venv/bin/activate
-uv pip install -e ".[dev]"
-```
-
-You will need to install avelang to evaluate the performance of the DSL kernels.
-
-For formatting and linting:
-
-```bash
-ruff format .
-ruff check .
 ```
 
 ## Scope

@@ -1,170 +1,50 @@
-#include <torch/extension.h>
-#include <hip/hip_runtime.h>
-#include <c10/hip/HIPStream.h>
-
-#include <cstdint>
-
 #include "kernel.h"
-#ifndef TILE_K
-#define TILE_K 16
-#endif
 
-namespace py = pybind11;
-
-namespace {
-constexpr int TILE_M = 16;
-constexpr int TILE_N = 16;
-
-constexpr int TILES_N_PER_BLOCK_BASE = 4;
-constexpr int BLOCK_N_BASE = TILE_N * TILES_N_PER_BLOCK_BASE;
-constexpr int BLOCK_THREADS_BASE = 64;
-
-constexpr int TILES_N_PER_BLOCK_BALANCED = 8;
-constexpr int BLOCK_N_BALANCED = TILE_N * TILES_N_PER_BLOCK_BALANCED;
-constexpr int BLOCK_THREADS_BALANCED = 128;
-}  // namespace
-
-static inline void check_hip(hipError_t err, const char* msg) {
-  TORCH_CHECK(err == hipSuccess, msg, " (", hipGetErrorString(err), ")");
-}
+#include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <vector>
 
 torch::Tensor run(torch::Tensor A, torch::Tensor B) {
-  TORCH_CHECK(A.dim() == 2, "A must be 2D, got dim=", A.dim());
-  TORCH_CHECK(B.dim() == 2, "B must be 2D, got dim=", B.dim());
+    TORCH_CHECK(A.is_cuda(), "A must be a CUDA/HIP tensor");
+    TORCH_CHECK(B.is_cuda(), "B must be a CUDA/HIP tensor");
+    TORCH_CHECK(A.scalar_type() == torch::kBFloat16, "A must be bfloat16");
+    TORCH_CHECK(B.scalar_type() == torch::kBFloat16, "B must be bfloat16");
+    TORCH_CHECK(A.dim() == 2, "A must be rank-2");
+    TORCH_CHECK(B.dim() == 2, "B must be rank-2");
 
-  const int64_t M = A.size(0);
-  const int64_t K = A.size(1);
-  TORCH_CHECK(B.size(1) == K, "K mismatch: A.shape[1]=", K, ", B.shape[1]=", B.size(1));
-  const int64_t N = B.size(0);
+    auto Acontig = A.contiguous();
+    auto Bcontig = B.contiguous();
 
-  auto A_bf16 = (A.scalar_type() == torch::kBFloat16) ? A : A.to(torch::kBFloat16);
-  auto B_bf16 = (B.scalar_type() == torch::kBFloat16) ? B : B.to(torch::kBFloat16);
+    const int64_t M64 = Acontig.size(0);
+    const int64_t K64 = Acontig.size(1);
+    const int64_t N64 = Bcontig.size(0);
 
-  const bool any_cuda = A_bf16.is_cuda() || B_bf16.is_cuda();
-  if (!any_cuda) {
-    return torch::matmul(A_bf16, B_bf16.transpose(-1, -2));
-  }
+    TORCH_CHECK(Bcontig.size(1) == K64, "B.shape[1] must equal A.shape[1]");
+    TORCH_CHECK(M64 >= 0 && N64 >= 0 && K64 >= 0, "Invalid shapes");
+    TORCH_CHECK(M64 <= INT32_MAX && N64 <= INT32_MAX && K64 <= INT32_MAX, "Dimensions too large");
 
-  torch::Device device = A_bf16.is_cuda() ? A_bf16.device() : B_bf16.device();
-  TORCH_CHECK(device.is_cuda(), "HIP device is required");
+    auto C = torch::empty({M64, N64}, Acontig.options().dtype(torch::kBFloat16));
 
-  int device_index = device.has_index() ? device.index() : 0;
-  int current_device = 0;
-  check_hip(hipGetDevice(&current_device), "hipGetDevice failed");
-  if (current_device != device_index) {
-    check_hip(hipSetDevice(device_index), "hipSetDevice failed");
-  }
+    const int M = static_cast<int>(M64);
+    const int N = static_cast<int>(N64);
+    const int K = static_cast<int>(K64);
 
-  if (!A_bf16.is_cuda() || A_bf16.get_device() != device_index) {
-    A_bf16 = A_bf16.to(device);
-  }
-  if (!B_bf16.is_cuda() || B_bf16.get_device() != device_index) {
-    B_bf16 = B_bf16.to(device);
-  }
+    dim3 block(16, 16, 1);
+    dim3 grid((N + 63) / 64, (M + 63) / 64, 1);
+    size_t shared_mem = 0;
+    hipStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
-  A_bf16 = A_bf16.contiguous();
-  B_bf16 = B_bf16.contiguous();
+    const hip_bfloat16* Aptr = reinterpret_cast<const hip_bfloat16*>(Acontig.data_ptr<at::BFloat16>());
+    const hip_bfloat16* Bptr = reinterpret_cast<const hip_bfloat16*>(Bcontig.data_ptr<at::BFloat16>());
+    hip_bfloat16* Cptr = reinterpret_cast<hip_bfloat16*>(C.data_ptr<at::BFloat16>());
 
-  auto C = torch::empty({M, N}, A_bf16.options().dtype(torch::kBFloat16));
+    hipError_t err = ksearch_launch_gemm_bf16_var_mnk(
+        grid, block, shared_mem, stream, Aptr, Bptr, Cptr, M, N, K);
+    TORCH_CHECK(err == hipSuccess, "ksearch_launch_gemm_bf16_var_mnk failed: ", hipGetErrorString(err));
 
-  if (M == 0 || N == 0) {
     return C;
-  }
-
-  const uint16_t* A_ptr = reinterpret_cast<const uint16_t*>(A_bf16.data_ptr<c10::BFloat16>());
-  const uint16_t* B_ptr = reinterpret_cast<const uint16_t*>(B_bf16.data_ptr<c10::BFloat16>());
-  uint16_t* C_ptr = reinterpret_cast<uint16_t*>(C.data_ptr<c10::BFloat16>());
-
-  const bool use_balanced = (M >= 64) && (N >= BLOCK_N_BALANCED) && (K >= (2 * TILE_K));
-
-  hipStream_t stream = c10::hip::getCurrentHIPStream(device_index).stream();
-  if (use_balanced) {
-    dim3 block(BLOCK_THREADS_BALANCED, 1, 1);
-    dim3 grid(
-        static_cast<uint32_t>((N + BLOCK_N_BALANCED - 1) / BLOCK_N_BALANCED),
-        static_cast<uint32_t>((M + TILE_M - 1) / TILE_M),
-        1);
-
-    check_hip(
-        ksearch_launch_gemm_bf16_var_mnk_balanced(grid, block, 0, stream, A_ptr, B_ptr, C_ptr, M, N, K),
-        "ksearch_launch_gemm_bf16_var_mnk_balanced failed");
-  } else {
-    dim3 block(BLOCK_THREADS_BASE, 1, 1);
-    dim3 grid(
-        static_cast<uint32_t>((N + BLOCK_N_BASE - 1) / BLOCK_N_BASE),
-        static_cast<uint32_t>((M + TILE_M - 1) / TILE_M),
-        1);
-
-    check_hip(
-        ksearch_launch_gemm_bf16_var_mnk(grid, block, 0, stream, A_ptr, B_ptr, C_ptr, M, N, K),
-        "ksearch_launch_gemm_bf16_var_mnk failed");
-  }
-
-  return C;
-}
-
-void run_out(torch::Tensor A, torch::Tensor B, torch::Tensor C) {
-  TORCH_CHECK(A.dim() == 2, "A must be 2D, got dim=", A.dim());
-  TORCH_CHECK(B.dim() == 2, "B must be 2D, got dim=", B.dim());
-  TORCH_CHECK(C.dim() == 2, "C must be 2D, got dim=", C.dim());
-
-  const int64_t M = A.size(0);
-  const int64_t K = A.size(1);
-  TORCH_CHECK(B.size(1) == K, "K mismatch: A.shape[1]=", K, ", B.shape[1]=", B.size(1));
-  const int64_t N = B.size(0);
-  TORCH_CHECK(C.size(0) == M && C.size(1) == N, "C shape mismatch");
-
-  TORCH_CHECK(A.is_cuda() && B.is_cuda() && C.is_cuda(), "A/B/C must be HIP tensors");
-  TORCH_CHECK(A.scalar_type() == torch::kBFloat16, "A must be bfloat16");
-  TORCH_CHECK(B.scalar_type() == torch::kBFloat16, "B must be bfloat16");
-  TORCH_CHECK(C.scalar_type() == torch::kBFloat16, "C must be bfloat16");
-  TORCH_CHECK(A.is_contiguous() && B.is_contiguous() && C.is_contiguous(), "A/B/C must be contiguous");
-  TORCH_CHECK(A.device() == B.device() && A.device() == C.device(), "A/B/C must be on the same device");
-
-  torch::Device device = A.device();
-  int device_index = device.has_index() ? device.index() : 0;
-  int current_device = 0;
-  check_hip(hipGetDevice(&current_device), "hipGetDevice failed");
-  if (current_device != device_index) {
-    check_hip(hipSetDevice(device_index), "hipSetDevice failed");
-  }
-
-  if (M == 0 || N == 0) {
-    return;
-  }
-
-  const uint16_t* A_ptr = reinterpret_cast<const uint16_t*>(A.data_ptr<c10::BFloat16>());
-  const uint16_t* B_ptr = reinterpret_cast<const uint16_t*>(B.data_ptr<c10::BFloat16>());
-  uint16_t* C_ptr = reinterpret_cast<uint16_t*>(C.data_ptr<c10::BFloat16>());
-
-  const bool use_balanced = (M >= 64) && (N >= BLOCK_N_BALANCED) && (K >= (2 * TILE_K));
-
-  hipStream_t stream = c10::hip::getCurrentHIPStream(device_index).stream();
-  if (use_balanced) {
-    dim3 block(BLOCK_THREADS_BALANCED, 1, 1);
-    dim3 grid(
-        static_cast<uint32_t>((N + BLOCK_N_BALANCED - 1) / BLOCK_N_BALANCED),
-        static_cast<uint32_t>((M + TILE_M - 1) / TILE_M),
-        1);
-
-    check_hip(
-        ksearch_launch_gemm_bf16_var_mnk_balanced(grid, block, 0, stream, A_ptr, B_ptr, C_ptr, M, N, K),
-        "ksearch_launch_gemm_bf16_var_mnk_balanced failed");
-  } else {
-    dim3 block(BLOCK_THREADS_BASE, 1, 1);
-    dim3 grid(
-        static_cast<uint32_t>((N + BLOCK_N_BASE - 1) / BLOCK_N_BASE),
-        static_cast<uint32_t>((M + TILE_M - 1) / TILE_M),
-        1);
-
-    check_hip(
-        ksearch_launch_gemm_bf16_var_mnk(grid, block, 0, stream, A_ptr, B_ptr, C_ptr, M, N, K),
-        "ksearch_launch_gemm_bf16_var_mnk failed");
-  }
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("run", &run, py::arg("A"), py::arg("B"), "BF16 GEMM: C = A * B^T");
-  m.def("run_out", &run_out, py::arg("A"), py::arg("B"), py::arg("C"),
-        "BF16 GEMM: C = A * B^T into a preallocated output");
+    m.def("run", &run, "gemm_bf16_var_mnk (HIP, B.T)");
 }

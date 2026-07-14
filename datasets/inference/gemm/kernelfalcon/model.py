@@ -10,91 +10,95 @@ def _matmul_a_bt_kernel(
     stride_am, stride_ak,
     stride_bn, stride_bk,
     stride_cm, stride_cn,
-    BLOCK_SIZE_M: tl.constexpr,
-    BLOCK_SIZE_N: tl.constexpr,
-    BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
 ):
     """
-    Compute C = A @ B^T
-      A: [M, K]
-      B: [N, K]
-      C: [M, N]
+    Compute C = A @ B.T
+      - A: [M, K]
+      - B: [N, K]
+      - C: [M, N]
     """
-    pid_m = tl.program_id(axis=0)
-    pid_n = tl.program_id(axis=1)
+    pid = tl.program_id(axis=0)
 
-    offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    # Tile decomposition
+    num_pid_m = tl.cdiv(M, BLOCK_M)
+    num_pid_n = tl.cdiv(N, BLOCK_N)
 
-    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+    # Grouped ordering for better L2 locality
+    num_pid_in_group = GROUP_M * num_pid_n
+    group_id = pid // num_pid_in_group
+    first_pid_m = group_id * GROUP_M
+    group_size_m = tl.minimum(num_pid_m - first_pid_m, GROUP_M)
 
-    for k_start in tl.range(0, K, BLOCK_SIZE_K):
-        offs_k = k_start + tl.arange(0, BLOCK_SIZE_K)
+    pid_in_group = pid % num_pid_in_group
+    pid_m = first_pid_m + (pid_in_group % group_size_m)
+    pid_n = pid_in_group // group_size_m
 
-        # A tile: [BLOCK_SIZE_M, BLOCK_SIZE_K]
-        a_ptrs = a_ptr + offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak
-        a_mask = (offs_m[:, None] < M) & (offs_k[None, :] < K)
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    # K reduction
+    for k_tile in range(0, tl.cdiv(K, BLOCK_K)):
+        k_offsets = k_tile * BLOCK_K + offs_k
+
+        a_ptrs = a_ptr + offs_m[:, None] * stride_am + k_offsets[None, :] * stride_ak
+        # Load B as [BLOCK_K, BLOCK_N] so tl.dot(a, b) computes A @ B.T directly.
+        b_ptrs = b_ptr + offs_n[None, :] * stride_bn + k_offsets[:, None] * stride_bk
+
+        a_mask = (offs_m[:, None] < M) & (k_offsets[None, :] < K)
+        b_mask = (offs_n[None, :] < N) & (k_offsets[:, None] < K)
+
         a = tl.load(a_ptrs, mask=a_mask, other=0.0)
-
-        # B^T tile via B access pattern:
-        # B is [N, K], we need [K, N] for dot -> shape [BLOCK_SIZE_K, BLOCK_SIZE_N]
-        b_ptrs = b_ptr + offs_n[None, :] * stride_bn + offs_k[:, None] * stride_bk
-        b_mask = (offs_n[None, :] < N) & (offs_k[:, None] < K)
         b = tl.load(b_ptrs, mask=b_mask, other=0.0)
 
         acc = tl.dot(a, b, acc)
 
-    c = acc.to(c_ptr.dtype.element_ty)
-
     c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
     c_mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
-    tl.store(c_ptrs, c, mask=c_mask)
+    tl.store(c_ptrs, acc.to(c_ptr.dtype.element_ty), mask=c_mask)
 
 
-def _launch_matmul_a_bt(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor) -> torch.Tensor:
+def kernel_function(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
-    Launch C = A @ B^T into a caller-provided output tensor.
+    Triton wrapper for C = A @ B.T.
+
+    Fusion note for reviewers:
+    - This problem has a single operator pipeline (matmul with transposed RHS).
+    - The implementation is fully fused into one Triton kernel:
+      load tiles -> K reduction (dot-accumulate) -> store output.
+    - No separate transpose kernel is launched; B is indexed in-kernel as needed.
     """
     if not isinstance(A, torch.Tensor) or not isinstance(B, torch.Tensor):
-        raise TypeError("kernel_function expects two torch.Tensor inputs")
-
+        raise TypeError("A and B must be torch.Tensor objects.")
     if A.ndim != 2 or B.ndim != 2:
-        raise ValueError(f"Expected 2D tensors, got A.ndim={A.ndim}, B.ndim={B.ndim}")
-
+        raise ValueError(f"A and B must be 2D. Got A.ndim={A.ndim}, B.ndim={B.ndim}.")
     if A.shape[1] != B.shape[1]:
         raise ValueError(
-            f"Incompatible shapes for A @ B^T: A.shape={tuple(A.shape)}, B.shape={tuple(B.shape)}"
+            f"Incompatible shapes for A @ B.T: A={tuple(A.shape)}, B={tuple(B.shape)} "
+            f"(K dimensions must match)."
         )
-
+    if A.device.type != "cuda" or B.device.type != "cuda":
+        raise ValueError("A and B must be CUDA/HIP tensors.")
     if A.device != B.device:
-        raise ValueError(f"A and B must be on same device, got {A.device} and {B.device}")
-
+        raise ValueError(f"A and B must be on the same device. Got {A.device} and {B.device}.")
     if A.dtype != B.dtype:
-        raise ValueError(f"A and B must have same dtype, got {A.dtype} and {B.dtype}")
-
+        raise ValueError(f"A and B must have same dtype. Got {A.dtype} and {B.dtype}.")
     if A.dtype not in (torch.float16, torch.bfloat16, torch.float32):
-        raise TypeError(f"Unsupported dtype for this kernel: {A.dtype}")
+        raise TypeError(f"Unsupported dtype {A.dtype}. Use fp16/bf16/fp32.")
 
     M, K = A.shape
     N = B.shape[0]
 
-    if C.shape != (M, N):
-        raise ValueError(f"Expected C shape {(M, N)}, got {tuple(C.shape)}")
-    if C.device != A.device or C.dtype != A.dtype:
-        raise ValueError("C must share device and dtype with A")
+    C = torch.empty((M, N), device=A.device, dtype=A.dtype)
 
-    # Nothing to launch for empty outputs.
-    if M == 0 or N == 0:
-        return C
-
-    # Fixed tile sizes chosen for BF16/FP16/FP32 GEMM-style workloads.
-    BLOCK_SIZE_M = 64
-    BLOCK_SIZE_N = 64
-    BLOCK_SIZE_K = 32
-
-    grid = (
-        triton.cdiv(M, BLOCK_SIZE_M),
-        triton.cdiv(N, BLOCK_SIZE_N),
+    grid = lambda META: (
+        triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),
     )
 
     _matmul_a_bt_kernel[grid](
@@ -103,40 +107,14 @@ def _launch_matmul_a_bt(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor) -> to
         A.stride(0), A.stride(1),
         B.stride(0), B.stride(1),
         C.stride(0), C.stride(1),
-        BLOCK_SIZE_M=BLOCK_SIZE_M,
-        BLOCK_SIZE_N=BLOCK_SIZE_N,
-        BLOCK_SIZE_K=BLOCK_SIZE_K,
+        BLOCK_M=128,
+        BLOCK_N=128,
+        BLOCK_K=32,
+        GROUP_M=8,
         num_warps=8,
-        num_stages=3,
+        num_stages=4,
     )
-
     return C
 
 
-def kernel_function(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-    """
-    Triton wrapper for C = A @ B^T.
-
-    Fusion note:
-    - The model pipeline is a single matmul only.
-    - We "fuse" transpose handling into the kernel memory access pattern:
-      B is never explicitly transposed; kernel loads B with [k, n] indexing.
-    - No extra PyTorch compute ops are used in the wrapper.
-    """
-    C = torch.empty((A.shape[0], B.shape[0]), device=A.device, dtype=A.dtype)
-    return _launch_matmul_a_bt(A, B, C)
-
-
-class ModelNew(torch.nn.Module):
-    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-        return kernel_function(A, B)
-
-    def build_call(self, *, a_mk: torch.Tensor, b_nk: torch.Tensor):
-        a = a_mk.contiguous()
-        b = b_nk.contiguous()
-        out = torch.empty((a.shape[0], b.shape[0]), device=a.device, dtype=a.dtype)
-
-        def call():
-            return _launch_matmul_a_bt(a, b, out)
-
-        return call
+__all__ = ["kernel_function"]

@@ -120,13 +120,12 @@ if torch.cuda.is_available():
 class ModelNew(nn.Module):
     """
     BF16-optimized matmul model using a custom HIP kernel on AMD GPUs.
-    Falls back to torch.matmul for non-BF16 or non-GPU inputs.
     """
     def __init__(self):
         super(ModelNew, self).__init__()
         self._ext = _bf16_matmul_ext
 
-    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+    def _matmul_ab(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
         if (
             self._ext is not None
             and A.is_cuda
@@ -139,11 +138,18 @@ class ModelNew(nn.Module):
             if not B.is_contiguous():
                 B = B.contiguous()
             return self._ext.bf16_matmul_hip(A, B)
-        return torch.matmul(A, B)
+        raise RuntimeError("bf16_matmul_hip requires CUDA/HIP BF16 tensors")
+
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        if A.dim() != 2 or B.dim() != 2:
+            raise ValueError(f"Expected 2D tensors, got A.dim={A.dim()}, B.dim={B.dim()}")
+        if A.shape[1] != B.shape[1]:
+            raise ValueError(f"Incompatible ABt shapes: {A.shape} and {B.shape}")
+        return self._matmul_ab(A, B.transpose(0, 1).contiguous())
 
     def build_call(self, *, a_mk: torch.Tensor, b_nk: torch.Tensor):
         b_kn = b_nk.t().contiguous()
-        return lambda: self.forward(a_mk, b_kn)
+        return lambda: self._matmul_ab(a_mk, b_kn)
 
 
 M = 1024 * 2

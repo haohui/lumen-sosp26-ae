@@ -110,33 +110,25 @@ class ModelNew(nn.Module):
         super(ModelNew, self).__init__()
         self.gemm_op = gemm_op
 
-    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-        """
-        Performs the matrix multiplication using custom kernel.
-        Args:
-            A (torch.Tensor): Input matrix A of shape (N, N), dtype bfloat16.
-            B (torch.Tensor): Input matrix B of shape (N, N), dtype bfloat16.
-        Returns:
-            torch.Tensor: Output matrix C of shape (N, N), dtype bfloat16.
-        """
+    def _forward_b_kn(self, A: torch.Tensor, B_kn: torch.Tensor) -> torch.Tensor:
         # Store original device to return output on same device
         original_device = A.device
 
         # Move inputs to HIP/ROCm device if not already there (FIX for RuntimeError)
         if A.device.type != 'cuda':
             A = A.to('cuda')
-        if B.device.type != 'cuda':
-            B = B.to('cuda')
+        if B_kn.device.type != 'cuda':
+            B_kn = B_kn.to('cuda')
 
         # Convert to bfloat16 if needed
         if A.dtype != torch.bfloat16:
             A = A.to(torch.bfloat16)
-        if B.dtype != torch.bfloat16:
-            B = B.to(torch.bfloat16)
+        if B_kn.dtype != torch.bfloat16:
+            B_kn = B_kn.to(torch.bfloat16)
 
         # Call the HIP kernel
         stream_ptr = int(torch.cuda.current_stream(device=A.device).cuda_stream)
-        C = self.gemm_op.gemm_bf16(A, B, stream_ptr)
+        C = self.gemm_op.gemm_bf16(A, B_kn, stream_ptr)
 
         # Move output back to original device if needed
         if original_device.type != 'cuda':
@@ -144,6 +136,12 @@ class ModelNew(nn.Module):
 
         return C
 
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        """
+        Performs C = A @ B.T using the generated square GEMM kernel.
+        """
+        return self._forward_b_kn(A, B.t().contiguous())
+
     def build_call(self, *, a_mk: torch.Tensor, b_nk: torch.Tensor):
         b_kn = b_nk.t().contiguous()
-        return lambda: self.forward(a_mk, b_kn)
+        return lambda: self._forward_b_kn(a_mk, b_kn)

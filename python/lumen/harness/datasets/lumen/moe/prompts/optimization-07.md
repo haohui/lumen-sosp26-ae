@@ -1,15 +1,22 @@
-# Optimization 07: constrain hot-loop instruction scheduling
+# Optimization 07: use VGPR C/D MFMA and constrain hot-loop scheduling
 
 Optimize the existing AveLang fused FP8 MoE kernel by adding explicit AMD
 instruction-scheduling barriers to the Stage 1 and Stage 2 software-pipeline
-hot loops. The input already contains all earlier pipeline, masking,
-vectorization, and persistent-route optimizations; preserve them exactly.
+hot loops and selecting the VGPR C/D MFMA variant. The input already contains
+all earlier pipeline, masking, vectorization, and persistent-route
+optimizations; preserve them exactly.
 
-This round changes compiler scheduling only. Do not change data flow,
-arithmetic, memory layouts, grid mapping, or loop trip counts.
+This round changes only the MFMA accumulator register class and compiler
+scheduling. Do not change data flow, arithmetic, memory layouts, grid mapping,
+or loop trip counts.
 
 ## Required transformation
 
+- In both `_matmul_stage0` and `_matmul_stage1`, replace every
+  `S.amdgpu.mfma_f32_16x16x32_fp8_fp8(...)` call with
+  `S.amdgpu.mfma_f32_16x16x32_fp8_fp8_vgprcd(...)`. Preserve the three
+  operands, their order, the accumulator assignment, and the surrounding loop
+  structure exactly.
 - Add two zero-argument `@avelang.jit` helpers named
   `_hot_loop_scheduler_stage1` and `_hot_loop_scheduler_stage2`.
 - `_hot_loop_scheduler_stage1` must emit this exact ordered sequence:
@@ -58,9 +65,10 @@ arithmetic, memory layouts, grid mapping, or loop trip counts.
 
 ## Scope boundary for this round
 
-This round is only explicit instruction scheduling. Do not change tile sizes,
-buffering, vectorization, route mapping, launch dimensions, or mathematical
-operations, and do not add fallback compute paths.
+This round is only the MFMA intrinsic substitution above plus explicit
+instruction scheduling. Do not change tile sizes, buffering, vectorization,
+route mapping, launch dimensions, or mathematical operations, and do not add
+fallback compute paths.
 
 The final implementation must pass correctness for token counts 1024, 2048,
 4096, 8192, and 16384, and a nonzero persistent-mode equivalence check.

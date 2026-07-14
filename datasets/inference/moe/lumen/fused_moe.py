@@ -362,7 +362,7 @@ def _matmul_stage0(
             for j in S.range(4):
                 w_vec = S.view(w_u2[i * 4 + j], S.Tensor((2,), S.u32))
                 x_vec = S.view(x_u2[x_base + j], S.Tensor((2,), S.u32))
-                acc = S.amdgpu.mfma_f32_16x16x32_fp8_fp8(
+                acc = S.amdgpu.mfma_f32_16x16x32_fp8_fp8_vgprcd(
                     w_vec,
                     x_vec,
                     acc,
@@ -408,7 +408,7 @@ def _matmul_stage1(
             for j in S.range(4):
                 w_vec = S.view(w_u2[i * 4 + j], S.Tensor((2,), S.u32))
                 x_vec = S.view(x_u2[x_base + j], S.Tensor((2,), S.u32))
-                acc = S.amdgpu.mfma_f32_16x16x32_fp8_fp8(
+                acc = S.amdgpu.mfma_f32_16x16x32_fp8_fp8_vgprcd(
                     w_vec,
                     x_vec,
                     acc,
@@ -1497,8 +1497,8 @@ def _fused_moe_fp8_blockscale_g1u1_impl(
     # on the host: doing so breaks CUDA graph capture.  The kernel guards each
     # speculative route group using num_valid_ids[0].
     split_k = _ceil_div(inter_dim, GROUP_DIM)
-    split_k_ctas = _ceil_div(split_k, SPLIT_K_PER_CTA)
-    use_split_pair = True
+    split_k_ctas = split_k
+    use_split_pair = False
     route_groups = max(1, sorted_expert_ids.numel())
     persistent_route_step = 0
     if num_persistent_tgs > 0:

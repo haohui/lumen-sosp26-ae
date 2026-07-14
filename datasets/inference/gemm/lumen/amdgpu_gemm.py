@@ -244,8 +244,8 @@ def _make_batch2_kernel(config: GemmConfig):
             for tile_n in al.range(N_TILES_PER_WARP):
                 frag_a = al.view(data_a[tile_m], al.Tensor((2, 2, 1), al.u32))
                 frag_b = al.view(data_b[tile_n], al.Tensor((2, 2, 1), al.u32))
-                acc[tile_m, tile_n] = al.amdgpu.mfma_16x16x16_bf16_f32(frag_a[0], frag_b[0], acc[tile_m, tile_n])
-                acc[tile_m, tile_n] = al.amdgpu.mfma_16x16x16_bf16_f32(frag_a[1], frag_b[1], acc[tile_m, tile_n])
+                acc[tile_m, tile_n] = al.amdgpu.mfma_16x16x16_bf16_f32_tied(frag_a[0], frag_b[0], acc[tile_m, tile_n])
+                acc[tile_m, tile_n] = al.amdgpu.mfma_16x16x16_bf16_f32_tied(frag_a[1], frag_b[1], acc[tile_m, tile_n])
 
     @avelang.jit
     def _hot_loop_scheduler():
@@ -666,7 +666,7 @@ def _make_batch4_kernel(config: GemmConfig):
     ):
         for tile_m in al.range(M_TILES_PER_WARP):
             for tile_n in al.range(N_TILES_PER_WARP):
-                acc[tile_m, tile_n] = al.amdgpu.mfma_16x16x16_bf16_f32(
+                acc[tile_m, tile_n] = al.amdgpu.mfma_16x16x16_bf16_f32_tied(
                     data_a[tile_m],
                     data_b[tile_n],
                     acc[tile_m, tile_n],

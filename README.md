@@ -89,12 +89,12 @@ installed and configured before running the harness. For example, run the
 complete GEMM sequence from the repository root:
 
 ```bash
-PYTHONPATH=python python -m lumen.tools.cli.lumen_optimize gemm --gpu-id 0
+PYTHONPATH=python python scripts/table2/optimizer.py gemm --gpu-id 0
 ```
 
-Use `attn` or `moe` instead of `gemm` for the other workloads. See the
-[Lumen optimization guide](python/lumen/harness/datasets/lumen/README.md) for
-complete usage and resume instructions.
+Use `attn` or `moe` instead of `gemm` for the other workloads. Run
+`PYTHONPATH=python python scripts/table2/optimizer.py --help` for additional
+options, including how to resume a run.
 
 ## Traces
 

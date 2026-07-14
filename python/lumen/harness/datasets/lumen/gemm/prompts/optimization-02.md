@@ -127,7 +127,7 @@ K words = batch_id * 8 + (wtid // 16) * 2
 ```
 
 Read one `(2, al.u32)` operand for each M/N tile and issue one
-`mfma_16x16x16_bf16_f32` per batch. Pass A first and B second.
+`mfma_16x16x16_bf16_f32_tied` per batch. Pass A first and B second.
 
 Allocate `data_a` as `(M_TILES_PER_WARP, 2), al.u32` and `data_b` as
 `(N_TILES_PER_WARP, 2), al.u32`. After filling the two words, form the MFMA
@@ -136,7 +136,7 @@ operand exactly as:
 ```python
 frag_a = al.view(data_a[m_tile], al.Tensor((1, 2, 1), al.u32))
 frag_b = al.view(data_b[n_tile], al.Tensor((1, 2, 1), al.u32))
-acc[m_tile, n_tile] = al.amdgpu.mfma_16x16x16_bf16_f32(
+acc[m_tile, n_tile] = al.amdgpu.mfma_16x16x16_bf16_f32_tied(
     frag_a[0], frag_b[0], acc[m_tile, n_tile]
 )
 ```

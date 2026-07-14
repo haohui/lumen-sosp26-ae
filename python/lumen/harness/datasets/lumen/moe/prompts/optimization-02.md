@@ -2,10 +2,11 @@
 
 Optimize the existing AveLang fused FP8 MoE kernel by software-pipelining only
 the first GEMM stage (the fused gate/up projection). The input implementation
-serializes each 128-wide activation tile: it stages one activation/scale tile
-in LDS, waits, loads it into registers, then separately loads and computes W1
-and W3. Replace that loop with a two-stage ping-pong pipeline that overlaps
-activation staging and weight loads with the MFMA work for the current tile.
+serializes each `GROUP_DIM`-wide activation tile: it stages one activation and
+scale tile in LDS, waits, loads it into registers, then separately loads and
+computes W1 and W3. Replace that loop with a two-stage ping-pong pipeline that
+overlaps activation staging and weight loads with the MFMA work for the current
+tile.
 
 ## Required transformation
 
@@ -19,22 +20,8 @@ activation staging and weight loads with the MFMA work for the current tile.
   `x1`/`scale_x1`) and two corresponding register fragments. Move these views
   into `_stage1`; the outer kernel should pass the shared allocation rather
   than a single fixed activation view.
-- Prologue: asynchronously stage activation tile 0 and its scales into stage
-  0, load the first W1 register tiles and W1 scale, wait for the LDS loads,
-  synchronize, and fetch stage 0 into the first activation registers.
-- Process two 128-wide activation tiles per outer iteration. While computing
-  the first tile from the stage-0 registers:
-  - issue the activation and scale loads for the second tile into LDS stage 1;
-  - load W3 for the first tile, run the W1 MFMA helpers, then prefetch W1 for
-    the second tile before running the W3 MFMA helpers;
-  - advance W1/W3 value and scale offsets incrementally rather than recomputing
-    them from the loop index.
-- After the stage-1 LDS loads complete, synchronize and fetch them into the
-  second activation registers. While computing those registers, stage the next
-  outer iteration's activation tile into LDS stage 0 and interleave the W3/W1
-  loads and MFMA calls in the same manner.
-- Preserve the early exit for a missing second tile. Use waits and workgroup
-  barriers so an LDS stage is never overwritten while it is still being read.
+- Advance W1/W3 value and scale offsets incrementally rather than recomputing
+  them from the loop index.
 - After issuing asynchronous activation and activation-scale loads for an LDS
   stage, use `S.amdgpu.s_waitcnt(0, -1, -1)` before the workgroup barrier and
   before reading that stage into registers. Do not use a partial wait such as
@@ -43,10 +30,49 @@ activation staging and weight loads with the MFMA work for the current tile.
 - Reuse the existing `_matmul_stage0` and `_matmul_stage1` helpers for both W1
   and W3. Do not inline or change their MFMA math in this round.
 
-The intended steady-state ordering is therefore: prefetch activation, prefetch
-weights, compute W1, prefetch the following W1 tile, compute W3, switch the LDS
-stage, and repeat. The generated IR must expose this ordering; merely allocating
-two buffers while retaining the old serialized loop is not sufficient.
+## Required compiler-visible schedule
+
+Use this loop shape and ordering. It is important for register allocation:
+
+```python
+# Prologue: fill LDS stage 0; load W1 tile 0; advance W1 offsets;
+# fully wait, synchronize, and read stage 0 into x0 registers.
+
+stage1_iters = (dim + 2 * GROUP_DIM - 1) // (2 * GROUP_DIM)
+for iter_idx in S.range(stage1_iters):
+    d = iter_idx * (2 * GROUP_DIM)
+    S.syncthreads()
+
+    # Fill LDS stage 1 for d + GROUP_DIM.
+    # Load W3 for x0 and advance W3 offsets.
+    # Compute W1 from x0.
+    S.amdgpu.s_waitcnt(0, -1, -1)
+    # Load the next W1 tile and advance W1 offsets.
+    # Compute W3 from x0.
+    if d + GROUP_DIM >= dim:
+        break
+
+    # Fully wait, synchronize, and read stage 1 into x1 registers.
+    # Fill LDS stage 0 for d + 2 * GROUP_DIM.
+    # Load W3 for x1 and advance W3 offsets.
+    # Compute W1 from x1.
+    S.amdgpu.s_waitcnt(0, -1, -1)
+    # Load the next W1 tile and advance W1 offsets.
+    # Compute W3 from x1.
+    # Fully wait, synchronize, and read stage 0 into x0 registers.
+```
+
+Do not replace this with an outer `if num_tiles != 0`, a
+`S.range((num_tiles + 1) // 2)` loop, a separate odd-tile epilogue, or returns
+inside `_stage1`. Keep independent `x0` and `x1` register fragments. The full
+wait immediately after each W1 computation is intentional: it limits live
+ranges before loading the following W1 tile.
+
+The generated IR must expose this ordering; merely allocating two buffers while
+retaining the old serialized loop is not sufficient. A correct implementation
+of this schedule should compile without scratch spills. If an attempt reaches
+about 512 VGPRs and spills, revise it to match the skeleton above instead of
+accepting it or restoring the input kernel.
 
 ## Correctness invariants
 

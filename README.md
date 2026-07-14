@@ -14,7 +14,7 @@ source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-You will need to install substrate to evaluate the performance of the DSL kernels.
+You will need to install avelang to evaluate the performance of the DSL kernels.
 
 For formatting and linting:
 

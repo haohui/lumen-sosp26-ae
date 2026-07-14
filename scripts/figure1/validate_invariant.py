@@ -6,6 +6,12 @@ import os
 from pathlib import Path
 
 os.environ["AVELANG_VALIDATE_INVARIANTS"] = "1"
+os.environ["HACK_SINGLE_WAVE_PER_EU"] = "1"
+try:
+    from avelang import knobs as avelang_knobs
+    avelang_knobs.amdgpu.hack_single_wave_per_eu = True
+except Exception:
+    pass
 
 import torch  # noqa: E402
 

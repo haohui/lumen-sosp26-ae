@@ -254,7 +254,6 @@ def _make_batch2_kernel(config: GemmConfig):
             for _ in al.range(8):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_READ, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 2, 0)
-            al.amdgpu.sched_group_barrier(0x0800, 1, 0)
             al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
             for _ in al.range(2):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_WRITE, 1, 0)
@@ -285,7 +284,6 @@ def _make_batch2_kernel(config: GemmConfig):
             al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
             al.amdgpu.sched_group_barrier(SCHED_MASK_BUFFER_LOAD, 1, 0)
             al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 3, 0)
-            al.amdgpu.sched_group_barrier(0x0800, 1, 0)
             for _ in al.range(8):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_READ, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 2, 0)
@@ -294,7 +292,6 @@ def _make_batch2_kernel(config: GemmConfig):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_READ, 1, 0)
             al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 8, 0)
-            al.amdgpu.sched_group_barrier(0x0800, 1, 0)
             al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
             for _ in al.range(30):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_WRITE, 1, 0)
@@ -305,7 +302,6 @@ def _make_batch2_kernel(config: GemmConfig):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_BUFFER_LOAD, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 2, 0)
-            al.amdgpu.sched_group_barrier(0x0800, 1, 0)
             for _ in al.range(15):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_READ, 1, 0)
@@ -691,7 +687,6 @@ def _make_batch4_kernel(config: GemmConfig):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_READ, 1, 0)
             al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 8, 0)
-            al.amdgpu.sched_group_barrier(0x0800, 1, 0)
             al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
             for _ in al.range(30):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_WRITE, 1, 0)
@@ -702,7 +697,6 @@ def _make_batch4_kernel(config: GemmConfig):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_BUFFER_LOAD, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 2, 0)
-            al.amdgpu.sched_group_barrier(0x0800, 1, 0)
             for _ in al.range(15):
                 al.amdgpu.sched_group_barrier(SCHED_MASK_MFMA, 1, 0)
                 al.amdgpu.sched_group_barrier(SCHED_MASK_DS_READ, 1, 0)

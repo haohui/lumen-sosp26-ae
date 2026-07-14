@@ -22,12 +22,12 @@ from backends import load_module  # noqa: E402
 
 
 def _enable_attn_opt() -> None:
+    os.environ["HACK_SINGLE_WAVE_PER_EU"] = "1"
     try:
         from avelang import knobs as avelang_knobs
-
         avelang_knobs.amdgpu.hack_single_wave_per_eu = True
     except Exception:
-        os.environ["HACK_SINGLE_WAVE_PER_EU"] = "1"
+        pass
 
 
 ABLATIONS = [

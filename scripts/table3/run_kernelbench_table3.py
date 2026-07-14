@@ -46,7 +46,12 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--codex-home",
         type=Path,
-        default=Path(os.environ.get("CODEX_HOME", "/root/.codex-moonbridge")),
+        default=codex_home_default(),
+        help=(
+            "Codex home to use for LLM calls. Defaults to CODEX_HOME when set; "
+            "otherwise leaves CODEX_HOME unchanged so the Codex CLI uses its "
+            "own default configuration."
+        ),
     )
     parser.add_argument(
         "--candidate-root",
@@ -86,18 +91,18 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 class Runner:
     def __init__(
-        self,
-        *,
-        python_bin: str,
-        codex_home: Path,
-        candidate_root: Path | None,
-        candidate_archive: Path,
-    ) -> None:
-        self.python_bin = python_bin
-        self.codex_home = codex_home.expanduser()
-        self.candidate_root = candidate_root.expanduser() if candidate_root else None
-        self.candidate_archive = candidate_archive.expanduser()
-        self.log_dir = TRACE_ROOT / "logs"
+          self,
+          *,
+          python_bin: str,
+          codex_home: Path | None,
+          candidate_root: Path | None,
+          candidate_archive: Path,
+      ) -> None:
+          self.python_bin = python_bin
+          self.codex_home = codex_home.expanduser() if codex_home is not None else None
+          self.candidate_root = candidate_root.expanduser() if candidate_root else None
+          self.candidate_archive = candidate_archive.expanduser()
+          self.log_dir = TRACE_ROOT / "logs"
 
     def generation(self, level: str, mode: str) -> None:
         suffix = generation_suffix(mode)
@@ -169,7 +174,8 @@ class Runner:
     def run(self, cmd: list[str], log: Path, *, title: str) -> None:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
-        env["CODEX_HOME"] = str(self.codex_home)
+        if self.codex_home is not None:
+            env["CODEX_HOME"] = str(self.codex_home)
         env["PYTHONPATH"] = prepend_path(
             str(REPO_ROOT / "python"),
             env.get("PYTHONPATH"),
@@ -227,6 +233,11 @@ def generation_suffix(mode: str) -> str:
 
 def optimization_suffix(profile: str) -> str:
     return {"invariants": "invariants", "no-invariants": "no_invariants"}[profile]
+
+
+def codex_home_default() -> Path | None:
+    value = os.environ.get("CODEX_HOME")
+    return Path(value) if value else None
 
 
 def candidate_root_default() -> Path | None:

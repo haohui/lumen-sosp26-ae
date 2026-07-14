@@ -2,6 +2,12 @@ diff --git a/src/kernelbench/utils.py b/src/kernelbench/utils.py
 index d2d1b17..c372c27 100644
 --- a/src/kernelbench/utils.py
 +++ b/src/kernelbench/utils.py
+@@ -5,4 +5,5 @@
+ import multiprocessing
++import torch
+ from dotenv import load_dotenv
+ load_dotenv()  # Load variables from .env early so query_server can see them
+ import subprocess
 @@ -322,10 +322,17 @@ def get_package_resource_path(relative_path: str) -> str:
        - Running from repo directly
        - As a git submodule

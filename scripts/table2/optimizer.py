@@ -38,11 +38,11 @@ examples:
   PYTHONPATH=python python scripts/table2/optimizer.py gemm --gpu-id 0
 
   # Create the first attention-round workspace without invoking Codex.
-  PYTHONPATH=python python scripts/table2/optimizer.py attn --prepare-only \
+  PYTHONPATH=python python scripts/table2/optimizer.py attn --prepare-only \\
       --gpu-id 0
 
   # Resume an interrupted MoE run from its latest passed round.
-  PYTHONPATH=python python scripts/table2/optimizer.py moe --resume-run \
+  PYTHONPATH=python python scripts/table2/optimizer.py moe --resume-run \\
       runs/lumen_moe_codex_YYYYMMDD_HHMMSS_ffffff --gpu-id 0
 
 The built-in prompt sequences are used by default. Use --kernel to provide a

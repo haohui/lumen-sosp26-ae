@@ -38,11 +38,11 @@ examples:
   PYTHONPATH=python python scripts/table2/optimizer.py gemm --gpu-id 0
 
   # Create the first attention-round workspace without invoking Codex.
-  PYTHONPATH=python python scripts/table2/optimizer.py attn --prepare-only \\
+  PYTHONPATH=python python scripts/table2/optimizer.py attn --prepare-only \
       --gpu-id 0
 
   # Resume an interrupted MoE run from its latest passed round.
-  PYTHONPATH=python python scripts/table2/optimizer.py moe --resume-run \\
+  PYTHONPATH=python python scripts/table2/optimizer.py moe --resume-run \
       runs/lumen_moe_codex_YYYYMMDD_HHMMSS_ffffff --gpu-id 0
 
 The built-in prompt sequences are used by default. Use --kernel to provide a
@@ -87,6 +87,15 @@ different starting kernel, or repeat --prompt-file to run a custom sequence.""",
     parser.add_argument("--model-provider", default=None)
     parser.add_argument("--reasoning-effort", default=None)
     parser.add_argument("--timeout-seconds", type=float, default=3600)
+    parser.add_argument(
+        "--validation-attempts",
+        type=_positive_int,
+        default=1,
+        help=(
+            "Run formal validation up to K times for each generated kernel; "
+            "the round passes if any attempt passes."
+        ),
+    )
     parser.add_argument(
         "--config",
         action="append",
@@ -136,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         model_provider=args.model_provider,
         reasoning_effort=args.reasoning_effort,
         timeout_seconds=args.timeout_seconds,
+        validation_attempts=args.validation_attempts,
         config_overrides=tuple(args.config_overrides),
     )
     if args.prepare_only:
@@ -167,6 +177,13 @@ def _non_negative_int(value: str) -> int:
     parsed = int(value)
     if parsed < 0:
         raise argparse.ArgumentTypeError("must be non-negative")
+    return parsed
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be positive")
     return parsed
 
 

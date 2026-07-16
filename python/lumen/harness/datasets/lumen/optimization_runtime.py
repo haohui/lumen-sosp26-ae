@@ -46,6 +46,7 @@ class OptimizationConfig:
     model_provider: str | None = None
     reasoning_effort: str | None = None
     timeout_seconds: float | None = 3600
+    validation_attempts: int = 1
     config_overrides: tuple[str, ...] = ()
     bypass_approvals_and_sandbox: bool = True
 
@@ -67,7 +68,13 @@ def prepare_optimization(
     repo_root = config.repo_root.expanduser().resolve()
     kernel = _require_kernel(config, spec)
     prompt = prompt_file.expanduser().resolve()
-    _validate_inputs(repo_root, kernel, (prompt,), config.gpu_id)
+    _validate_inputs(
+        repo_root,
+        kernel,
+        (prompt,),
+        config.gpu_id,
+        config.validation_attempts,
+    )
 
     run_dir = _resolve_run_dir(repo_root, config.run_dir, spec.run_slug)
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -92,7 +99,13 @@ def run_optimization_sequence(
     prompts = tuple(path.expanduser().resolve() for path in prompt_files)
     if not prompts:
         raise ValueError("at least one prompt file is required")
-    _validate_inputs(repo_root, kernel, prompts, config.gpu_id)
+    _validate_inputs(
+        repo_root,
+        kernel,
+        prompts,
+        config.gpu_id,
+        config.validation_attempts,
+    )
 
     run_dir = _resolve_run_dir(repo_root, config.run_dir, spec.run_slug)
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -126,7 +139,13 @@ def resume_optimization_sequence(
             f"{resolved_run_dir}"
         )
 
-    _validate_inputs(repo_root, round_kernel, prompts, config.gpu_id)
+    _validate_inputs(
+        repo_root,
+        round_kernel,
+        prompts,
+        config.gpu_id,
+        config.validation_attempts,
+    )
     resumed_config = replace(config, kernel=round_kernel, run_dir=resolved_run_dir)
     reset_run_tail(resolved_run_dir, start_index)
     append_run_prompts(resolved_run_dir, prompts, start_index=start_index)
@@ -181,6 +200,7 @@ def _prepare_round(
         adapter_path=adapter_path,
         gpu_id=config.gpu_id,
         workloads=spec.workloads,
+        validation_attempts=config.validation_attempts,
         codex_config=_codex_provenance(config),
     )
     return OptimizationWorkspace(
@@ -267,12 +287,13 @@ def _run_workspace(
         / "benchmark"
         / spec.benchmark_script
     )
-    evaluation = evaluate_candidate(
+    evaluation = evaluate_candidate_pass_at_k(
         workspace.round_dir,
         domain=spec.domain,
         gpu_id=config.gpu_id,
         workloads=spec.workloads,
         workload_key=spec.workload_key,
+        attempts=config.validation_attempts,
         benchmark_args=(
             str(benchmark),
             "--backend",
@@ -317,6 +338,7 @@ def write_round_config(
     adapter_path: Path,
     gpu_id: int | None,
     workloads: tuple[int, ...],
+    validation_attempts: int,
     codex_config: dict[str, Any],
 ) -> None:
     payload = {
@@ -333,6 +355,7 @@ def write_round_config(
         "adapter_sha256": sha256_file(adapter_path),
         "gpu_id": gpu_id,
         "workloads": list(workloads),
+        "validation_attempts": validation_attempts,
         "codex": codex_config,
     }
     _write_json(round_dir / "run_config.json", payload)
@@ -400,6 +423,9 @@ def evaluate_candidate(
     workload_key: str,
     benchmark_args: tuple[str, ...],
     timeout_seconds: float = 900,
+    output_path: Path | None = None,
+    attempt_index: int | None = None,
+    attempt_count: int | None = None,
 ) -> dict[str, Any]:
     started_at = _utc_now()
     command = [sys.executable, *benchmark_args]
@@ -419,6 +445,10 @@ def evaluate_candidate(
         "correctness": False,
         "ok": False,
     }
+    if attempt_index is not None:
+        payload["attempt_index"] = attempt_index
+    if attempt_count is not None:
+        payload["attempt_count"] = attempt_count
     env = os.environ.copy()
     env["IS_SANDBOX"] = "1"
     if gpu_id is not None:
@@ -466,8 +496,96 @@ def evaluate_candidate(
         payload["error"] = f"Failed to run formal evaluation: {exc}"
 
     payload["finished_at_utc"] = _utc_now()
-    _write_json(round_dir / "eval_result.json", payload)
+    _write_json(output_path or round_dir / "eval_result.json", payload)
     return payload
+
+
+def evaluate_candidate_pass_at_k(
+    round_dir: Path,
+    *,
+    domain: str,
+    gpu_id: int | None,
+    workloads: tuple[int, ...],
+    workload_key: str,
+    benchmark_args: tuple[str, ...],
+    attempts: int,
+    timeout_seconds: float = 900,
+) -> dict[str, Any]:
+    if attempts < 1:
+        raise ValueError(f"validation attempts must be positive (got {attempts})")
+
+    if attempts == 1:
+        result = evaluate_candidate(
+            round_dir,
+            domain=domain,
+            gpu_id=gpu_id,
+            workloads=workloads,
+            workload_key=workload_key,
+            benchmark_args=benchmark_args,
+            timeout_seconds=timeout_seconds,
+            attempt_index=1,
+            attempt_count=1,
+        )
+        result["pass_at_k"] = {
+            "k": attempts,
+            "attempts_run": 1,
+            "passed_attempt": 1 if result["ok"] else None,
+        }
+        result["attempts"] = [
+            _evaluation_attempt_summary(result, round_dir / "eval_result.json")
+        ]
+        _write_json(round_dir / "eval_result.json", result)
+        return result
+
+    passed: dict[str, Any] | None = None
+    last_result: dict[str, Any] | None = None
+    summaries: list[dict[str, Any]] = []
+    for attempt_index in range(1, attempts + 1):
+        output_path = round_dir / f"eval_attempt_{attempt_index:03d}.json"
+        result = evaluate_candidate(
+            round_dir,
+            domain=domain,
+            gpu_id=gpu_id,
+            workloads=workloads,
+            workload_key=workload_key,
+            benchmark_args=benchmark_args,
+            timeout_seconds=timeout_seconds,
+            output_path=output_path,
+            attempt_index=attempt_index,
+            attempt_count=attempts,
+        )
+        summaries.append(_evaluation_attempt_summary(result, output_path))
+        last_result = result
+        if result["ok"]:
+            passed = result
+            break
+
+    aggregate = dict(passed or last_result or {})
+    aggregate["ok"] = passed is not None
+    aggregate["pass_at_k"] = {
+        "k": attempts,
+        "attempts_run": len(summaries),
+        "passed_attempt": passed.get("attempt_index") if passed else None,
+    }
+    aggregate["attempts"] = summaries
+    _write_json(round_dir / "eval_result.json", aggregate)
+    return aggregate
+
+
+def _evaluation_attempt_summary(
+    result: dict[str, Any],
+    path: Path,
+) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "attempt_index": result.get("attempt_index"),
+        "ok": result.get("ok") is True,
+        "correctness": result.get("correctness") is True,
+        "exit_code": result.get("exit_code"),
+        "error": result.get("error"),
+        "started_at_utc": result.get("started_at_utc"),
+        "finished_at_utc": result.get("finished_at_utc"),
+    }
 
 
 def evaluation_error(payload: dict[str, Any]) -> str:
@@ -559,6 +677,7 @@ def _validate_inputs(
     kernel: Path,
     prompt_files: Sequence[Path],
     gpu_id: int | None,
+    validation_attempts: int,
 ) -> None:
     if not (repo_root / "pyproject.toml").is_file():
         raise ValueError(f"not a repository root: {repo_root}")
@@ -574,6 +693,10 @@ def _validate_inputs(
             raise ValueError(f"prompt file is empty: {prompt_file}")
     if gpu_id is not None and gpu_id < 0:
         raise ValueError(f"gpu_id must be non-negative (got {gpu_id})")
+    if validation_attempts < 1:
+        raise ValueError(
+            f"validation_attempts must be positive (got {validation_attempts})"
+        )
 
 
 def _require_kernel(config: OptimizationConfig, spec: OptimizationSpec) -> Path:
@@ -614,6 +737,7 @@ def _write_run_config(
             "round_count": len(prompts),
             "gpu_id": config.gpu_id,
             "workloads": list(spec.workloads),
+            "validation_attempts": config.validation_attempts,
         },
     )
 
@@ -663,6 +787,7 @@ def _codex_provenance(config: OptimizationConfig) -> dict[str, object]:
         "model_provider": config.model_provider,
         "reasoning_effort": config.reasoning_effort,
         "timeout_seconds": config.timeout_seconds,
+        "validation_attempts": config.validation_attempts,
         "config_overrides": list(config.config_overrides),
         "bypass_approvals_and_sandbox": config.bypass_approvals_and_sandbox,
     }

@@ -61,6 +61,31 @@ under `datasets/`.
 
 The repository provides a number of scripts under the `scripts/` directory to reproduce the evaluation results in the paper:
 
+Use the unified entry point from the repository root to run the complete suite:
+
+```bash
+python run_experiments.py all
+```
+
+It activates the shared Python package path, configures the generation API and
+Codex provider, runs the existing reproduction scripts, and stores outputs and
+logs under `runs/artifact_experiments_<timestamp>/`. The generation endpoint,
+key, and model default to the artifact evaluation service; override them with
+`LUMEN_GENERATION_API_URL`, `LUMEN_GENERATION_API_KEY`, and
+`LUMEN_GENERATION_MODEL` when needed.
+
+Groups and individual experiments can be selected without editing scripts:
+
+```bash
+python run_experiments.py --list
+python run_experiments.py generation
+python run_experiments.py table2-benchmark figure2
+python run_experiments.py all --dry-run
+```
+
+Use `python run_experiments.py api-check` for a bounded generation API
+check. It requests only a short `LUMEN_OK` response and exits immediately.
+
 - `figure1/validate_invariant.py` validates the data flow invariants described in Figure 1.
 - `table2/benchmark.py` reproduces the benchmark results of Table 2.
 - `table2/agent_generate.py` regenerates the GPU kernels with KernelFalcon, KSearch, KernelBench, CUDAForge. 

@@ -29,6 +29,6 @@ MOE_DEFAULTS = {
 
 TIMER_DEFAULTS = {
     "warmup": 10,
-    "repeat": 100,
-    "graph_iters": 1,
+    "repeat": 10,
+    "graph_iters": 10,
 }

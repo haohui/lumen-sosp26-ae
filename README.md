@@ -102,6 +102,19 @@ experiments additionally require network access to the configured LLM endpoint;
 KernelBench runs also download the `ScalingIntelligence/KernelBench` dataset
 from Hugging Face when it is not cached.
 
+Validate an environment independently with:
+
+```bash
+python scripts/validate_environment.py --require-codex --require-api --require-hf
+```
+
+The validator checks GPU availability, ROCm, Python/build dependencies, Codex,
+the configured generation API, Hugging Face access, and free disk space, then
+prints a configuration summary. `run_experiments.py` calls it automatically
+before running experiments and makes checks fatal only when the selected
+experiments require that resource. Use `--help` to adjust the expected GPU
+count, output path, or minimum free space.
+
 ## Repository-to-Paper Map
 
 | Paper result or topic | Experiment entry point | Main repository components |

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -58,38 +59,73 @@ def evaluate_round(
 
     env = os.environ.copy()
     env["HIP_VISIBLE_DEVICES"] = str(gpu_id)
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "lumen.tools.cli.kernelbench_graph_eval",
-            "--mode",
-            "generated",
-            "--original",
-            str(path / "input_model.py"),
-            "--generated",
-            str(path / "output_model_new.py"),
-            "--eval-config",
-            str(eval_config_path),
-            "--json-output",
-            str(output_path),
-        ],
+    command = [
+        sys.executable,
+        "-m",
+        "lumen.tools.cli.kernelbench_graph_eval",
+        "--mode",
+        "generated",
+        "--original",
+        str(path / "input_model.py"),
+        "--generated",
+        str(path / "output_model_new.py"),
+        "--eval-config",
+        str(eval_config_path),
+        "--json-output",
+        str(output_path),
+    ]
+    process = subprocess.Popen(
+        command,
         cwd=path,
         env=env,
         text=True,
-        capture_output=True,
-        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=os.name == "posix",
     )
-    if completed.stdout:
-        LOGGER.info("%s", completed.stdout.rstrip())
-    if completed.stderr:
-        LOGGER.info("%s", completed.stderr.rstrip())
+    timed_out = False
+    try:
+        stdout, stderr = process.communicate(timeout=evaluation.timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _terminate_process_tree(process)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(process)
+            stdout, stderr = process.communicate()
+
+    if stdout:
+        LOGGER.info("%s", stdout.rstrip())
+    if stderr:
+        LOGGER.info("%s", stderr.rstrip())
+
+    if timed_out:
+        payload = {
+            "compiled": False,
+            "correctness": False,
+            "eval_exit_code": process.returncode,
+            "metadata": {
+                "error": (
+                    f"KernelBench eval timed out after {evaluation.timeout_seconds}s"
+                ),
+                "stdout": stdout,
+                "stderr": stderr,
+            },
+        }
+        output_path.write_text(
+            json.dumps(payload, indent=2, default=str) + "\n",
+            encoding="utf-8",
+        )
+        return payload
+
+    completed_returncode = process.returncode
 
     error = "KernelBench eval subprocess failed before writing output"
     if output_path.is_file():
         try:
             payload = json.loads(output_path.read_text(encoding="utf-8"))
-            payload.setdefault("eval_exit_code", completed.returncode)
+            payload.setdefault("eval_exit_code", completed_returncode)
             output_path.write_text(
                 json.dumps(payload, indent=2, default=str) + "\n",
                 encoding="utf-8",
@@ -102,11 +138,11 @@ def evaluate_round(
     payload = {
         "compiled": False,
         "correctness": False,
-        "eval_exit_code": completed.returncode,
+        "eval_exit_code": completed_returncode,
         "metadata": {
             "error": error,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
+            "stdout": stdout,
+            "stderr": stderr,
         },
     }
     output_path.write_text(
@@ -114,6 +150,26 @@ def evaluate_round(
         encoding="utf-8",
     )
     return payload
+
+
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    elif process.poll() is None:
+        process.terminate()
+
+
+def _kill_process_tree(process: subprocess.Popen[str]) -> None:
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    else:
+        process.kill()
 
 
 def run_eval_phase(

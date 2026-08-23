@@ -185,10 +185,10 @@ class Runner:
                 "LUMEN_GENERATION_API_URL": args.api_url.rstrip("/"),
                 "LUMEN_GENERATION_API_KEY": args.api_key,
                 "LUMEN_GENERATION_MODEL": args.model,
-                "KERNELBENCH_ROOT": str(REPO_ROOT / "third_party" / "KernelBench"),
-                "CUDAFORGE_ROOT": str(REPO_ROOT / "third_party" / "CUDAForge"),
-                "KERNELFALCON_ROOT": str(REPO_ROOT / "third_party" / "KernelFalcon"),
-                "KSEARCH_ROOT": str(REPO_ROOT / "third_party" / "KSearch"),
+                "KERNELBENCH_ROOT": str(REPO_ROOT / "third_party" / "KernelBench" / "KernelBench"),
+                "CUDAFORGE_ROOT": str(REPO_ROOT / "third_party" / "CUDAForge" / "CudaForge"),
+                "KERNELFALCON_ROOT": str(REPO_ROOT / "third_party" / "KernelFalcon" / "KernelAgent"),
+                "KSEARCH_ROOT": str(REPO_ROOT / "third_party" / "KSearch" / "K-Search"),
             }
         )
         self.env["PYTHONPATH"] = prepend_path(

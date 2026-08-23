@@ -19,6 +19,9 @@ from kb_table.archive import (
 from kb_table.config import DEFAULT_RUN_DIRS, REPO_ROOT
 from kb_table.models import GenerationStats, OptimizationStats
 
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from experiment_summary import ExperimentSummary  # noqa: E402
+
 DEFAULT_GENERATION_ARCHIVE = (
     REPO_ROOT / "data" / "traces" / "kernelbench_generation_dsv4-07-13-2026.tar.xz"
 )
@@ -29,12 +32,19 @@ DEFAULT_OPTIMIZATION_ARCHIVE = (
 
 def main() -> None:
     args = parse_args()
-    archive_runs = ArchiveRuns.from_archives(
-        [args.generation_archive, args.optimization_archive],
-        run_names(args),
-    )
-    rows = build_rows(args, archive_runs)
-    write_rows(rows, args)
+    with ExperimentSummary(
+        "table3-summary",
+        "compare the emitted CSV/JSON rows with Table 3",
+    ) as summary:
+        summary.add_result(args.output or "stdout")
+        summary.add_result(args.generation_archive)
+        summary.add_result(args.optimization_archive)
+        archive_runs = ArchiveRuns.from_archives(
+            [args.generation_archive, args.optimization_archive],
+            run_names(args),
+        )
+        rows = build_rows(args, archive_runs)
+        write_rows(rows, args)
 
 
 def build_rows(args: argparse.Namespace, archive_runs: ArchiveRuns) -> list[dict[str, Any]]:

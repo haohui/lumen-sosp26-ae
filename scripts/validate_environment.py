@@ -20,6 +20,12 @@ DEFAULT_API_URL = "http://47.79.17.216:8080/v1"
 DEFAULT_API_KEY = "lumen-ae"
 DEFAULT_MODEL = "deepseek-v4-flash"
 HF_DATASET_URL = "https://huggingface.co/api/datasets/ScalingIntelligence/KernelBench"
+AGENT_FRAMEWORKS = {
+    "KernelBench": REPO_ROOT.parent / "third_party/KernelBench/KernelBench",
+    "CUDAForge": REPO_ROOT.parent / "third_party/CUDAForge/CudaForge",
+    "KernelFalcon": REPO_ROOT.parent / "third_party/KernelFalcon/KernelAgent",
+    "K-Search": REPO_ROOT.parent / "third_party/KSearch/K-Search",
+}
 PYTHON_DEPENDENCIES = (
     "aiter",
     "avelang",
@@ -64,6 +70,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--require-codex", action="store_true")
     parser.add_argument("--require-api", action="store_true")
     parser.add_argument("--require-hf", action="store_true")
+    parser.add_argument("--require-agent-frameworks", action="store_true")
     parser.add_argument(
         "--skip-network",
         action="store_true",
@@ -157,6 +164,28 @@ def check_dependencies() -> Check:
     if missing_commands:
         parts.append("missing commands: " + ", ".join(missing_commands))
     return Check("Dependencies", False, "; ".join(parts))
+
+
+def check_agent_frameworks(required: bool, model: str) -> Check:
+    missing = [name for name, path in AGENT_FRAMEWORKS.items() if not path.is_dir()]
+    registry = AGENT_FRAMEWORKS["KernelFalcon"] / "utils/providers/available_models.py"
+    model_registered = False
+    if registry.is_file():
+        registry_text = registry.read_text(encoding="utf-8")
+        model_registered = f'name="{model}"' in registry_text
+    if not missing and model_registered:
+        return Check(
+            "Agent frameworks",
+            True,
+            f"{', '.join(AGENT_FRAMEWORKS)}; KernelFalcon model={model}",
+            required=required,
+        )
+    problems = []
+    if missing:
+        problems.append("missing prepared checkouts: " + ", ".join(missing))
+    if not model_registered:
+        problems.append(f"KernelFalcon does not register model {model!r}")
+    return Check("Agent frameworks", False, "; ".join(problems), required=required)
 
 
 def check_codex(required: bool) -> tuple[Check, str]:
@@ -267,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         gpu,
         rocm,
         check_dependencies(),
+        check_agent_frameworks(args.require_agent_frameworks, args.model),
         codex,
         check_api(args),
         check_hugging_face(args),

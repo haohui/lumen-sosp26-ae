@@ -20,6 +20,9 @@ if str(BENCHMARK_DIR) not in sys.path:
 
 from backends import load_module  # noqa: E402
 
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from experiment_summary import ExperimentSummary  # noqa: E402
+
 ROCM_PATH = Path("/opt/rocm")
 
 
@@ -171,61 +174,66 @@ def benchmark(
 def main() -> None:
     _enable_attn_opt()
     args = parse_args()
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for the attention ablation benchmark.")
-    if any(seq_len <= 0 for seq_len in args.seq_lens):
-        raise ValueError("sequence lengths must be positive")
-
     output_path = args.output.resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    lumen_dir = REPO_ROOT / "datasets" / "inference" / "attention" / "lumen"
-    inputs = {
-        seq_len: build_inputs(seq_len, args.seed) for seq_len in args.seq_lens
-    }
+    with ExperimentSummary(
+        "figure2",
+        "compare the CSV throughput series with Figure 2",
+    ) as summary:
+        summary.add_result(output_path)
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is required for the attention ablation benchmark.")
+        if any(seq_len <= 0 for seq_len in args.seq_lens):
+            raise ValueError("sequence lengths must be positive")
 
-    with output_path.open("w", newline="", encoding="utf-8") as output_file:
-        writer = csv.DictWriter(
-            output_file,
-            fieldnames=["name", "seq_len", "mean_ms", "tflops"],
-        )
-        writer.writeheader()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        lumen_dir = REPO_ROOT / "datasets" / "inference" / "attention" / "lumen"
+        inputs = {
+            seq_len: build_inputs(seq_len, args.seed) for seq_len in args.seq_lens
+        }
 
-        for name, filename, mirror_q_tiles in ABLATIONS:
-            print(f"\n=== {name}: {filename} ===", flush=True)
-            module = load_module(lumen_dir / filename)
+        with output_path.open("w", newline="", encoding="utf-8") as output_file:
+            writer = csv.DictWriter(
+                output_file,
+                fieldnames=["name", "seq_len", "mean_ms", "tflops"],
+            )
+            writer.writeheader()
 
-            for seq_len in args.seq_lens:
-                q, k, v, seq_ptr = inputs[seq_len]
-                out = torch.empty_like(q)
-                mean_ms = benchmark(
-                    module,
-                    q,
-                    k,
-                    v,
-                    seq_ptr,
-                    out,
-                    seq_len,
-                    mirror_q_tiles,
-                    warmup=args.warmup,
-                    repeat=args.repeat,
-                )
-                tflops = attention_tflops(seq_len, mean_ms)
-                writer.writerow(
-                    {
-                        "name": name,
-                        "seq_len": seq_len,
-                        "mean_ms": f"{mean_ms:.6f}",
-                        "tflops": f"{tflops:.6f}",
-                    }
-                )
-                output_file.flush()
-                print(
-                    f"seq_len={seq_len} mean_ms={mean_ms:.6f} "
-                    f"tflops={tflops:.6f}",
-                    flush=True,
-                )
+            for name, filename, mirror_q_tiles in ABLATIONS:
+                print(f"\n=== {name}: {filename} ===", flush=True)
+                module = load_module(lumen_dir / filename)
 
-    print(f"Results CSV: {output_path}")
+                for seq_len in args.seq_lens:
+                    q, k, v, seq_ptr = inputs[seq_len]
+                    out = torch.empty_like(q)
+                    mean_ms = benchmark(
+                        module,
+                        q,
+                        k,
+                        v,
+                        seq_ptr,
+                        out,
+                        seq_len,
+                        mirror_q_tiles,
+                        warmup=args.warmup,
+                        repeat=args.repeat,
+                    )
+                    tflops = attention_tflops(seq_len, mean_ms)
+                    writer.writerow(
+                        {
+                            "name": name,
+                            "seq_len": seq_len,
+                            "mean_ms": f"{mean_ms:.6f}",
+                            "tflops": f"{tflops:.6f}",
+                        }
+                    )
+                    output_file.flush()
+                    print(
+                        f"seq_len={seq_len} mean_ms={mean_ms:.6f} "
+                        f"tflops={tflops:.6f}",
+                        flush=True,
+                    )
+
+        print(f"Results CSV: {output_path}")
 
 
 if __name__ == "__main__":

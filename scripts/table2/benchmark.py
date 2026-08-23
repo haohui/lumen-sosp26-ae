@@ -14,6 +14,10 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BENCHMARK_DIR = REPO_ROOT / "scripts" / "benchmark"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from experiment_summary import ExperimentSummary  # noqa: E402
+
 WORKLOADS = [1024, 2048, 4096, 8192, 16384]
 BASELINE_COLUMNS = [
     "lumen",
@@ -331,29 +335,70 @@ def render_csv(records: list[dict[str, Any]], *, workloads: list[int]) -> str:
     return buf.getvalue()
 
 
+def missing_benchmark_cells(
+    records: list[dict[str, Any]], workloads: list[int]
+) -> list[str]:
+    observed = {
+        (
+            str(record.get("domain")),
+            record_workload(record),
+            str(record.get("backend")),
+        )
+        for record in records
+    }
+    expected_backends = {
+        "gemm": GEMM_BACKENDS,
+        "attention": ATTENTION_BACKENDS,
+        "moe": MOE_BACKENDS,
+    }
+    return [
+        f"{domain}/{workload}/{backend}"
+        for domain, backends in expected_backends.items()
+        for workload in workloads
+        for backend in backends
+        if (domain, workload, backend) not in observed
+    ]
+
+
 def main() -> int:
     args = parse_args()
     workspace = (
         args.workspace_dir if args.workspace_dir is not None else default_workspace()
     )
-    workspace.mkdir(parents=True, exist_ok=True)
+    exit_code = 0
+    with ExperimentSummary(
+        "table2-benchmark",
+        "compare table2.csv throughput cells with Table 2",
+    ) as summary:
+        for name in ("gemm.jsonl", "attention.jsonl", "moe.jsonl", "table2.csv"):
+            summary.add_result(workspace / name)
+        workspace.mkdir(parents=True, exist_ok=True)
 
-    if not args.skip_run:
-        run_benchmarks(
-            python_bin=args.python,
-            workspace=workspace,
-            workloads=args.workloads,
-            warmup=args.warmup,
-            repeat=args.repeat,
-            graph_iters=args.graph_iters,
-        )
+        if not args.skip_run:
+            run_benchmarks(
+                python_bin=args.python,
+                workspace=workspace,
+                workloads=args.workloads,
+                warmup=args.warmup,
+                repeat=args.repeat,
+                graph_iters=args.graph_iters,
+            )
 
-    table_csv = render_csv(load_records(workspace), workloads=args.workloads)
-    csv_path = workspace / "table2.csv"
-    csv_path.write_text(table_csv, encoding="utf-8")
-    print(f"workspace: {workspace}")
-    print(f"csv: {csv_path}")
-    return 0
+        records = load_records(workspace)
+        table_csv = render_csv(records, workloads=args.workloads)
+        csv_path = workspace / "table2.csv"
+        csv_path.write_text(table_csv, encoding="utf-8")
+        missing = missing_benchmark_cells(records, args.workloads)
+        if missing:
+            examples = ", ".join(missing[:5])
+            suffix = "" if len(missing) <= 5 else ", ..."
+            summary.fail(
+                f"{len(missing)} benchmark cells are missing: {examples}{suffix}"
+            )
+            exit_code = 1
+        print(f"workspace: {workspace}")
+        print(f"csv: {csv_path}")
+    return exit_code
 
 
 if __name__ == "__main__":

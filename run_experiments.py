@@ -14,10 +14,16 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent
+DEPENDENCY_ROOT = (REPO_ROOT.parent / "third_party").resolve()
 DEFAULT_API_URL = "http://47.79.17.216:8080/v1"
 DEFAULT_API_KEY = "lumen-ae"
 DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_DEEPSEEK_MAX_OUTPUT_TOKENS = 65536
 CODEX_PROVIDER = "lumen-generation"
+BLUE = "\033[34m"
+GREEN = "\033[32m"
+RED = "\033[31m"
+RESET = "\033[0m"
 
 EXPERIMENTS = (
     "api-check",
@@ -111,7 +117,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=("all", "gemm", "attention", "moe"),
         default="all",
     )
+    parser.add_argument(
+        "--table2-no-stage",
+        action="store_true",
+        help="Keep generated Table 2 kernels in the run workspace only.",
+    )
     parser.add_argument("--generation-rounds", type=positive_int, default=10)
+    parser.add_argument(
+        "--kernelbench-attempts",
+        type=positive_int,
+        default=2,
+        help="Maximum one-shot API attempts for each Table 2 KernelBench task.",
+    )
+    parser.add_argument(
+        "--generation-api-timeout-seconds",
+        type=positive_float,
+        default=300.0,
+        help="Timeout for each direct Table 2 generation API request.",
+    )
+    parser.add_argument(
+        "--generation-max-output-tokens",
+        type=positive_int,
+        default=None,
+        help=(
+            "Output-token limit for each direct Table 2 KernelBench request. "
+            "By default, the artifact DeepSeek-V4 API uses 65536 and other "
+            "APIs use agent_generate.py's default."
+        ),
+    )
     parser.add_argument("--warmup", type=non_negative_int, default=10)
     parser.add_argument("--benchmark-repeat", type=positive_int, default=100)
     parser.add_argument(
@@ -185,16 +218,23 @@ class Runner:
                 "LUMEN_GENERATION_API_URL": args.api_url.rstrip("/"),
                 "LUMEN_GENERATION_API_KEY": args.api_key,
                 "LUMEN_GENERATION_MODEL": args.model,
-                "KERNELBENCH_ROOT": str(REPO_ROOT / "third_party" / "KernelBench" / "KernelBench"),
-                "CUDAFORGE_ROOT": str(REPO_ROOT / "third_party" / "CUDAForge" / "CudaForge"),
-                "KERNELFALCON_ROOT": str(REPO_ROOT / "third_party" / "KernelFalcon" / "KernelAgent"),
-                "KSEARCH_ROOT": str(REPO_ROOT / "third_party" / "KSearch" / "K-Search"),
+                "KERNELBENCH_ROOT": str(
+                    DEPENDENCY_ROOT / "KernelBench" / "KernelBench"
+                ),
+                "CUDAFORGE_ROOT": str(DEPENDENCY_ROOT / "CUDAForge" / "CudaForge"),
+                "KERNELFALCON_ROOT": str(
+                    DEPENDENCY_ROOT / "KernelFalcon" / "KernelAgent"
+                ),
+                "KSEARCH_ROOT": str(DEPENDENCY_ROOT / "KSearch" / "K-Search"),
+                "PYTHONUNBUFFERED": "1",
             }
         )
         self.env["PYTHONPATH"] = prepend_path(
             str(REPO_ROOT / "python"), self.env.get("PYTHONPATH")
         )
         self.failures: list[tuple[str, int]] = []
+        self.experiment_summaries: list[dict[str, object]] = []
+        self.active_logs: list[Path] = []
 
     def prepare(self) -> None:
         if self.args.dry_run:
@@ -223,24 +263,204 @@ class Runner:
         self.env["CODEX_HOME"] = str(self.codex_home)
 
     def execute(self) -> int:
-        self.prepare()
+        try:
+            self.validate_environment()
+            self.prepare()
+        except Exception as exc:
+            reason = f"environment/setup failed: {exc}"
+            for name in self.selected:
+                self.record_summary(name, False, reason, [])
+            self.print_final_summary()
+            raise
         print(f"Repository: {REPO_ROOT}")
         print(f"Output: {self.output_dir}")
         print(f"Experiments: {', '.join(self.selected)}")
         for name in self.selected:
+            self.active_logs = []
             try:
                 self.run_experiment(name)
             except subprocess.CalledProcessError as exc:
                 self.failures.append((name, exc.returncode))
+                reason = self.command_failure_reason(exc.returncode)
+                self.record_summary(name, False, reason, self.active_logs)
                 print(f"FAILED: {name} (exit {exc.returncode})", file=sys.stderr)
                 if not self.args.keep_going:
                     break
+            except Exception as exc:
+                self.failures.append((name, 1))
+                self.record_summary(name, False, str(exc), self.active_logs)
+                print(f"FAILED: {name} ({exc})", file=sys.stderr)
+                if not self.args.keep_going:
+                    break
+            else:
+                self.record_summary(
+                    name,
+                    True,
+                    (
+                        "dry run completed; command constructed but not executed"
+                        if self.args.dry_run
+                        else "completed successfully"
+                    ),
+                    self.active_logs,
+                )
+
+        summarized = {str(item["name"]) for item in self.experiment_summaries}
+        for name in self.selected:
+            if name not in summarized:
+                self.record_summary(
+                    name,
+                    False,
+                    "not run because an earlier experiment failed",
+                    [],
+                )
+        self.print_final_summary()
         if self.failures:
             print("Failures:", file=sys.stderr)
             for name, code in self.failures:
                 print(f"  {name}: exit {code}", file=sys.stderr)
             return 1
         return 0
+
+    def record_summary(
+        self,
+        name: str,
+        passed: bool,
+        reason: str,
+        logs: list[Path],
+    ) -> None:
+        self.experiment_summaries.append(
+            {
+                "name": name,
+                "passed": passed,
+                "reason": " ".join(reason.split()),
+                "results": self.result_paths(name),
+                "logs": [str(path) for path in logs],
+                "paper": self.paper_comparison(name),
+            }
+        )
+
+    def print_final_summary(self) -> None:
+        print(f"\n=== {BLUE}FINAL_SUMMARY{RESET} ===")
+        for item in self.experiment_summaries:
+            passed = bool(item["passed"])
+            status = "PASS" if passed else "FAIL"
+            status_color = GREEN if passed else RED
+            print(f"\n{BLUE}Experiment{RESET}: {item['name']}")
+            print(f"Status: {status_color}{status}{RESET}")
+            print(f"Reason: {item['reason']}")
+            print(f"Paper comparison: {item['paper']}")
+            print("Result paths:")
+            for path in item["results"] or ["none"]:
+                print(f"  - {path}")
+            print("Log-to-paper mapping:")
+            for path in item["logs"] or ["none"]:
+                print(f"  - {path} -> {item['paper']}")
+
+    def result_paths(self, name: str) -> list[str]:
+        paths = {
+            "figure1": [
+                str(
+                    REPO_ROOT
+                    / "datasets/inference/attention/lumen/attn_07_invariants.py"
+                )
+            ],
+            "table2-generation": [
+                str(self.output_dir / "table2/generation"),
+                str(REPO_ROOT / "datasets/inference/<task>/<baseline>"),
+            ],
+            "table2-optimization": [
+                str(self.output_dir / "table2/optimization/gemm"),
+                str(self.output_dir / "table2/optimization/attn"),
+                str(self.output_dir / "table2/optimization/moe"),
+            ],
+            "table2-benchmark": [
+                str(self.output_dir / "table2/benchmark/table2.csv"),
+                str(self.output_dir / "table2/benchmark/{gemm,attention,moe}.jsonl"),
+            ],
+            "figure2": [
+                str(self.output_dir / "figure2/attention_ablation.csv")
+            ],
+            "table3-generation": [str(REPO_ROOT / "data/traces")],
+            "table3-optimization": [str(REPO_ROOT / "data/traces")],
+            "table3-summary": [str(self.output_dir / "table3/table3.csv")],
+            "api-check": ["none (connectivity status is in the log/output)"],
+        }
+        return paths.get(name, [])
+
+    @staticmethod
+    def paper_comparison(name: str) -> str:
+        return {
+            "figure1": "Figure 1 invariant-validation status",
+            "table2-generation": "Table 2 agent-generated baseline kernels",
+            "table2-optimization": "Table 2 Lumen optimized kernels",
+            "table2-benchmark": "Table 2 throughput cells (use table2.csv)",
+            "figure2": "Figure 2 attention-ablation curves (use the CSV)",
+            "table3-generation": "Table 3 generation and context-ablation rows",
+            "table3-optimization": "Table 3 invariant-guided optimization rows",
+            "table3-summary": "Table 3 reported summary rows (use table3.csv)",
+            "api-check": "environment prerequisite; no paper result",
+        }.get(name, "paper artifact result")
+
+    def command_failure_reason(self, returncode: int) -> str:
+        for log_path in reversed(self.active_logs):
+            try:
+                lines = log_path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in reversed(lines):
+                if line.startswith("Reason: "):
+                    return f"exit {returncode}: {line.removeprefix('Reason: ')}"
+        return f"command exited with status {returncode}; inspect the log"
+
+    def validate_environment(self) -> None:
+        gpu_experiments = {
+            "figure1",
+            "table2-generation",
+            "table2-optimization",
+            "table2-benchmark",
+            "figure2",
+            "table3-generation",
+            "table3-optimization",
+        }
+        table3_compute = {"table3-generation", "table3-optimization"}
+        needs_api = any(
+            item == "api-check" or "generation" in item or "optimization" in item
+            for item in self.selected
+        )
+        needs_codex = any(
+            item in {"table2-optimization", *table3_compute}
+            for item in self.selected
+        )
+        needs_hf = any(item in table3_compute for item in self.selected)
+        min_gpus = 8 if any(item in table3_compute for item in self.selected) else 0
+        if min_gpus == 0 and any(item in gpu_experiments for item in self.selected):
+            min_gpus = 1
+
+        command = [
+            self.args.python,
+            "scripts/validate_environment.py",
+            "--output-dir",
+            str(self.output_dir),
+            "--min-gpus",
+            str(min_gpus),
+        ]
+        if needs_api:
+            command.append("--require-api")
+        if needs_codex:
+            command.append("--require-codex")
+        if needs_hf:
+            command.append("--require-hf")
+        if "table2-generation" in self.selected:
+            command.append("--require-agent-frameworks")
+        if self.args.dry_run:
+            command.append("--skip-network")
+
+        print("=== Environment validation ===", flush=True)
+        result = subprocess.run(command, cwd=REPO_ROOT, env=self.env, check=False)
+        if result.returncode:
+            raise RuntimeError(
+                "environment validation failed; resolve the failed checks above"
+            )
 
     def run_experiment(self, name: str) -> None:
         method_name = "run_" + name.replace("-", "_")
@@ -275,6 +495,10 @@ class Runner:
         )
 
     def run_table2_generation(self) -> None:
+        max_output_tokens = self.args.generation_max_output_tokens
+        if max_output_tokens is None and self.uses_default_deepseek_api():
+            max_output_tokens = DEFAULT_DEEPSEEK_MAX_OUTPUT_TOKENS
+
         self.run_command(
             "table2-generation",
             [
@@ -288,11 +512,27 @@ class Runner:
                 self.args.model,
                 "--rounds",
                 str(self.args.generation_rounds),
+                "--kernelbench-attempts",
+                str(self.args.kernelbench_attempts),
+                "--api-timeout-seconds",
+                str(self.args.generation_api_timeout_seconds),
+                *(
+                    ["--max-output-tokens", str(max_output_tokens)]
+                    if max_output_tokens is not None
+                    else []
+                ),
                 "--device",
                 str(self.args.gpu_id),
                 "--workspace-dir",
                 str(self.output_dir / "table2" / "generation"),
+                *(["--no-stage"] if self.args.table2_no_stage else []),
             ],
+        )
+
+    def uses_default_deepseek_api(self) -> bool:
+        return (
+            self.args.api_url.rstrip("/") == DEFAULT_API_URL.rstrip("/")
+            and self.args.model.casefold() == DEFAULT_MODEL.casefold()
         )
 
     def run_table2_optimization(self) -> None:
@@ -380,14 +620,17 @@ class Runner:
     def run_command(self, label: str, command: list[str]) -> None:
         print(f"\n=== {label} ===")
         print("Command:", shlex.join(command))
+        log_path = self.log_dir / f"{label}.log"
+        self.active_logs.append(log_path)
         if self.args.dry_run:
             return
-        log_path = self.log_dir / f"{label}.log"
+        command_env = self.env.copy()
+        command_env["LUMEN_EXPERIMENT_LOG"] = str(log_path)
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
                 command,
                 cwd=REPO_ROOT,
-                env=self.env,
+                env=command_env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

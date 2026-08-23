@@ -159,6 +159,12 @@ starting generation with:
 python run_experiments.py api-check
 ```
 
+Every experiment entry point prints a final PASS/FAIL block with its reason,
+result paths, log paths, and the paper figure or table to compare. The unified
+runner also prints an aggregate block and stores each experiment's complete
+stdout/stderr in `<output-dir>/logs/`; direct invocations report stdout/stderr as
+the log unless that experiment creates its own trace log.
+
 The runner supplies the evaluator DeepSeek-V4 endpoint by default. To use a
 different OpenAI-compatible Responses endpoint, set
 `LUMEN_GENERATION_API_URL`, `LUMEN_GENERATION_API_KEY`, and
@@ -196,6 +202,15 @@ python run_experiments.py table2-generation \
   --output-dir runs/table2-generation \
   --generation-rounds 10
 ```
+
+The runner prints each direct API attempt immediately. By default, Table 2
+KernelBench generation makes at most two attempts per task, with a five-minute
+timeout. The full runner uses a 65,536 output-token limit only with the artifact's
+default DeepSeek-V4 API; direct runs and other APIs retain the script's 32,768
+default. Adjust these bounds with
+`--kernelbench-attempts`, `--generation-api-timeout-seconds`, and
+`--generation-max-output-tokens`. Add `--table2-no-stage` to retain diagnostic
+outputs only in the run workspace without replacing included dataset kernels.
 
 **Outputs:** native run artifacts under
 `runs/table2-generation/table2/generation/<task>/<baseline>/`, a runner log,

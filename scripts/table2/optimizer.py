@@ -6,6 +6,10 @@ import argparse
 import sys
 from pathlib import Path
 
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+from experiment_summary import ExperimentSummary  # noqa: E402
 from lumen.harness.datasets.lumen.attn.generation import (
     attention_optimization_spec,
 )
@@ -138,28 +142,47 @@ def main(argv: list[str] | None = None) -> int:
         timeout_seconds=args.timeout_seconds,
         config_overrides=tuple(args.config_overrides),
     )
-    if args.prepare_only:
-        workspace = prepare_optimization(config, spec, prompt_files[0])
-        print(workspace.round_dir)
-        return 0
+    exit_code = 0
+    with ExperimentSummary(
+        f"table2-optimization-{args.domain}",
+        f"compare the final {args.domain} kernel benchmark with Table 2",
+    ) as summary:
+        requested_run = args.resume_run or args.run_dir
+        if requested_run is not None:
+            summary.add_result(requested_run)
 
-    if args.resume_run is not None:
-        rounds = resume_optimization_sequence(
-            config,
-            spec,
-            prompt_files,
-            args.resume_run,
-        )
-    else:
-        rounds = run_optimization_sequence(config, spec, prompt_files)
+        if args.prepare_only:
+            workspace = prepare_optimization(config, spec, prompt_files[0])
+            summary.add_result(workspace.round_dir)
+            print(workspace.round_dir)
+            return 0
 
-    print(f"run: {rounds[0][0].run_dir}")
-    for workspace, result in rounds:
-        print(f"{workspace.round_dir.name}: {workspace.round_dir}")
-        print(f"optimized kernel: {workspace.output_model_path}")
-        if not result.ok:
-            print(result.error or result.status, file=sys.stderr)
-            return 1
+        if args.resume_run is not None:
+            rounds = resume_optimization_sequence(
+                config,
+                spec,
+                prompt_files,
+                args.resume_run,
+            )
+        else:
+            rounds = run_optimization_sequence(config, spec, prompt_files)
+
+        summary.add_result(rounds[0][0].run_dir)
+        print(f"run: {rounds[0][0].run_dir}")
+        for workspace, result in rounds:
+            summary.add_result(workspace.output_model_path)
+            summary.add_result(workspace.round_dir / "eval_result.json")
+            summary.add_log(workspace.round_dir / "trace.jsonl")
+            print(f"{workspace.round_dir.name}: {workspace.round_dir}")
+            print(f"optimized kernel: {workspace.output_model_path}")
+            if not result.ok:
+                reason = result.error or result.status
+                summary.fail(reason)
+                print(reason, file=sys.stderr)
+                exit_code = 1
+                break
+    if exit_code:
+        return exit_code
     return 0
 
 

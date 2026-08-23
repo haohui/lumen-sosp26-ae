@@ -289,6 +289,25 @@ python run_experiments.py figure2 \
 **Outputs:** `runs/figure2/figure2/attention_ablation.csv`, with optimization
 name, sequence length, mean latency, and TFLOP/s, plus the runner log.
 
+**Expected variation:** We tested Figure 2 five times on one isolated AMD
+Instinct MI300X (`gfx942`) with ROCm 7.2.2 and PyTorch 2.10.0+ROCm, using the
+fixed seed, batch size 16, 10 warmups, and 100 timed graph replays shown above.
+All five runs completed successfully. Across the 30 figure points, the
+five-run medians had 0.65% median absolute error from the paper: 25/30 were
+within 3% and 29/30 were within 7%. The median run-to-run spread was 1.55%;
+27/30 points had at most 7% spread, while isolated slow measurements raised
+the largest spread to 17.56%. The cold, short `Naive` 1K case was the only
+systematic exception, measuring 22.65% below the paper.
+
+For validation, use the median of at least five complete runs. An expected
+reproduction has 29/30 median points within 7% of the reported values, permits
+up to 25% lower throughput for the clock-sensitive `Naive` 1K point, and
+preserves the large throughput gain from the first three variants to the bank
+conflict, pipeline/workgroup-specialization, and final scheduler variants.
+Rerun an individual trial when a point is more than 7% from the other trials;
+do not use a single slow trial as the paper comparison. The five validation
+CSVs and logs are under `runs/figure2-variation/`.
+
 ### Table 3: KernelBench generation
 
 **Purpose:** generate KernelBench Level 1 and Level 2 solutions both with the

@@ -46,6 +46,11 @@ KSEARCH_TASKS = {
     ),
 }
 SENSITIVE_VALUE_FLAGS = {"--api-key"}
+API_BACKEND_LIMITED_EXIT_CODE = 75
+
+
+class ApiBackendLimitedError(RuntimeError):
+    """The generation backend failed after all configured attempts."""
 
 
 @dataclass(frozen=True)
@@ -204,9 +209,13 @@ def main(argv: list[str] | None = None) -> int:
                 "LUMEN_GENERATION_API_URL is required for agent baseline generation"
             )
 
-        for task in tasks:
-            for baseline in baselines:
-                run_one(ctx, baseline, task, workspace)
+        try:
+            for task in tasks:
+                for baseline in baselines:
+                    run_one(ctx, baseline, task, workspace)
+        except ApiBackendLimitedError as exc:
+            summary.skip(str(exc))
+            return API_BACKEND_LIMITED_EXIT_CODE
     return 0
 
 
@@ -283,6 +292,7 @@ def run_kernelbench(ctx: RunContext, task: str, run_dir: Path) -> None:
     prompt_path.write_text(prompt, encoding="utf-8")
     kernel = ""
     last_error = ""
+    backend_limited = False
     attempts = int(ctx.args.kernelbench_attempts)
     for attempt in range(1, attempts + 1):
         print(
@@ -296,6 +306,7 @@ def run_kernelbench(ctx: RunContext, task: str, run_dir: Path) -> None:
             response = call_openai_responses(ctx, prompt)
         except Exception as exc:
             last_error = f"API request failed: {type(exc).__name__}: {exc}"
+            backend_limited = backend_limited or is_api_timeout(exc)
             print(
                 f"[agent-generate] KernelBench task={task} {last_error}",
                 flush=True,
@@ -316,6 +327,11 @@ def run_kernelbench(ctx: RunContext, task: str, run_dir: Path) -> None:
             flush=True,
         )
     if not kernel:
+        if backend_limited:
+            raise ApiBackendLimitedError(
+                "DeepSeek generation skipped: API timed out from inactivity "
+                f"after {attempts} attempt(s)"
+            )
         raise SystemExit(f"KernelBench did not produce a valid HIP kernel: {last_error}")
     kernel_path.write_text(kernel.rstrip() + "\n", encoding="utf-8")
     meta_path.write_text(
@@ -397,6 +413,24 @@ def call_openai_responses(ctx: RunContext, prompt: str) -> str:
     if not text:
         raise SystemExit("OpenAI response did not contain text")
     return text
+
+
+def is_api_timeout(exc: BaseException) -> bool:
+    """Recognize both stdlib and OpenAI/httpx timeout wrappers."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TimeoutError) or type(current).__name__ in {
+            "APITimeoutError",
+            "ConnectTimeout",
+            "ReadTimeout",
+            "WriteTimeout",
+            "PoolTimeout",
+        }:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def extract_responses_text(response: object) -> str:

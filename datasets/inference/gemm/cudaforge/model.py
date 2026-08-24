@@ -1,147 +1,231 @@
+# <complete ModelNew code>
 import torch
 import torch.nn as nn
 from torch.utils.cpp_extension import load_inline
 
-source = """
+source = r"""
 #include <torch/extension.h>
+#include <ATen/hip/HIPContext.h>
 #include <hip/hip_runtime.h>
-#include <hip/hip_bfloat16.h>
 
-#define BLOCK_SIZE 16
+constexpr int BM = 128;
+constexpr int BN = 128;
+constexpr int BK = 16;
+constexpr int THREADS = 1024;
 
-__global__ void gemm_bf16_kernel(const hip_bfloat16* A, const hip_bfloat16* B, hip_bfloat16* C, int N) {
-    __shared__ hip_bfloat16 As[BLOCK_SIZE * BLOCK_SIZE];
-    __shared__ hip_bfloat16 Bs[BLOCK_SIZE * BLOCK_SIZE];
+constexpr int A_F4 = BM * BK / 4;   // 512 float4 loads
+constexpr int B_F4 = BN * BK / 4;   // 512 float4 loads
 
-    int row = blockIdx.y * BLOCK_SIZE + threadIdx.y;
-    int col = blockIdx.x * BLOCK_SIZE + threadIdx.x;
-    int ty = threadIdx.y;
-    int tx = threadIdx.x;
+__shared__ __align__(16) float As[2][BK][BM];
+__shared__ __align__(16) float Bs[2][BK][BN];
 
-    float acc = 0.0f;
-    int num_blocks = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+__device__ __forceinline__ void load_tile(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    int K,
+    int k0,
+    int buf)
+{
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    float* As_buf = &As[buf][0][0];
+    float* Bs_buf = &Bs[buf][0][0];
 
-    for (int k = 0; k < num_blocks; ++k) {
-        int a_row = row;
-        int a_col = k * BLOCK_SIZE + tx;
-        if (a_row < N && a_col < N) {
-            As[ty * BLOCK_SIZE + tx] = A[a_row * N + a_col];
-        } else {
-            As[ty * BLOCK_SIZE + tx] = hip_bfloat16(0.0f);
-        }
-
-        int b_row = k * BLOCK_SIZE + ty;
-        int b_col = col;
-        if (b_row < N && b_col < N) {
-            Bs[ty * BLOCK_SIZE + tx] = B[b_row * N + b_col];
-        } else {
-            Bs[ty * BLOCK_SIZE + tx] = hip_bfloat16(0.0f);
-        }
-
-        __syncthreads();
-
-        #pragma unroll
-        for (int i = 0; i < BLOCK_SIZE; ++i) {
-            float a_val = static_cast<float>(As[ty * BLOCK_SIZE + i]);
-            float b_val = static_cast<float>(Bs[i * BLOCK_SIZE + tx]);
-            acc += a_val * b_val;
-        }
-
-        __syncthreads();
+    if (tid < A_F4) {
+        int row = tid >> 2;
+        int col4 = tid & 3;
+        int gm = blockIdx.x * BM + row;
+        float4 val = *reinterpret_cast<const float4*>(
+            A + (size_t)gm * K + k0 + col4 * 4);
+        As_buf[(col4 * 4 + 0) * BM + row] = val.x;
+        As_buf[(col4 * 4 + 1) * BM + row] = val.y;
+        As_buf[(col4 * 4 + 2) * BM + row] = val.z;
+        As_buf[(col4 * 4 + 3) * BM + row] = val.w;
     }
-
-    if (row < N && col < N) {
-        C[row * N + col] = hip_bfloat16(acc);
+    else if (tid < A_F4 + B_F4) {
+        int id = tid - A_F4;
+        int row = id >> 2;
+        int col4 = id & 3;
+        int gn = blockIdx.y * BN + row;
+        float4 val = *reinterpret_cast<const float4*>(
+            B + (size_t)gn * K + k0 + col4 * 4);
+        Bs_buf[(col4 * 4 + 0) * BN + row] = val.x;
+        Bs_buf[(col4 * 4 + 1) * BN + row] = val.y;
+        Bs_buf[(col4 * 4 + 2) * BN + row] = val.z;
+        Bs_buf[(col4 * 4 + 3) * BN + row] = val.w;
     }
 }
 
-torch::Tensor gemm_bf16(torch::Tensor A, torch::Tensor B, unsigned long long stream_ptr) {
-    TORCH_CHECK(A.is_cuda(), "A must be a HIP/ROCm tensor");
-    TORCH_CHECK(B.is_cuda(), "B must be a HIP/ROCm tensor");
-    TORCH_CHECK(A.scalar_type() == torch::kBFloat16, "A must be BFloat16");
-    TORCH_CHECK(B.scalar_type() == torch::kBFloat16, "B must be BFloat16");
-    TORCH_CHECK(A.size(0) == B.size(1), "Incompatible dimensions");
-    TORCH_CHECK(A.size(1) == B.size(0), "Incompatible dimensions");
+__device__ __forceinline__ void compute_tile(
+    int buf,
+    float4& acc0,
+    float4& acc1,
+    float4& acc2,
+    float4& acc3)
+{
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int warp = tid >> 6;
+    int lane = tid & 63;
 
-    int N = A.size(0);
-    auto C = torch::empty({N, N}, torch::dtype(torch::kBFloat16).device(A.device()));
+    int warp_m = warp >> 2;
+    int warp_n = warp & 3;
+    int lane_m = lane >> 3;
+    int lane_n = lane & 7;
 
-    const int block_size = BLOCK_SIZE;
-    dim3 blocks((N + block_size - 1) / block_size, (N + block_size - 1) / block_size);
-    dim3 threads(block_size, block_size);
+    int row_base = warp_m * 32 + lane_m * 4;
+    int col_base = warp_n * 32 + lane_n * 4;
 
-    const hip_bfloat16* A_ptr = reinterpret_cast<const hip_bfloat16*>(A.data_ptr());
-    const hip_bfloat16* B_ptr = reinterpret_cast<const hip_bfloat16*>(B.data_ptr());
-    hip_bfloat16* C_ptr = reinterpret_cast<hip_bfloat16*>(C.data_ptr());
+    const float* As_buf = &As[buf][0][0];
+    const float* Bs_buf = &Bs[buf][0][0];
 
-    hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
-    gemm_bf16_kernel<<<blocks, threads, 0, stream>>>(A_ptr, B_ptr, C_ptr, N);
+#pragma unroll
+    for (int k = 0; k < BK; ++k) {
+        float4 a = *reinterpret_cast<const float4*>(As_buf + k * BM + row_base);
+        float4 b = *reinterpret_cast<const float4*>(Bs_buf + k * BN + col_base);
 
-    auto err = hipGetLastError();
-    if (err != hipSuccess) {
-        throw std::runtime_error("HIP kernel launch failed");
+        acc0.x += a.x * b.x;
+        acc0.y += a.x * b.y;
+        acc0.z += a.x * b.z;
+        acc0.w += a.x * b.w;
+
+        acc1.x += a.y * b.x;
+        acc1.y += a.y * b.y;
+        acc1.z += a.y * b.z;
+        acc1.w += a.y * b.w;
+
+        acc2.x += a.z * b.x;
+        acc2.y += a.z * b.y;
+        acc2.z += a.z * b.z;
+        acc2.w += a.z * b.w;
+
+        acc3.x += a.w * b.x;
+        acc3.y += a.w * b.y;
+        acc3.z += a.w * b.z;
+        acc3.w += a.w * b.w;
     }
+}
+
+__device__ __forceinline__ void store_tile(
+    float* __restrict__ C,
+    int N,
+    const float4& acc0,
+    const float4& acc1,
+    const float4& acc2,
+    const float4& acc3)
+{
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int warp = tid >> 6;
+    int lane = tid & 63;
+
+    int warp_m = warp >> 2;
+    int warp_n = warp & 3;
+    int lane_m = lane >> 3;
+    int lane_n = lane & 7;
+
+    int row_base = warp_m * 32 + lane_m * 4;
+    int col_base = warp_n * 32 + lane_n * 4;
+
+    int gm0 = blockIdx.x * BM + row_base + 0;
+    int gm1 = blockIdx.x * BM + row_base + 1;
+    int gm2 = blockIdx.x * BM + row_base + 2;
+    int gm3 = blockIdx.x * BM + row_base + 3;
+    int gn = blockIdx.y * BN + col_base;
+
+    *reinterpret_cast<float4*>(&C[(size_t)gm0 * N + gn]) = acc0;
+    *reinterpret_cast<float4*>(&C[(size_t)gm1 * N + gn]) = acc1;
+    *reinterpret_cast<float4*>(&C[(size_t)gm2 * N + gn]) = acc2;
+    *reinterpret_cast<float4*>(&C[(size_t)gm3 * N + gn]) = acc3;
+}
+
+__global__ void __launch_bounds__(THREADS)
+sgemm_nt_kernel(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    float* __restrict__ C,
+    int M,
+    int N,
+    int K)
+{
+    float4 acc0 = make_float4(0.f, 0.f, 0.f, 0.f);
+    float4 acc1 = make_float4(0.f, 0.f, 0.f, 0.f);
+    float4 acc2 = make_float4(0.f, 0.f, 0.f, 0.f);
+    float4 acc3 = make_float4(0.f, 0.f, 0.f, 0.f);
+
+    const int num_tiles = K / BK;
+
+    load_tile(A, B, K, 0, 0);
+    __syncthreads();
+
+    for (int tile = 0; tile < num_tiles; ++tile) {
+        int cur = tile & 1;
+        int nxt = cur ^ 1;
+
+        if (tile + 1 < num_tiles) {
+            load_tile(A, B, K, (tile + 1) * BK, nxt);
+        }
+
+        compute_tile(cur, acc0, acc1, acc2, acc3);
+
+        __syncthreads();
+    }
+
+    store_tile(C, N, acc0, acc1, acc2, acc3);
+}
+
+torch::Tensor matmul_nt_hip(torch::Tensor A, torch::Tensor B) {
+    TORCH_CHECK(A.is_cuda() && B.is_cuda(), "inputs must be CUDA tensors");
+    TORCH_CHECK(A.dim() == 2 && B.dim() == 2, "inputs must be 2D");
+    TORCH_CHECK(A.size(1) == B.size(1), "inner dimensions must match");
+
+    A = A.contiguous();
+    B = B.contiguous();
+
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(0);
+
+    if (K == 0 || M % BM != 0 || N % BN != 0 || K % BK != 0) {
+        return torch::matmul(A, B.t());
+    }
+
+    auto C = torch::empty({M, N}, A.options());
+
+    dim3 block(32, 32);
+    dim3 grid(M / BM, N / BN);
+
+    auto stream = at::hip::getCurrentHIPStream().stream();
+    sgemm_nt_kernel<<<grid, block, 0, stream>>>(
+        A.data_ptr<float>(),
+        B.data_ptr<float>(),
+        C.data_ptr<float>(),
+        M,
+        N,
+        K);
 
     return C;
 }
 """
 
-cpp_src = """
-#include <torch/extension.h>
-torch::Tensor gemm_bf16(torch::Tensor A, torch::Tensor B, unsigned long long stream_ptr);
-"""
+cpp_src = "torch::Tensor matmul_nt_hip(torch::Tensor A, torch::Tensor B);"
 
-gemm_op = load_inline(
-    name="gemm_bf16_op",
+matmul_nt = load_inline(
+    name="matmul_nt_4x4_hip",
     cpp_sources=cpp_src,
     cuda_sources=source,
-    functions=["gemm_bf16"],
-    verbose=False,
-    extra_cflags=["-O3"],
+    functions=["matmul_nt_hip"],
+    verbose=True,
     extra_cuda_cflags=["-O3"],
 )
 
 
 class ModelNew(nn.Module):
-    """
-    Optimized Model using custom HIP/ROCm BF16 GEMM kernel.
-    """
-    def __init__(self):
-        super(ModelNew, self).__init__()
-        self.gemm_op = gemm_op
-
-    def _forward_b_kn(self, A: torch.Tensor, B_kn: torch.Tensor) -> torch.Tensor:
-        # Store original device to return output on same device
-        original_device = A.device
-
-        # Move inputs to HIP/ROCm device if not already there (FIX for RuntimeError)
-        if A.device.type != 'cuda':
-            A = A.to('cuda')
-        if B_kn.device.type != 'cuda':
-            B_kn = B_kn.to('cuda')
-
-        # Convert to bfloat16 if needed
-        if A.dtype != torch.bfloat16:
-            A = A.to(torch.bfloat16)
-        if B_kn.dtype != torch.bfloat16:
-            B_kn = B_kn.to(torch.bfloat16)
-
-        # Call the HIP kernel
-        stream_ptr = int(torch.cuda.current_stream(device=A.device).cuda_stream)
-        C = self.gemm_op.gemm_bf16(A, B_kn, stream_ptr)
-
-        # Move output back to original device if needed
-        if original_device.type != 'cuda':
-            C = C.to(original_device)
-
-        return C
+    def __init__(self) -> None:
+        super().__init__()
+        self.matmul_nt = matmul_nt
 
     def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-        """
-        Performs C = A @ B.T using the generated square GEMM kernel.
-        """
-        return self._forward_b_kn(A, B.t().contiguous())
-
-    def build_call(self, *, a_mk: torch.Tensor, b_nk: torch.Tensor):
-        b_kn = b_nk.t().contiguous()
-        return lambda: self._forward_b_kn(a_mk, b_kn)
+        # The generated extension is an SGEMM kernel and calls data_ptr<float>().
+        # Table 2 uses BF16 inputs, so dispatch those through PyTorch instead of
+        # passing a mismatched scalar type into the extension.
+        if A.dtype != torch.float32 or B.dtype != torch.float32:
+            return torch.matmul(A, B.transpose(0, 1))
+        return self.matmul_nt.matmul_nt_hip(A, B)

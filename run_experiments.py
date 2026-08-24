@@ -22,8 +22,16 @@ DEFAULT_DEEPSEEK_MAX_OUTPUT_TOKENS = 65536
 CODEX_PROVIDER = "lumen-generation"
 BLUE = "\033[34m"
 GREEN = "\033[32m"
+YELLOW = "\033[33m"
 RED = "\033[31m"
 RESET = "\033[0m"
+API_BACKEND_LIMITED_EXIT_CODE = 75
+API_DEPENDENT_EXPERIMENTS = {
+    "table2-generation",
+    "table2-optimization",
+    "table3-generation",
+    "table3-optimization",
+}
 
 EXPERIMENTS = (
     "api-check",
@@ -133,7 +141,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--generation-api-timeout-seconds",
         type=positive_float,
         default=300.0,
-        help="Timeout for each direct Table 2 generation API request.",
+        help=(
+            "OpenAI SDK inactivity timeout for each direct Table 2 generation "
+            "request; this is not a total wall-clock deadline."
+        ),
     )
     parser.add_argument(
         "--generation-max-output-tokens",
@@ -235,6 +246,7 @@ class Runner:
         self.failures: list[tuple[str, int]] = []
         self.experiment_summaries: list[dict[str, object]] = []
         self.active_logs: list[Path] = []
+        self.api_backend_skip_reason: str | None = None
 
     def prepare(self) -> None:
         if self.args.dry_run:
@@ -277,9 +289,33 @@ class Runner:
         print(f"Experiments: {', '.join(self.selected)}")
         for name in self.selected:
             self.active_logs = []
+            if (
+                self.api_backend_skip_reason is not None
+                and name in API_DEPENDENT_EXPERIMENTS
+            ):
+                self.record_summary(
+                    name,
+                    False,
+                    self.api_backend_skip_reason,
+                    [],
+                    skipped=True,
+                )
+                continue
             try:
                 self.run_experiment(name)
             except subprocess.CalledProcessError as exc:
+                if exc.returncode == API_BACKEND_LIMITED_EXIT_CODE:
+                    reason = self.command_failure_reason(exc.returncode)
+                    self.api_backend_skip_reason = reason
+                    self.record_summary(
+                        name,
+                        False,
+                        reason,
+                        self.active_logs,
+                        skipped=True,
+                    )
+                    print(f"SKIPPED: {name} ({reason})", file=sys.stderr)
+                    continue
                 self.failures.append((name, exc.returncode))
                 reason = self.command_failure_reason(exc.returncode)
                 self.record_summary(name, False, reason, self.active_logs)
@@ -327,11 +363,14 @@ class Runner:
         passed: bool,
         reason: str,
         logs: list[Path],
+        *,
+        skipped: bool = False,
     ) -> None:
         self.experiment_summaries.append(
             {
                 "name": name,
                 "passed": passed,
+                "skipped": skipped,
                 "reason": " ".join(reason.split()),
                 "results": self.result_paths(name),
                 "logs": [str(path) for path in logs],
@@ -343,8 +382,9 @@ class Runner:
         print(f"\n=== {BLUE}FINAL_SUMMARY{RESET} ===")
         for item in self.experiment_summaries:
             passed = bool(item["passed"])
-            status = "PASS" if passed else "FAIL"
-            status_color = GREEN if passed else RED
+            skipped = bool(item.get("skipped"))
+            status = "SKIP" if skipped else ("PASS" if passed else "FAIL")
+            status_color = YELLOW if skipped else (GREEN if passed else RED)
             print(f"\n{BLUE}Experiment{RESET}: {item['name']}")
             print(f"Status: {status_color}{status}{RESET}")
             print(f"Reason: {item['reason']}")
@@ -457,6 +497,12 @@ class Runner:
 
         print("=== Environment validation ===", flush=True)
         result = subprocess.run(command, cwd=REPO_ROOT, env=self.env, check=False)
+        if result.returncode == API_BACKEND_LIMITED_EXIT_CODE:
+            self.api_backend_skip_reason = (
+                "DeepSeek API capability/performance check failed; "
+                "LLM-dependent experiment skipped"
+            )
+            return
         if result.returncode:
             raise RuntimeError(
                 "environment validation failed; resolve the failed checks above"

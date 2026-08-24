@@ -204,8 +204,13 @@ python run_experiments.py table2-generation \
 ```
 
 The runner prints each direct API attempt immediately. By default, Table 2
-KernelBench generation makes at most two attempts per task, with a five-minute
-timeout. The full runner uses a 65,536 output-token limit only with the artifact's
+KernelBench generation makes at most two attempts per task. Its five-minute SDK
+timeout measures network inactivity, not total wall-clock duration; DeepSeek
+keep-alive traffic allows a healthy request to continue beyond five minutes.
+If every attempt ends in an API inactivity timeout, the experiment is recorded
+as `SKIP`; the unified runner skips the remaining LLM-dependent stages and
+continues independent evaluation stages. The full runner uses a 65,536
+output-token limit only with the artifact's
 default DeepSeek-V4 API; direct runs and other APIs retain the script's 32,768
 default. Adjust these bounds with
 `--kernelbench-attempts`, `--generation-api-timeout-seconds`, and

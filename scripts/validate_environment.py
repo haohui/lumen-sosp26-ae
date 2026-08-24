@@ -50,6 +50,7 @@ class Check:
     detail: str
     required: bool = True
     skipped: bool = False
+    backend_limited: bool = False
 
     @property
     def label(self) -> str:
@@ -230,10 +231,28 @@ def check_api(args: argparse.Namespace) -> Check:
         )
         text = response.output_text.strip()
         if "LUMEN_OK" not in text:
-            raise RuntimeError(f"unexpected response {text[:80]!r}")
+            return Check(
+                "Generation API",
+                False,
+                f"{config}: unexpected response {text[:80]!r}",
+                required,
+                backend_limited=True,
+            )
         return Check("Generation API", True, config, required)
     except Exception as exc:
-        return Check("Generation API", False, f"{config}: {short_error(exc)}", required)
+        status_code = getattr(exc, "status_code", None)
+        limited = type(exc).__name__ in {
+            "APITimeoutError",
+            "APIConnectionError",
+            "TimeoutError",
+        } or (isinstance(status_code, int) and status_code >= 500)
+        return Check(
+            "Generation API",
+            False,
+            f"{config}: {short_error(exc)}",
+            required,
+            backend_limited=limited,
+        )
 
 
 def check_hugging_face(args: argparse.Namespace) -> Check:
@@ -319,6 +338,8 @@ def main(argv: list[str] | None = None) -> int:
     if failures:
         names = ", ".join(check.name for check in failures)
         print(f"  Result: NOT READY ({names})")
+        if all(check.backend_limited for check in failures):
+            return 75
         return 1
     print("  Result: READY")
     return 0

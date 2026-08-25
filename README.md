@@ -63,7 +63,7 @@ configured for eight GPUs; the other experiments can run on one MI300X.
 Launch the `0824` evaluation image with the following exact command:
 
 ```bash
-docker run -it --name lumen-sosp26-ae \
+docker run -it --name {YOUR_CONTAINER_NAME} \
   --device=/dev/kfd \
   --device=/dev/dri \
   --group-add video \
@@ -96,7 +96,7 @@ home directory, copy the **contents** of the latest artifact tree into
 `/workspace/lumen`, then start and attach to the container:
 
 ```bash
-docker cp /data01/home/lumen-sosp26-ae/. lumen-sosp26-ae:/workspace/lumen/
+docker cp /data01/home/lumen-sosp26-ae/. {YOUR_CONTAINER_NAME}:/workspace/lumen/
 docker start -ai lumen-sosp26-ae
 ```
 
@@ -110,7 +110,7 @@ already-prepared checkout. While the old container is running, apply this
 minimal compatibility patch from the host:
 
 ```bash
-docker exec -i lumen-sosp26-ae \
+docker exec -i {YOUR_CONTAINER_NAME} \
   patch -d /workspace/third_party/KernelFalcon/KernelAgent -p1 <<'PATCH'
 diff --git a/utils/providers/available_models.py b/utils/providers/available_models.py
 --- a/utils/providers/available_models.py

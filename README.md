@@ -58,6 +58,92 @@ ease of distribution. Performance numbers can vary across hardware, ROCm,
 compiler, and model-backend versions. Table 3 generation and optimization are
 configured for eight GPUs; the other experiments can run on one MI300X.
 
+### Starting the evaluation container
+
+Launch the `0824` evaluation image with the following exact command:
+
+```bash
+docker run -it --name lumen-sosp26-ae \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add video \
+  --group-add render \
+  --ipc=host \
+  --shm-size=16G \
+  --ulimit nofile=1048576:1048576 \
+  --ulimit nproc=65535:65535 \
+  --pids-limit 4096 \
+  lumen-sosp26-ae:0824
+```
+
+The image starts a shell in `/workspace/lumen`, with the artifact's virtual
+environment already on `PATH`; do not run `source .venv/bin/activate` before
+running the experiments.
+
+The command above does not bind-mount a host directory. The authoritative tree
+inside a newly created container is the copy baked into the image at
+`/workspace/lumen`. At release time, that copy is identical to the artifact in
+the evaluation-machine account's home directory,
+`/data01/home/lumen-sosp26-ae` (the home directory used after logging in with
+`ssh lumen-sosp26-ae@162.43.172.205`), and to the corresponding Zenodo and
+GitHub artifact contents. Later changes to any one copy are not synchronized
+automatically.
+
+#### Reusing an existing container
+
+To update an existing `lumen-sosp26-ae` container from the evaluation-machine
+home directory, copy the **contents** of the latest artifact tree into
+`/workspace/lumen`, then start and attach to the container:
+
+```bash
+docker cp /data01/home/lumen-sosp26-ae/. lumen-sosp26-ae:/workspace/lumen/
+docker start -ai lumen-sosp26-ae
+```
+
+For an artifact downloaded from Zenodo or GitHub, replace
+`/data01/home/lumen-sosp26-ae` with the extracted or cloned artifact directory.
+
+Images older than `0824` require one additional repair. KernelFalcon is
+prepared under `/workspace/third_party` while the image is built, so copying a
+new artifact tree to `/workspace/lumen` updates its patch recipe but not the
+already-prepared checkout. While the old container is running, apply this
+minimal compatibility patch from the host:
+
+```bash
+docker exec -i lumen-sosp26-ae \
+  patch -d /workspace/third_party/KernelFalcon/KernelAgent -p1 <<'PATCH'
+diff --git a/utils/providers/available_models.py b/utils/providers/available_models.py
+--- a/utils/providers/available_models.py
++++ b/utils/providers/available_models.py
+@@ -48,6 +48,11 @@ AVAILABLE_MODELS = [
+         provider_classes=[OpenAIProvider],
+         description="GPT-5.1 Codex Mini model via OpenAI API",
+     ),
++    ModelConfig(
++        name="deepseek-v4-flash",
++        provider_classes=[OpenAIProvider],
++        description="DeepSeek V4 Flash via an OpenAI-compatible API",
++    ),
+     # Anthropic Claude 4 Models (Latest)
+     ModelConfig(
+         name="claude-opus-4-6",
+diff --git a/utils/providers/openai_provider.py b/utils/providers/openai_provider.py
+--- a/utils/providers/openai_provider.py
++++ b/utils/providers/openai_provider.py
+@@ -30,5 +30,7 @@ class OpenAIProvider(OpenAICompatibleProvider):
+     def get_max_tokens_limit(self, model_name: str) -> int:
+         """Get max tokens limit for OpenAI models."""
++        if model_name == "deepseek-v4-flash":
++            return 65536
+         if model_name.startswith(("gpt-5", "gpt-4", "o3", "o1")):
+             return 32000
+         elif model_name.startswith("gpt-3.5"):
+PATCH
+```
+
+This legacy repair is unnecessary for containers created from the `0824` image
+or a later image.
+
 ## Dependencies
 
 The provided Docker image is the reference installation. It contains the
@@ -90,17 +176,11 @@ for the executable specification):
   recorded in `third_party/*/source.toml` and prepared by
   `dev-support/prepare-dependency.py`.
 
-To use the pre-installed environment, activate its virtual environment from the
-repository root:
-
-```bash
-source .venv/bin/activate
-```
-
-All commands below assume this environment and a working ROCm device. Generation
-experiments additionally require network access to the configured LLM endpoint;
-KernelBench runs also download the `ScalingIntelligence/KernelBench` dataset
-from Hugging Face when it is not cached.
+All commands below assume the pre-installed container environment and a working
+ROCm device. Generation experiments additionally require network access to the
+configured LLM endpoint; KernelBench runs also download the
+`ScalingIntelligence/KernelBench` dataset from Hugging Face when it is not
+cached.
 
 Validate an environment independently with:
 

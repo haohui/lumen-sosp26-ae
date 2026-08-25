@@ -170,6 +170,57 @@ different OpenAI-compatible Responses endpoint, set
 `LUMEN_GENERATION_API_URL`, `LUMEN_GENERATION_API_KEY`, and
 `LUMEN_GENERATION_MODEL`, or pass `--api-url` and `--model`.
 
+### Expected resource consumption
+
+Use the following estimates to plan a complete run on the reference 8x MI300X
+machine. Archive timings take priority and are computed directly from the four
+archives under `data/traces/`: first-to-last event for each Table 2 traffic
+capture, first-to-last Codex round for each Table 2 optimization sequence, and
+first-to-last Codex round for each Table 3 configuration/profile. Because the
+unified runner executes these stages sequentially, the table sums their
+per-configuration spans even when the archived campaigns were launched
+separately or concurrently. **`*` marks a later validation-run estimate used
+when the trace archives contain no timing for that experiment.**
+
+For Table 3, "Codex" and the model backend are separate: the archived sessions
+were executed by **Codex CLI 0.144.1**, while their trace metadata records
+`model_provider = "moonbridge"` and `model = "moonbridge"`, corresponding to
+the supplied DeepSeek-V4 service. The recorded Table 3 times below therefore
+measure **Codex CLI with DeepSeek-V4**, not the GPT-5.3-Codex model. This
+repository does not include a Table 3 trace archive produced with
+GPT-5.3-Codex, so a trace-backed time for that model cannot be reported.
+
+| Experiment | Expected wall time and model/backend | GPUs | New persistent output | Notes |
+| --- | ---: | ---: | ---: | --- |
+| `api-check` | \*under 1 minute (`deepseek-v4-flash`) | 0 | under 1 MiB | One small API request; not part of the default `all` group. |
+| `figure1` | \*10--30 seconds (no LLM) | 1 | under 1 MiB | Compiler and AveLang caches must already fit on disk. |
+| `table2-generation` | 5h 44m 51s (11 GPT-5.3-Codex captures; CUDAForge/GEMM used `qwen3.5-plus`) | 1 | 0.1--1 GiB | Sum of all 12 recorded workload/backend traffic spans. |
+| `table2-optimization` | 1h 45m 59s (OpenAI Codex, trace model `gpt-5.6-sol`, high effort) | 1 | 0.05--0.2 GiB | The recorded 5 attention, 6 MoE, and 12 GEMM rounds took 13m 01s, 32m 48s, and 1h 00m 10s. |
+| `table2-benchmark` | \*3--4 hours (no LLM) | 1 | under 1 MiB | A later default run took about 3 hours 25 minutes; compilation caches can consume several additional GiB. |
+| `figure2` | \*1--3 minutes (no LLM) | 1 | under 1 MiB | Uses the largest flash-attention shapes at batch size 16. |
+| `table3-generation` | 37h 55m 33s (Codex CLI 0.144.1 + `moonbridge`/DeepSeek-V4) | 8 | 0.2--0.5 GiB | Includes 34h 33m 23s for the initial campaigns and 3h 22m 10s of reruns. The trace tree is 183 MB uncompressed. |
+| `table3-optimization` | 17h 47m 38s (Codex CLI 0.144.1 + `moonbridge`/DeepSeek-V4) | 8 | 0.1--0.3 GiB | Sequential equivalent of the four recorded profile spans: 2h 28m, 3h 16m, 5h 45m, and 6h 19m. The trace tree is 97 MB uncompressed. |
+| `table3-summary` | \*under 1 minute (no LLM) | 0 | under 1 MiB | A later CPU-only run took about 24 seconds. |
+
+The trace times measure the recorded agent/capture intervals, not dependency
+installation, initial downloads, environment validation, or unrelated gaps
+between separately launched campaigns. One Table 2 CUDAForge/GEMM capture has
+an inconsistent calendar date; its internally consistent 24m 39s duration is
+included, but its absolute date is not used. API load, generated code, compiler
+caches, GPU contention, and retries can still extend a new run.
+
+The original archived campaigns contain **59h 51m 51s** of trace-backed agent
+time; the recorded Table 3 reruns add **3h 22m 10s**, for **63h 14m 01s** in
+all archived agent runs. Adding the later validation-run estimates marked `*`
+for the non-agent stages gives approximately **66--67 hours (about 3 days)**
+for `python run_experiments.py`. Reserve at least **20 GiB of free disk space**,
+as enforced by the environment validator. The persistent experiment outputs
+are normally below 2 GiB, but the larger allowance covers temporary build
+products, model and dataset downloads, compiler caches, and failed or retried
+agent rounds. Table 3 needs all eight 192-GiB MI300X GPUs; the other GPU stages
+need one. The estimates assume the repository dependencies and model/dataset
+caches described above are already installed.
+
 ### Figure 1: invariant validation
 
 **Purpose:** compile and execute the final Lumen flash-attention kernel with

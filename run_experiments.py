@@ -20,6 +20,9 @@ DEFAULT_API_KEY = "lumen-ae"
 DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_DEEPSEEK_MAX_OUTPUT_TOKENS = 65536
 CODEX_PROVIDER = "lumen-generation"
+CODEX_MODEL_CONTEXT_WINDOW = 1_000_000
+CODEX_AUTO_COMPACT_TOKEN_LIMIT = 900_000
+CODEX_LONG_CONTEXT_TEMPLATE = "gpt-5.4"
 BLUE = "\033[34m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
@@ -260,9 +263,14 @@ class Runner:
 
     def write_codex_config(self) -> None:
         self.codex_home.mkdir(parents=True, exist_ok=True)
+        model_catalog_path = self.codex_home / "models.json"
+        self.write_codex_model_catalog(model_catalog_path)
         config = (
             f"model = {json.dumps(self.args.model)}\n"
-            f"model_provider = {json.dumps(CODEX_PROVIDER)}\n\n"
+            f"model_provider = {json.dumps(CODEX_PROVIDER)}\n"
+            f"model_context_window = {CODEX_MODEL_CONTEXT_WINDOW}\n"
+            f"model_auto_compact_token_limit = {CODEX_AUTO_COMPACT_TOKEN_LIMIT}\n"
+            f"model_catalog_json = {json.dumps(str(model_catalog_path))}\n\n"
             f"[model_providers.{json.dumps(CODEX_PROVIDER)}]\n"
             'name = "Lumen generation API"\n'
             f"base_url = {json.dumps(self.args.api_url.rstrip('/'))}\n"
@@ -273,6 +281,63 @@ class Runner:
         path.write_text(config, encoding="utf-8")
         path.chmod(0o600)
         self.env["CODEX_HOME"] = str(self.codex_home)
+
+    def write_codex_model_catalog(self, path: Path) -> None:
+        result = subprocess.run(
+            ["codex", "debug", "models", "--bundled"],
+            cwd=REPO_ROOT,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            raise RuntimeError(
+                "failed to inspect the installed Codex model catalog: "
+                f"{result.stderr.strip() or f'exit {result.returncode}'}"
+            )
+        try:
+            catalog = json.loads(result.stdout)
+            template = next(
+                model
+                for model in catalog["models"]
+                if model["slug"] == CODEX_LONG_CONTEXT_TEMPLATE
+            )
+        except (KeyError, StopIteration, TypeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                "installed Codex CLI does not expose the expected long-context "
+                f"{CODEX_LONG_CONTEXT_TEMPLATE} model metadata"
+            ) from exc
+
+        model = dict(template)
+        model.update(
+            {
+                "slug": self.args.model,
+                "display_name": self.args.model,
+                "description": "Lumen generation API model",
+                "default_reasoning_level": None,
+                "supported_reasoning_levels": [],
+                "visibility": "none",
+                "priority": 99,
+                "additional_speed_tiers": [],
+                "service_tiers": [],
+                "support_verbosity": False,
+                "default_verbosity": None,
+                "apply_patch_tool_type": None,
+                "web_search_tool_type": "text",
+                "truncation_policy": {"mode": "bytes", "limit": 10_000},
+                "supports_image_detail_original": False,
+                "context_window": CODEX_MODEL_CONTEXT_WINDOW,
+                "max_context_window": CODEX_MODEL_CONTEXT_WINDOW,
+                "auto_compact_token_limit": CODEX_AUTO_COMPACT_TOKEN_LIMIT,
+                "effective_context_window_percent": 95,
+                "experimental_supported_tools": [],
+                "supports_search_tool": False,
+                "use_responses_lite": False,
+            }
+        )
+        path.write_text(json.dumps({"models": [model]}), encoding="utf-8")
+        path.chmod(0o600)
 
     def execute(self) -> int:
         try:

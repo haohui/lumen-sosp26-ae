@@ -60,7 +60,7 @@ configured for eight GPUs; the other experiments can run on one MI300X.
 
 ### Starting the evaluation container
 
-Launch the `0824` evaluation image with the following exact command:
+Launch the `0825` evaluation image with the following exact command:
 
 ```bash
 docker run -it --name {YOUR_CONTAINER_NAME} \
@@ -73,7 +73,7 @@ docker run -it --name {YOUR_CONTAINER_NAME} \
   --ulimit nofile=1048576:1048576 \
   --ulimit nproc=65535:65535 \
   --pids-limit 4096 \
-  lumen-sosp26-ae:0824
+  lumen-sosp26-ae:0825
 ```
 
 The image starts a shell in `/workspace/lumen`, with the artifact's virtual
@@ -103,7 +103,7 @@ docker start -ai lumen-sosp26-ae
 For an artifact downloaded from Zenodo or GitHub, replace
 `/data01/home/lumen-sosp26-ae` with the extracted or cloned artifact directory.
 
-Images older than `0824` require one additional repair. KernelFalcon is
+Images older than `0825` require one additional repair. KernelFalcon is
 prepared under `/workspace/third_party` while the image is built, so copying a
 new artifact tree to `/workspace/lumen` updates its patch recipe but not the
 already-prepared checkout. While the old container is running, apply this
@@ -141,7 +141,7 @@ diff --git a/utils/providers/openai_provider.py b/utils/providers/openai_provide
 PATCH
 ```
 
-This legacy repair is unnecessary for containers created from the `0824` image
+This legacy repair is unnecessary for containers created from the `0825` image
 or a later image.
 
 ## Dependencies

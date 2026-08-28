@@ -3,6 +3,7 @@
 
 import importlib.util
 import os
+import sys
 from pathlib import Path
 
 os.environ["AVELANG_VALIDATE_INVARIANTS"] = "1"
@@ -18,6 +19,9 @@ import torch  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 KERNEL_PATH = REPO_ROOT / "datasets/inference/attention/lumen/attn_07_invariants.py"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from experiment_summary import ExperimentSummary  # noqa: E402
 
 
 def load_kernel():
@@ -30,18 +34,29 @@ def load_kernel():
 
 
 def main():
-    if not torch.cuda.is_available():
-        raise RuntimeError("Invariant validation requires a ROCm-capable GPU")
+    with ExperimentSummary(
+        "figure1",
+        "compare this validation status with Figure 1's data-flow invariants",
+    ) as summary:
+        summary.add_result(KERNEL_PATH)
+        if not torch.cuda.is_available():
+            raise RuntimeError("Invariant validation requires a ROCm-capable GPU")
 
-    torch.manual_seed(0)
-    seq_len, q_heads, kv_heads, head_dim = 64, 8, 1, 128
-    q = torch.randn((seq_len, q_heads, head_dim), dtype=torch.bfloat16, device="cuda")
-    k = torch.randn((seq_len, kv_heads, head_dim), dtype=torch.bfloat16, device="cuda")
-    v = torch.randn((seq_len, kv_heads, head_dim), dtype=torch.bfloat16, device="cuda")
-    seq_ptr = torch.tensor([0, seq_len], dtype=torch.int32, device="cuda")
+        torch.manual_seed(0)
+        seq_len, q_heads, kv_heads, head_dim = 64, 8, 1, 128
+        q = torch.randn(
+            (seq_len, q_heads, head_dim), dtype=torch.bfloat16, device="cuda"
+        )
+        k = torch.randn(
+            (seq_len, kv_heads, head_dim), dtype=torch.bfloat16, device="cuda"
+        )
+        v = torch.randn(
+            (seq_len, kv_heads, head_dim), dtype=torch.bfloat16, device="cuda"
+        )
+        seq_ptr = torch.tensor([0, seq_len], dtype=torch.int32, device="cuda")
 
-    load_kernel().flash_attn(q, k, v, seq_ptr, seq_len)
-    print("FlashAttention invariant validation passed.")
+        load_kernel().flash_attn(q, k, v, seq_ptr, seq_len)
+        print("FlashAttention invariant validation passed.")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,10 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from experiment_summary import ExperimentSummary  # noqa: E402
+
 TASKS = ("gemm", "attention", "moe")
 BASELINES = ("kernelbench", "cudaforge", "kernelfalcon", "ksearch")
 TASK_DIR = {"gemm": "gemm", "attention": "attention", "attn": "attention", "moe": "moe"}
@@ -42,6 +46,11 @@ KSEARCH_TASKS = {
     ),
 }
 SENSITIVE_VALUE_FLAGS = {"--api-key"}
+API_BACKEND_LIMITED_EXIT_CODE = 75
+
+
+class ApiBackendLimitedError(RuntimeError):
+    """The generation backend failed after all configured attempts."""
 
 
 @dataclass(frozen=True)
@@ -89,6 +98,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=os.getenv("LUMEN_GENERATION_MODEL", "gpt-5.3-codex"),
     )
     p.add_argument("--rounds", type=int, default=10)
+    p.add_argument(
+        "--kernelbench-attempts",
+        type=int,
+        default=2,
+        help="Maximum API attempts for each one-shot KernelBench task.",
+    )
+    p.add_argument("--api-timeout-seconds", type=float, default=300.0)
+    p.add_argument("--max-output-tokens", type=int, default=32768)
     p.add_argument("--device", type=int, default=0)
     p.add_argument(
         "--rocr-visible-devices",
@@ -164,18 +181,41 @@ def main(argv: list[str] | None = None) -> int:
     api_url = normalize_api_url(args.api_url)
     ctx = RunContext(args=args, api_base_url=api_url, api_key=args.api_key)
 
-    if not args.api_key and not args.dry_run:
-        raise SystemExit(
-            "LUMEN_GENERATION_API_KEY is required for agent baseline generation"
-        )
-    if not api_url and not args.dry_run:
-        raise SystemExit(
-            "LUMEN_GENERATION_API_URL is required for agent baseline generation"
-        )
+    if args.rounds <= 0:
+        raise SystemExit("--rounds must be positive")
+    if args.kernelbench_attempts <= 0:
+        raise SystemExit("--kernelbench-attempts must be positive")
+    if args.api_timeout_seconds <= 0:
+        raise SystemExit("--api-timeout-seconds must be positive")
+    if args.max_output_tokens <= 0:
+        raise SystemExit("--max-output-tokens must be positive")
 
-    for task in tasks:
-        for baseline in baselines:
-            run_one(ctx, baseline, task, workspace)
+    with ExperimentSummary(
+        "table2-generation",
+        "compare the staged baseline kernels and their benchmark results with Table 2",
+    ) as summary:
+        summary.add_result(workspace)
+        if not args.no_stage:
+            for task in tasks:
+                for baseline in baselines:
+                    summary.add_result(output_dir(ctx, task, baseline))
+
+        if not args.api_key and not args.dry_run:
+            raise SystemExit(
+                "LUMEN_GENERATION_API_KEY is required for agent baseline generation"
+            )
+        if not api_url and not args.dry_run:
+            raise SystemExit(
+                "LUMEN_GENERATION_API_URL is required for agent baseline generation"
+            )
+
+        try:
+            for task in tasks:
+                for baseline in baselines:
+                    run_one(ctx, baseline, task, workspace)
+        except ApiBackendLimitedError as exc:
+            summary.skip(str(exc))
+            return API_BACKEND_LIMITED_EXIT_CODE
     return 0
 
 
@@ -232,7 +272,8 @@ def run_kernelbench(ctx: RunContext, task: str, run_dir: Path) -> None:
 
     print(
         "[agent-generate] KernelBench "
-        f"task={task} backend=hip prompt={KERNELBENCH_PROMPT_KEY[task]}"
+        f"task={task} backend=hip prompt={KERNELBENCH_PROMPT_KEY[task]}",
+        flush=True,
     )
     if ctx.args.dry_run:
         return
@@ -251,15 +292,29 @@ def run_kernelbench(ctx: RunContext, task: str, run_dir: Path) -> None:
     prompt_path.write_text(prompt, encoding="utf-8")
     kernel = ""
     last_error = ""
-    for attempt in range(1, max(1, int(ctx.args.rounds)) + 1):
-        response = call_openai_responses(ctx, prompt)
+    backend_limited = False
+    attempts = int(ctx.args.kernelbench_attempts)
+    for attempt in range(1, attempts + 1):
+        print(
+            "[agent-generate] KernelBench "
+            f"task={task} API attempt={attempt}/{attempts} "
+            f"timeout={ctx.args.api_timeout_seconds:g}s "
+            f"max_output_tokens={ctx.args.max_output_tokens}",
+            flush=True,
+        )
+        try:
+            response = call_openai_responses(ctx, prompt)
+        except Exception as exc:
+            last_error = f"API request failed: {type(exc).__name__}: {exc}"
+            backend_limited = backend_limited or is_api_timeout(exc)
+            print(
+                f"[agent-generate] KernelBench task={task} {last_error}",
+                flush=True,
+            )
+            continue
         attempt_response = sample_dir / f"response_attempt_{attempt:03d}.txt"
         attempt_response.write_text(response, encoding="utf-8")
-        candidate = (
-            extract_first_code(response, ["python", "cpp"])
-            or extract_first_code_block(response)
-            or ""
-        )
+        candidate = extract_kernelbench_candidate(response, extract_first_code)
         ok, last_error = validate_kernelbench_hip_output(candidate)
         if ok:
             response_path.write_text(response, encoding="utf-8")
@@ -267,9 +322,16 @@ def run_kernelbench(ctx: RunContext, task: str, run_dir: Path) -> None:
             break
         print(
             "[agent-generate] KernelBench "
-            f"task={task} attempt={attempt} rejected: {last_error}"
+            f"task={task} attempt={attempt} rejected: {last_error}; "
+            f"response={attempt_response}",
+            flush=True,
         )
     if not kernel:
+        if backend_limited:
+            raise ApiBackendLimitedError(
+                "DeepSeek generation skipped: API timed out from inactivity "
+                f"after {attempts} attempt(s)"
+            )
         raise SystemExit(f"KernelBench did not produce a valid HIP kernel: {last_error}")
     kernel_path.write_text(kernel.rstrip() + "\n", encoding="utf-8")
     meta_path.write_text(
@@ -326,16 +388,49 @@ def call_openai_responses(ctx: RunContext, prompt: str) -> str:
     except ImportError as exc:
         raise SystemExit(f"openai package is required for KernelBench generation: {exc}") from exc
 
-    client = OpenAI(api_key=ctx.api_key, base_url=ctx.api_base_url)
+    client = OpenAI(
+        api_key=ctx.api_key,
+        base_url=ctx.api_base_url,
+        timeout=float(ctx.args.api_timeout_seconds),
+        max_retries=0,
+    )
     response = client.responses.create(
         model=ctx.args.model,
-        input=prompt,
-        max_output_tokens=32768,
+        input=[
+            {
+                "role": "developer",
+                "content": (
+                    "Return only one complete Python code block. Begin immediately "
+                    "with ```python. Do not output analysis, planning, alternatives, "
+                    "or testing code."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        max_output_tokens=int(ctx.args.max_output_tokens),
     )
     text = extract_responses_text(response)
     if not text:
         raise SystemExit("OpenAI response did not contain text")
     return text
+
+
+def is_api_timeout(exc: BaseException) -> bool:
+    """Recognize both stdlib and OpenAI/httpx timeout wrappers."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TimeoutError) or type(current).__name__ in {
+            "APITimeoutError",
+            "ConnectTimeout",
+            "ReadTimeout",
+            "WriteTimeout",
+            "PoolTimeout",
+        }:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def extract_responses_text(response: object) -> str:
@@ -362,6 +457,20 @@ def extract_first_code_block(text: str) -> str | None:
     if "class ModelNew" in stripped:
         return stripped
     return None
+
+
+def extract_kernelbench_candidate(text: str, helper) -> str:
+    blocks = re.findall(
+        r"```(?:python|py|cpp|c\+\+)?\s*\n(.*?)```",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    for block in reversed(blocks):
+        ok, _reason = validate_kernelbench_hip_output(block)
+        if ok:
+            return block.strip()
+    candidate = helper(text, ["python", "cpp"]) or extract_first_code_block(text)
+    return str(candidate or "").strip()
 
 
 def validate_kernelbench_hip_output(code: str) -> tuple[bool, str]:
@@ -558,14 +667,57 @@ def run_command(
     if ctx.args.dry_run:
         return
     run_dir.mkdir(parents=True, exist_ok=True)
+    command_log = run_dir / "command.log"
     env = ctx.env
     if env_extra:
         env.update(env_extra)
-    cp = subprocess.run(cmd, cwd=cwd, env=env, check=False)
-    if cp.returncode != 0:
-        raise SystemExit(
-            f"command failed with status {cp.returncode}: {printable}"
+    output_lines: list[str] = []
+    with command_log.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
+        assert process.stdout is not None
+        for line in process.stdout:
+            output_lines.append(line)
+            print(line, end="", flush=True)
+            log.write(line)
+            log.flush()
+        returncode = process.wait()
+    if returncode != 0:
+        detail = extract_command_failure_detail("".join(output_lines))
+        raise SystemExit(
+            f"subprocess failed with status {returncode}: {detail}; "
+            f"command log: {command_log}; command: {printable}"
+        )
+
+
+def extract_command_failure_detail(output: str) -> str:
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
+    json_errors = re.findall(r'"error"\s*:\s*"((?:\\.|[^"\\])*)"', clean)
+    if json_errors:
+        try:
+            return json.loads(f'"{json_errors[-1]}"')
+        except json.JSONDecodeError:
+            return json_errors[-1]
+
+    error_lines = [
+        line.strip()
+        for line in clean.splitlines()
+        if re.search(r"(?:error|exception|failed|traceback)", line, re.IGNORECASE)
+    ]
+    if error_lines:
+        return " | ".join(error_lines[-3:])[-1000:]
+
+    tail = [line.strip() for line in clean.splitlines() if line.strip()]
+    if tail:
+        return " | ".join(tail[-5:])[-1000:]
+    return "subprocess produced no diagnostic output"
 
 
 def redacted_command(cmd: list[str]) -> list[str]:

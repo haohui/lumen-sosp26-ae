@@ -553,7 +553,7 @@ diff --git a/utils/providers/available_models.py b/utils/providers/available_mod
 index 0c5080f..de352cf 100644
 --- a/utils/providers/available_models.py
 +++ b/utils/providers/available_models.py
-@@ -38,6 +38,16 @@ AVAILABLE_MODELS = [
+@@ -38,6 +38,21 @@ AVAILABLE_MODELS = [
          provider_classes=[OpenAIProvider],
          description="GPT-5.2 flagship model (Released Dec 2025)",
      ),
@@ -567,9 +567,27 @@ index 0c5080f..de352cf 100644
 +        provider_classes=[OpenAIProvider],
 +        description="GPT-5.1 Codex Mini model via OpenAI API",
 +    ),
++    ModelConfig(
++        name="deepseek-v4-flash",
++        provider_classes=[OpenAIProvider],
++        description="DeepSeek V4 Flash via an OpenAI-compatible API",
++    ),
      # Anthropic Claude 4 Models (Latest)
      ModelConfig(
          name="claude-opus-4-6",
+diff --git a/utils/providers/openai_provider.py b/utils/providers/openai_provider.py
+index 9a21d98..cf1e759 100644
+--- a/utils/providers/openai_provider.py
++++ b/utils/providers/openai_provider.py
+@@ -28,6 +28,8 @@ class OpenAIProvider(OpenAICompatibleProvider):
+ 
+     def get_max_tokens_limit(self, model_name: str) -> int:
+         """Get max tokens limit for OpenAI models."""
++        if model_name == "deepseek-v4-flash":
++            return 65536
+         if model_name.startswith(("gpt-5", "gpt-4", "o3", "o1")):
+             return 32000
+         elif model_name.startswith("gpt-3.5"):
 diff --git a/utils/providers/openai_base.py b/utils/providers/openai_base.py
 index 3351ace..e1121d3 100644
 --- a/utils/providers/openai_base.py

@@ -109,6 +109,7 @@ def generation_config_from_mapping(
         num_correct_trials=evaluation_values.get("num_correct_trials", 5),
         num_perf_trials=evaluation_values.get("num_perf_trials", 10),
         gpu_arch=evaluation_values.get("gpu_arch", "gfx942"),
+        timeout_seconds=evaluation_values.get("timeout_seconds", 3600),
     )
     prompt = PromptReferenceConfig(
         reference_mode=prompt_values.get("reference_mode", "full"),

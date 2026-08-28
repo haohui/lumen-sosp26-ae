@@ -13,6 +13,10 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from experiment_summary import ExperimentSummary  # noqa: E402
+
 CONFIG_DIR = REPO_ROOT / "scripts" / "table3" / "config"
 DATA_ROOT = REPO_ROOT / "data"
 TRACE_ROOT = REPO_ROOT / "data" / "traces"
@@ -30,7 +34,19 @@ def main(argv: list[str] | None = None) -> int:
         candidate_root=args.candidate_root,
         candidate_archive=args.candidate_archive,
     )
-    args.func(runner, args)
+    command = getattr(args, "func").__name__.removeprefix("run_").removesuffix(
+        "_command"
+    )
+    with ExperimentSummary(
+        f"table3-{command.replace('_', '-')}",
+        "compare generated summary statistics from these traces with Table 3",
+    ) as summary:
+        summary.add_result(TRACE_ROOT)
+        try:
+            args.func(runner, args)
+        finally:
+            for log in runner.generated_logs:
+                summary.add_log(log)
     return 0
 
 
@@ -91,18 +107,19 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 class Runner:
     def __init__(
-          self,
-          *,
-          python_bin: str,
-          codex_home: Path | None,
-          candidate_root: Path | None,
-          candidate_archive: Path,
-      ) -> None:
-          self.python_bin = python_bin
-          self.codex_home = codex_home.expanduser() if codex_home is not None else None
-          self.candidate_root = candidate_root.expanduser() if candidate_root else None
-          self.candidate_archive = candidate_archive.expanduser()
-          self.log_dir = TRACE_ROOT / "logs"
+        self,
+        *,
+        python_bin: str,
+        codex_home: Path | None,
+        candidate_root: Path | None,
+        candidate_archive: Path,
+    ) -> None:
+        self.python_bin = python_bin
+        self.codex_home = codex_home.expanduser() if codex_home is not None else None
+        self.candidate_root = candidate_root.expanduser() if candidate_root else None
+        self.candidate_archive = candidate_archive.expanduser()
+        self.log_dir = TRACE_ROOT / "logs"
+        self.generated_logs: list[Path] = []
 
     def generation(self, level: str, mode: str) -> None:
         suffix = generation_suffix(mode)
@@ -173,6 +190,7 @@ class Runner:
 
     def run(self, cmd: list[str], log: Path, *, title: str) -> None:
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.generated_logs.append(log)
         env = os.environ.copy()
         if self.codex_home is not None:
             env["CODEX_HOME"] = str(self.codex_home)

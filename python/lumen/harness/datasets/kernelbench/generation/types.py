@@ -35,6 +35,7 @@ class KernelBenchEvaluationConfig:
     num_correct_trials: int = 5
     num_perf_trials: int = 10
     gpu_arch: str = "gfx942"
+    timeout_seconds: int = 3600
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import traceback
@@ -72,20 +73,40 @@ class CodexRunner:
             last_message_path = Path(last_message_file.name)
 
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 _build_command(config, work_dir, last_message_path),
-                input=config.prompt.strip() + "\n",
                 text=True,
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 cwd=work_dir,
                 env=env,
-                timeout=config.timeout_seconds,
-                check=False,
+                start_new_session=os.name == "posix",
             )
-            session_id = find_codex_session_id(completed.stderr)
+            try:
+                stdout, stderr = process.communicate(
+                    config.prompt.strip() + "\n",
+                    timeout=config.timeout_seconds,
+                )
+            except subprocess.TimeoutExpired as exc:
+                _terminate_process_tree(process)
+                stdout, stderr = _collect_after_timeout(process, exc)
+                session_id = find_codex_session_id(stderr)
+                trace_path = find_trace_path(session_id, env)
+                return _result(
+                    ok=False,
+                    status="timed_out",
+                    started_at_utc=started_at_utc,
+                    session_id=session_id,
+                    trace_path=trace_path,
+                    final_response=_read_final_response(last_message_path, stdout),
+                    error=f"Timed out after {config.timeout_seconds}s.",
+                )
+
+            session_id = find_codex_session_id(stderr)
             trace_path = find_trace_path(session_id, env)
-            final_response = _read_final_response(last_message_path, completed.stdout)
-            if completed.returncode == 0:
+            final_response = _read_final_response(last_message_path, stdout)
+            if process.returncode == 0:
                 return _result(
                     ok=True,
                     status="completed",
@@ -101,22 +122,8 @@ class CodexRunner:
                 session_id=session_id,
                 trace_path=trace_path,
                 final_response=final_response,
-                error=completed.stderr.strip()
-                or f"Codex exited with status {completed.returncode}.",
-            )
-        except subprocess.TimeoutExpired as exc:
-            stderr = _coerce_output(exc.stderr)
-            stdout = _coerce_output(exc.stdout)
-            session_id = find_codex_session_id(stderr)
-            trace_path = find_trace_path(session_id, env)
-            return _result(
-                ok=False,
-                status="timed_out",
-                started_at_utc=started_at_utc,
-                session_id=session_id,
-                trace_path=trace_path,
-                final_response=_read_final_response(last_message_path, stdout),
-                error=f"Timed out after {config.timeout_seconds}s.",
+                error=stderr.strip()
+                or f"Codex exited with status {process.returncode}.",
             )
         except Exception:
             return _result(
@@ -237,6 +244,38 @@ def _coerce_output(output: str | bytes | None) -> str:
     if isinstance(output, bytes):
         return output.decode("utf-8", errors="replace")
     return output
+
+
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    """Terminate Codex and every command launched in its process group."""
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    elif process.poll() is None:
+        process.terminate()
+
+
+def _collect_after_timeout(
+    process: subprocess.Popen[str],
+    timeout: subprocess.TimeoutExpired,
+) -> tuple[str, str]:
+    try:
+        stdout, stderr = process.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+        stdout, stderr = process.communicate()
+    return (
+        _coerce_output(stdout or timeout.stdout),
+        _coerce_output(stderr or timeout.stderr),
+    )
 
 
 def _result(
